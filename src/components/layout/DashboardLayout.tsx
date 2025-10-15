@@ -47,7 +47,7 @@ const lateralMenuItems: Record<string, MenuProps["items"]> = {
     {
       key: `sale-orders`,
       icon: React.createElement(ShoppingOutlined),
-      label: "Órdenes",
+      label: "Pedidos",
       children: [
         {
           key: `/a/sale-orders/pending`,

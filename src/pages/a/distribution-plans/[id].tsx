@@ -1,11 +1,26 @@
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import React, { ReactElement, useMemo, useState } from "react";
-import { Table, Tag, Button, Space, Select, InputNumber, message, Typography, Divider, Card, Skeleton } from "antd";
+import {
+  Table,
+  Tag,
+  Button,
+  Space,
+  Select,
+  InputNumber,
+  message,
+  Typography,
+  Divider,
+  Card,
+  Skeleton,
+  Descriptions,
+  Statistic,
+} from "antd";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { useRouter } from "next/router";
 import { supabase } from "@/services/supabase.client";
 import type { SaleOrder, SaleItem } from "@/services/supabase.service";
+import { formatPriceAccounting } from "@/utils/formatPrice";
 
 type OfferOption = {
   id: string;
@@ -24,19 +39,35 @@ type Assignment = {
 // Orden simplificada para el editor del plan (evita requerir customer_id, etc.)
 type PlanOrder = Pick<
   SaleOrder,
-  "id" | "order_date" | "delivery_date" | "status" | "notes" | "items"
+  | "id"
+  | "order_date"
+  | "delivery_date"
+  | "status"
+  | "notes"
+  | "items"
+  | "total"
+  | "service_fee"
+  | "delivery_charge"
+  | "order_code"
 > & {
   user?: { name: string; email: string };
+  subtotal?: number;
 };
 
 function usePlanData(planId?: string) {
-  return useQuery<{ plan: any; orders: PlanOrder[] }>({
+  return useQuery<{
+    plan: any;
+    orders: PlanOrder[];
+    dpoStatusCounts: Record<string, number>;
+  }>({
     queryKey: ["distributionPlan", planId],
     enabled: !!planId,
     queryFn: async () => {
       const { data: plan, error: planErr } = await supabase
         .from("distribution_plan")
-        .select("id, plan_date, status, notes")
+        .select(
+          "id, plan_date, status, notes, plan_code, cutoff_at, created_at, updated_at, coordinator:coordinator_id ( id, name )"
+        )
         .eq("id", planId)
         .single();
       if (planErr) throw planErr;
@@ -52,6 +83,9 @@ function usePlanData(planId?: string) {
             delivery_date,
             status,
             notes,
+            order_code,
+            service_fee,
+            delivery_charge,
             customer:customer_id (
               name,
               app_user:user_id ( email )
@@ -71,29 +105,92 @@ function usePlanData(planId?: string) {
               )
             )
           )
-        `,
+        `
         )
         .eq("distribution_plan_id", planId)
         .order("sequence", { ascending: true });
       if (dpoErr) throw dpoErr;
 
-      const orders: PlanOrder[] = (rows || []).map((r: any) => ({
-        id: r.sale_order?.id,
-        order_date: r.sale_order?.order_date,
-        delivery_date: r.sale_order?.delivery_date,
-        status: r.sale_order?.status,
-        total: undefined,
-        service_fee: 0,
-        delivery_charge: 0,
-        notes: r.sale_order?.notes,
-        user: {
-          name: r.sale_order?.customer?.name ?? "",
-          email: r.sale_order?.customer?.app_user?.email ?? "",
-        },
-        items: r.sale_order?.sale_item ?? [],
-      }));
+      const orders: PlanOrder[] = (rows || []).map((r: any) => {
+        const saleItems = r.sale_order?.sale_item ?? [];
+        const service_fee = r.sale_order?.service_fee ?? 0;
+        const delivery_charge = r.sale_order?.delivery_charge ?? 0;
+        const subtotal = saleItems.reduce(
+          (acc: number, it: any) =>
+            acc + Number(it.quantity) * Number(it.unit_price || 0),
+          0
+        );
+        const total =
+          typeof r.sale_order?.total === "number"
+            ? r.sale_order.total
+            : subtotal + service_fee + delivery_charge;
+        return {
+          id: r.sale_order?.id,
+          order_code: r.sale_order?.order_code,
+          order_date: r.sale_order?.order_date,
+          delivery_date: r.sale_order?.delivery_date,
+          status: r.sale_order?.status,
+          total,
+          subtotal,
+          service_fee,
+          delivery_charge,
+          notes: r.sale_order?.notes,
+          user: {
+            name: r.sale_order?.customer?.name ?? "",
+            email: r.sale_order?.customer?.app_user?.email ?? "",
+          },
+          items: saleItems,
+        } as PlanOrder;
+      });
 
-      return { plan, orders };
+      const dpoStatusCounts: Record<string, number> = {};
+      (rows || []).forEach((r: any) => {
+        const s = r.status || "unknown";
+        dpoStatusCounts[s] = (dpoStatusCounts[s] || 0) + 1;
+      });
+
+      return { plan, orders, dpoStatusCounts };
+    },
+  });
+}
+
+function usePurchaseOrdersForDate(planDate?: string) {
+  return useQuery<any[]>({
+    queryKey: ["poForPlanDate", planDate],
+    enabled: !!planDate,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const start = dayjs(planDate).startOf("day").toISOString();
+      const end = dayjs(planDate).endOf("day").toISOString();
+      const { data, error } = await supabase
+        .from("purchase_order")
+        .select(
+          `
+          id,
+          status,
+          expected_delivery_date,
+          created_at,
+          purchase_code,
+          supplier:supplier_id ( id, name ),
+          purchase_item:purchase_item (
+            id,
+            product_id,
+            quantity,
+            estimated_price,
+            actual_price,
+            product:product_id (
+              id,
+              name,
+              unit
+            )
+          )
+        `
+        )
+        .gte("expected_delivery_date", start)
+        .lt("expected_delivery_date", end)
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      return data || [];
     },
   });
 }
@@ -104,9 +201,10 @@ const PlanEditorPage = () => {
   const { data, isLoading, refetch } = usePlanData(planId);
   const plan = data?.plan;
   const orders = data?.orders || [];
+  const dpoStatusCounts = data?.dpoStatusCounts || {};
 
   const [assignments, setAssignments] = useState<Record<string, Assignment[]>>(
-    {},
+    {}
   );
   // Precargar ofertas de todos los productos involucrados
   type OfferWithProductId = OfferOption & { product_id: string };
@@ -116,10 +214,31 @@ const PlanEditorPage = () => {
     return all;
   }, [orders]);
   const productIds = useMemo(
-    () => Array.from(new Set(itemsFlat.map((i) => i.product_id))).filter(Boolean),
-    [itemsFlat],
+    () =>
+      Array.from(new Set(itemsFlat.map((i) => i.product_id))).filter(Boolean),
+    [itemsFlat]
   );
-  const { data: offersList = [], isLoading: offersLoading } = useQuery<OfferWithProductId[]>({
+  const totalItemsQuantity = useMemo(
+    () => itemsFlat.reduce((sum, i) => sum + Number(i.quantity || 0), 0),
+    [itemsFlat]
+  );
+  const uniqueProductsCount = useMemo(
+    () =>
+      Array.from(new Set(itemsFlat.map((i) => i.product_id))).filter(Boolean)
+        .length,
+    [itemsFlat]
+  );
+  const totalSalesEstimate = useMemo(
+    () =>
+      itemsFlat.reduce(
+        (sum, i) => sum + Number(i.quantity || 0) * Number(i.unit_price || 0),
+        0
+      ),
+    [itemsFlat]
+  );
+  const { data: offersList = [], isLoading: offersLoading } = useQuery<
+    OfferWithProductId[]
+  >({
     queryKey: ["offersForProducts", productIds],
     enabled: productIds.length > 0,
     staleTime: 60_000,
@@ -153,12 +272,23 @@ const PlanEditorPage = () => {
     return map;
   }, [offersList]);
 
+  const { data: relatedPOs = [], isLoading: posLoading } =
+    usePurchaseOrdersForDate(plan?.plan_date);
+
+  const statusNow = plan?.status as string | undefined;
+  const showPurchaseSection =
+    !!statusNow &&
+    ["preparing", "in_progress", "completed"].includes(statusNow);
+  const showDeliverySummary =
+    !!statusNow && ["in_progress", "completed"].includes(statusNow);
+  const allowAssignments = statusNow === "preparing";
+
   // Eliminado: carga manual de ofertas. Ahora están precargadas con React Query.
 
   function upsertAssignment(
     saleItemId: string,
     idx: number,
-    next: Partial<Assignment>,
+    next: Partial<Assignment>
   ) {
     setAssignments((prev) => {
       const current = prev[saleItemId] || [];
@@ -187,27 +317,6 @@ const PlanEditorPage = () => {
       const updated = current.filter((_, i) => i !== idx);
       return { ...prev, [saleItemId]: updated };
     });
-  }
-
-  function autoAssignLowestPrice(
-    saleItemId: string,
-    productId: string,
-    quantity: number,
-  ) {
-    const offers = offersByProduct[productId] || [];
-    if (!offers.length) return;
-    const best = offers.reduce((a, b) => (a.price <= b.price ? a : b));
-    setAssignments((prev) => ({
-      ...prev,
-      [saleItemId]: [
-        {
-          supplier_id: best.supplier_id,
-          supplier_name: best.supplier_name,
-          price: best.price,
-          quantity,
-        },
-      ],
-    }));
   }
 
   async function handleGeneratePurchaseOrders() {
@@ -289,6 +398,11 @@ const PlanEditorPage = () => {
 
   const orderColumns = [
     {
+      title: "Código",
+      dataIndex: "order_code",
+      key: "order_code",
+    },
+    {
       title: "Fecha",
       dataIndex: "order_date",
       key: "order_date",
@@ -310,117 +424,256 @@ const PlanEditorPage = () => {
       key: "status",
       render: (status: SaleOrder["status"]) => <Tag>{status}</Tag>,
     },
+    {
+      title: "Subtotal",
+      dataIndex: "subtotal",
+      key: "subtotal",
+      render: (t: number | undefined) => formatPriceAccounting(Number(t ?? 0)),
+    },
+    {
+      title: "Total",
+      dataIndex: "total",
+      key: "total",
+      render: (t: number | undefined) => formatPriceAccounting(Number(t ?? 0)),
+    },
+    {
+      title: "Items",
+      key: "items_count",
+      render: (_: unknown, record: PlanOrder) => record.items?.length ?? 0,
+    },
+  ];
+
+  const poColumns = [
+    {
+      title: "Código",
+      dataIndex: "purchase_code",
+      key: "purchase_code",
+    },
+    {
+      title: "Entrega esperada",
+      dataIndex: "expected_delivery_date",
+      key: "expected_delivery_date",
+      render: (val: string) => dayjs(val).format("YYYY-MM-DD HH:mm"),
+    },
+    {
+      title: "Proveedor",
+      dataIndex: ["supplier", "name"],
+      key: "supplier_name",
+    },
+    {
+      title: "Estado",
+      dataIndex: "status",
+      key: "status",
+      render: (status: string) => <Tag>{status}</Tag>,
+    },
+    {
+      title: "Total",
+      key: "po_total",
+      render: (_: unknown, record: any) => {
+        const items = record.purchase_item || [];
+        const total = items.reduce(
+          (sum: number, it: any) =>
+            sum +
+            Number(it.quantity || 0) *
+              Number(it.actual_price ?? it.estimated_price ?? 0),
+          0
+        );
+        return formatPriceAccounting(total);
+      },
+    },
+    {
+      title: "Items",
+      key: "po_items_count",
+      render: (_: unknown, record: any) => record.purchase_item?.length ?? 0,
+    },
   ];
 
   return (
     <>
       <Space style={{ marginBottom: 16 }} wrap>
         <Typography.Title level={4}>
-          Plan {planId} — {plan ? dayjs(plan.plan_date).format("YYYY-MM-DD") : ""}
+          Plan {plan?.plan_code ?? planId} —{" "}
+          {plan ? dayjs(plan.plan_date).format("YYYY-MM-DD") : ""}
         </Typography.Title>
         <Tag color="blue">{plan?.status}</Tag>
-        <Button type="primary" onClick={handleGeneratePurchaseOrders} disabled={itemsFlat.length === 0}>
-          Generar órdenes de compra
-        </Button>
+        {allowAssignments && (
+          <Button
+            type="primary"
+            onClick={handleGeneratePurchaseOrders}
+            disabled={itemsFlat.length === 0}
+          >
+            Generar órdenes de compra
+          </Button>
+        )}
         <Button onClick={() => refetch()}>Refrescar</Button>
+      </Space>
+
+      <Card title="Reporte del plan" style={{ marginBottom: 16 }}>
+        <Descriptions
+          size="small"
+          column={{ xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 4 }}
+        >
+          <Descriptions.Item label="Código">
+            {plan?.plan_code ?? "-"}
+          </Descriptions.Item>
+          <Descriptions.Item label="Fecha del plan">
+            {plan ? dayjs(plan.plan_date).format("YYYY-MM-DD") : "-"}
+          </Descriptions.Item>
+          <Descriptions.Item label="Estado">
+            <Tag color="blue">{plan?.status}</Tag>
+          </Descriptions.Item>
+          <Descriptions.Item label="Coordinador">
+            {plan?.coordinator?.name ?? "-"}
+          </Descriptions.Item>
+          <Descriptions.Item label="Corte">
+            {plan?.cutoff_at
+              ? dayjs(plan.cutoff_at).format("YYYY-MM-DD HH:mm")
+              : "-"}
+          </Descriptions.Item>
+          <Descriptions.Item label="Notas">
+            {plan?.notes ?? "-"}
+          </Descriptions.Item>
+        </Descriptions>
+      </Card>
+      <Space size="large" wrap>
+        <Card variant="outlined">
+          <Statistic title="Órdenes en plan" value={orders.length} />
+        </Card>
+        <Card variant="outlined">
+          <Statistic title="Productos únicos" value={uniqueProductsCount} />
+        </Card>
+        <Card variant="outlined">
+          <Statistic
+            title="Estimado ventas"
+            value={totalSalesEstimate}
+            formatter={(val) => formatPriceAccounting(Number(val))}
+          />
+        </Card>
+        <Card variant="outlined">
+          <Statistic
+            title="Entregas pendientes"
+            value={dpoStatusCounts["pending"] || 0}
+          />
+        </Card>
+        <Card variant="outlined">
+          <Statistic
+            title="Entregas en ruta"
+            value={dpoStatusCounts["out_for_delivery"] || 0}
+          />
+        </Card>
+        <Card variant="outlined">
+          <Statistic
+            title="Entregas completadas"
+            value={dpoStatusCounts["delivered"] || 0}
+          />
+        </Card>
       </Space>
 
       {isLoading ? (
         <Skeleton active />
       ) : (
-        <Table
-          dataSource={orders}
-          columns={orderColumns as any}
-          rowKey="id"
-          expandable={{
-            expandedRowRender: (order: SaleOrder) => (
-              <div>
-                {(order.items || []).map((item) => (
-                  <Card key={item.id} size="small" style={{ marginBottom: 12 }}>
-                    <Space direction="vertical" style={{ width: "100%" }}>
-                      <Space>
-                        <Typography.Text strong>
-                          {item.product?.name}
-                        </Typography.Text>
-                        <Tag>{item.product?.unit}</Tag>
-                        <Typography.Text>Qty: {item.quantity}</Typography.Text>
-                      </Space>
-                      <Space>
-                        <Button
-                          type="dashed"
-                          onClick={() =>
-                            autoAssignLowestPrice(
-                              item.id,
-                              item.product_id,
-                              item.quantity,
-                            )
-                          }
-                          disabled={
-                            offersLoading ||
-                            !offersByProduct[item.product_id] ||
-                            offersByProduct[item.product_id]?.length === 0
-                          }
-                        >
-                          Asignar menor precio
-                        </Button>
-                        <Button onClick={() => addAssignmentRow(item.id)}>
-                          Agregar proveedor
-                        </Button>
-                      </Space>
-                      {(assignments[item.id] || []).map((row, idx) => (
-                        <Space key={idx} wrap style={{ width: "100%" }}>
-                          <Select
-                            style={{ minWidth: 240 }}
-                            placeholder="Selecciona proveedor"
-                            value={row.supplier_id || undefined}
-                            options={(offersByProduct[item.product_id] || []).map(
-                              (o) => ({
-                                label: `${o.supplier_name} — $${o.price.toFixed(
-                                  2,
-                                )}`,
-                                value: o.supplier_id,
-                              }),
-                            )}
-                            onChange={(val) => {
-                              const opt = (offersByProduct[item.product_id] || []).find(
-                                (o) => o.supplier_id === val,
-                              );
-                              if (opt) {
-                                upsertAssignment(item.id, idx, {
-                                  supplier_id: opt.supplier_id,
-                                  supplier_name: opt.supplier_name,
-                                  price: opt.price,
-                                });
-                              } else {
-                                upsertAssignment(item.id, idx, {
-                                  supplier_id: val,
-                                });
-                              }
-                            }}
-                          />
-                          <InputNumber
-                            min={0}
-                            max={item.quantity}
-                            value={row.quantity}
-                            onChange={(val) =>
-                              upsertAssignment(item.id, idx, {
-                                quantity: Number(val),
-                              })
-                            }
-                            placeholder="Cantidad"
-                          />
-                          <Button danger onClick={() => removeAssignmentRow(item.id, idx)}>
-                            Quitar
-                          </Button>
-                        </Space>
-                      ))}
-                    </Space>
-                  </Card>
-                ))}
-              </div>
-            ),
-          }}
-        />
+        <>
+          <Divider orientation="left">Pedidos</Divider>
+          <Table
+            dataSource={orders}
+            columns={orderColumns as any}
+            rowKey="id"
+            expandable={{
+              expandedRowRender: (record: PlanOrder) => (
+                <Table
+                  dataSource={record.items || []}
+                  rowKey="id"
+                  pagination={false}
+                  size="small"
+                  columns={
+                    [
+                      {
+                        title: "Producto",
+                        dataIndex: ["product", "name"],
+                        key: "product_name",
+                      },
+                      {
+                        title: "Cant./Unidad",
+                        key: "quantity_unit",
+                        render: (_: unknown, it: any) =>
+                          `${Number(it.quantity || 0)} ${
+                            it.product?.unit ?? ""
+                          }`,
+                      },
+                      {
+                        title: "Unitario",
+                        dataIndex: "unit_price",
+                        key: "unit_price",
+                        render: (v: number) =>
+                          formatPriceAccounting(Number(v || 0)),
+                      },
+                      {
+                        title: "Subtotal",
+                        key: "item_subtotal",
+                        render: (_: unknown, it: any) => {
+                          const subtotal =
+                            Number(it.quantity || 0) *
+                            Number(it.unit_price || 0);
+                          return formatPriceAccounting(subtotal);
+                        },
+                      },
+                    ] as any
+                  }
+                />
+              ),
+            }}
+          />
+        </>
+      )}
+
+      {showPurchaseSection && (
+        <>
+          <Divider orientation="left">Órdenes de compra</Divider>
+          {posLoading ? (
+            <Skeleton active />
+          ) : (
+            <Table
+              dataSource={relatedPOs}
+              columns={poColumns as any}
+              rowKey="id"
+              expandable={{
+                expandedRowRender: (po: any) => (
+                  <Table
+                    dataSource={po.purchase_item || []}
+                    rowKey="id"
+                    pagination={false}
+                    size="small"
+                    columns={
+                      [
+                        {
+                          title: "Producto",
+                          dataIndex: ["product", "name"],
+                          key: "product_name",
+                        },
+                        {
+                          title: "Cant./Unidad",
+                          key: "quantity_unit",
+                          render: (_: unknown, it: any) =>
+                            `${Number(it.quantity || 0)} ${
+                              it.product?.unit ?? ""
+                            }`,
+                        },
+                        {
+                          title: "Precio",
+                          key: "price",
+                          render: (_: unknown, it: any) =>
+                            formatPriceAccounting(
+                              Number(it.actual_price ?? it.estimated_price ?? 0)
+                            ),
+                        },
+                      ] as any
+                    }
+                  />
+                ),
+              }}
+            />
+          )}
+        </>
       )}
     </>
   );

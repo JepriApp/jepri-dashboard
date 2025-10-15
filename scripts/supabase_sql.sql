@@ -504,3 +504,72 @@ UNION ALL
 SELECT so2.id, (SELECT id FROM product WHERE name = 'Zanahoria'), 6, (SELECT reference_price FROM product WHERE name = 'Zanahoria') FROM so2
 UNION ALL
 SELECT so2.id, (SELECT id FROM product WHERE name = 'Ajo'), 2, (SELECT reference_price FROM product WHERE name = 'Ajo') FROM so2;
+
+-- ================================
+-- Ejemplo: Plan de distribución vinculado con órdenes de venta y compra
+-- ================================
+
+-- Crea un plan para mañana si no existe ya uno para esa fecha,
+-- enlaza las dos sale orders de ejemplo al plan, y crea órdenes de compra
+-- para esa misma fecha con ítems asociados a proveedores existentes.
+WITH dp AS (
+  INSERT INTO distribution_plan (plan_date, status, cutoff_at)
+  SELECT CURRENT_DATE + INTERVAL '1 day', 'in_progress', NOW()
+  WHERE NOT EXISTS (
+    SELECT 1 FROM distribution_plan WHERE plan_date = CURRENT_DATE + INTERVAL '1 day'
+  )
+  RETURNING id, plan_date
+), so_a AS (
+  SELECT id FROM sale_order
+  WHERE customer_id = (SELECT id FROM customer WHERE name = 'Restaurante El Buen Sabor')
+  ORDER BY created_at DESC
+  LIMIT 1
+), so_b AS (
+  SELECT id FROM sale_order
+  WHERE customer_id = (SELECT id FROM customer WHERE name = 'Cafetería Central')
+  ORDER BY created_at DESC
+  LIMIT 1
+), dpo_ins AS (
+  INSERT INTO distribution_plan_order (distribution_plan_id, sale_order_id, sequence, status)
+  SELECT dp.id, so_a.id, 1, 'out_for_delivery'::distribution_plan_order_status FROM dp, so_a
+  UNION ALL
+  SELECT dp.id, so_b.id, 2, 'delivered'::distribution_plan_order_status FROM dp, so_b
+  RETURNING distribution_plan_id
+), po1 AS (
+  INSERT INTO purchase_order (supplier_id, expected_delivery_date, status, notes)
+  SELECT (SELECT id FROM supplier WHERE name = 'Agroventas del Caribe'),
+         (SELECT plan_date::timestamptz + INTERVAL '8 hours' FROM dp),
+         'created'::purchase_order_status,
+         'Compra para plan (Agroventas del Caribe)'
+  FROM dp
+  RETURNING id, supplier_id
+), po2 AS (
+  INSERT INTO purchase_order (supplier_id, expected_delivery_date, status, notes)
+  SELECT (SELECT id FROM supplier WHERE name = 'Mercado Central - Local 12'),
+         (SELECT plan_date::timestamptz + INTERVAL '9 hours' FROM dp),
+         'created'::purchase_order_status,
+         'Compra para plan (Mercado Central - Local 12)'
+  FROM dp
+  RETURNING id, supplier_id
+)
+INSERT INTO purchase_item (purchase_order_id, product_id, supplier_id, quantity, estimated_price)
+SELECT po1.id,
+       (SELECT id FROM product WHERE name = 'Tomate'),
+       po1.supplier_id,
+       15,
+       (SELECT reference_price FROM product WHERE name = 'Tomate')
+FROM po1
+UNION ALL
+SELECT po1.id,
+       (SELECT id FROM product WHERE name = 'Cebolla'),
+       po1.supplier_id,
+       10,
+       (SELECT reference_price FROM product WHERE name = 'Cebolla')
+FROM po1
+UNION ALL
+SELECT po2.id,
+       (SELECT id FROM product WHERE name = 'Ajo'),
+       po2.supplier_id,
+       4,
+       (SELECT reference_price FROM product WHERE name = 'Ajo')
+FROM po2;
