@@ -228,3 +228,51 @@ INSERT INTO offer (product_id, supplier_id, price, available) VALUES
 ((SELECT id FROM product WHERE name = 'Pimentón'), (SELECT id FROM supplier WHERE name = 'Mercado Central - Local 12'), 4000, true),
 ((SELECT id FROM product WHERE name = 'Tomate'), (SELECT id FROM supplier WHERE name = 'Agroventas del Caribe'), 4400, true),
 ((SELECT id FROM product WHERE name = 'Cebolla'), (SELECT id FROM supplier WHERE name = 'Agroventas del Caribe'), 3700, true);
+
+-- === Distribution Plan (operación diaria) ===
+
+-- Enums de estado
+CREATE TYPE distribution_plan_status AS ENUM ('planned', 'preparing', 'in_progress', 'completed', 'cancelled');
+CREATE TYPE distribution_plan_order_status AS ENUM ('pending', 'handled', 'failed', 'cancelled');
+
+-- Entidad principal del plan
+CREATE TABLE distribution_plan (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    plan_date DATE NOT NULL,
+    status distribution_plan_status NOT NULL DEFAULT 'planned',
+    notes TEXT,
+    cutoff_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Personal asignado al plan (roles se consultan desde app_user)
+CREATE TABLE distribution_plan_worker (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    distribution_plan_id UUID NOT NULL REFERENCES distribution_plan(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES app_user(id),
+    assigned_at TIMESTAMPTZ DEFAULT NOW(),
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (distribution_plan_id, user_id)
+);
+
+-- Órdenes incluidas en el plan (lista ordenada)
+CREATE TABLE distribution_plan_order (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    distribution_plan_id UUID NOT NULL REFERENCES distribution_plan(id) ON DELETE CASCADE,
+    sale_order_id UUID NOT NULL REFERENCES sale_order(id) ON DELETE CASCADE,
+    sequence INTEGER NOT NULL,
+    status distribution_plan_order_status NOT NULL DEFAULT 'pending',
+    handled_at TIMESTAMPTZ,
+    assigned_user_id UUID REFERENCES app_user(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (distribution_plan_id, sale_order_id),
+    UNIQUE (distribution_plan_id, sequence)
+);
+
+-- Índices
+CREATE INDEX idx_distribution_plan_date ON distribution_plan(plan_date);
+CREATE INDEX idx_distribution_plan_worker_plan ON distribution_plan_worker(distribution_plan_id);
+CREATE INDEX idx_distribution_plan_order_plan ON distribution_plan_order(distribution_plan_id);
+CREATE INDEX idx_distribution_plan_order_assignee ON distribution_plan_order(assigned_user_id);
