@@ -3,10 +3,9 @@ import React, { ReactElement } from "react";
 import { Table, Tag } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
-import {
-    getPendingOrdersForAdmin,
-  type SaleOrder,
-} from "@/services/supabase.service";
+import { getPendingOrdersForAdmin, type SaleOrder } from "@/services/supabase.service";
+
+// Página enfocada en: seleccionar órdenes y crear el distribution plan
 
 const PlanningPage = () => {
   const { data: orders = [], isLoading } = useQuery<SaleOrder[]>({
@@ -52,46 +51,49 @@ const PlanningPage = () => {
     },
   ];
 
+
   return (
-    <Table
-      loading={isLoading}
-      dataSource={orders}
-      columns={columns as any}
-      rowKey="id"
-      expandable={{
-        expandedRowRender: (record: SaleOrder) => (
-          <Table
-            dataSource={record.items || []}
-            rowKey="id"
-            pagination={false}
-            size="small"
-            columns={[
-              {
-                title: "Producto",
-                dataIndex: ["product", "name"],
-                key: "product_name",
-              },
-              {
-                title: "Cant.",
-                dataIndex: "quantity",
-                key: "quantity",
-              },
-              {
-                title: "Unitario",
-                dataIndex: "unit_price",
-                key: "unit_price",
-                render: (v: number) => `$${v.toFixed(2)}`,
-              },
-              {
-                title: "Unidad",
-                dataIndex: ["product", "unit"],
-                key: "unit",
-              },
-            ] as any}
-          />
-        ),
-      }}
-    />
+    <>
+      <Table
+        loading={isLoading}
+        dataSource={orders}
+        columns={columns as any}
+        rowKey="id"
+        expandable={{
+          expandedRowRender: (record: SaleOrder) => (
+            <Table
+              dataSource={record.items || []}
+              rowKey="id"
+              pagination={false}
+              size="small"
+              columns={[
+                {
+                  title: "Producto",
+                  dataIndex: ["product", "name"],
+                  key: "product_name",
+                },
+                {
+                  title: "Cant.",
+                  dataIndex: "quantity",
+                  key: "quantity",
+                },
+                {
+                  title: "Unitario",
+                  dataIndex: "unit_price",
+                  key: "unit_price",
+                  render: (v: number) => `$${v.toFixed(2)}`,
+                },
+                {
+                  title: "Unidad",
+                  dataIndex: ["product", "unit"],
+                  key: "unit",
+                },
+              ] as any}
+            />
+          ),
+        }}
+      />
+    </>
   );
 };
 

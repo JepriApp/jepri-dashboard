@@ -6,7 +6,7 @@ export const AutoMenu = (props: MenuProps) => {
   return (
     <Menu
       mode="inline"
-      selectedKeys={[router.pathname.split("/").slice(0, 3).join("/")]}
+      selectedKeys={[router.asPath.split("?")[0].split("#")[0]]}
       {...props}
     />
   );

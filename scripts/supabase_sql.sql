@@ -2,6 +2,9 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TYPE unit_type AS ENUM ('lb', 'kg', 'atado');
 CREATE TYPE user_role AS ENUM ('admin', 'operator', 'supplier', 'customer');
+-- Estados de órdenes
+CREATE TYPE sale_order_status AS ENUM ('pending', 'processing', 'out_for_delivery', 'delivered', 'cancelled');
+CREATE TYPE purchase_order_status AS ENUM ('created', 'accepted', 'delivered', 'cancelled', 'rejected');
 
 -- Tabla de usuarios simplificada
 CREATE TABLE app_user (
@@ -62,12 +65,15 @@ CREATE TABLE sale_order (
     customer_id UUID NOT NULL REFERENCES customer(id),
     order_date TIMESTAMPTZ DEFAULT NOW(),
     delivery_date TIMESTAMPTZ,
-    status VARCHAR(50) DEFAULT 'pending',
+    status sale_order_status NOT NULL DEFAULT 'pending',
     service_fee DECIMAL(12,2) DEFAULT 0,
     delivery_charge DECIMAL(12,2) DEFAULT 0,
     notes TEXT,
     created_by UUID,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    -- Identificador humano: número secuencial global (ej: 000123)
+    order_seq INTEGER,
+    order_code TEXT UNIQUE
 );
 
 -- Tabla de items de venta
@@ -89,11 +95,14 @@ CREATE TABLE purchase_order (
     supplier_id UUID NOT NULL REFERENCES supplier(id),
     order_date TIMESTAMPTZ DEFAULT NOW(),
     expected_delivery_date TIMESTAMPTZ,
-    status VARCHAR(50) DEFAULT 'pending',
+    status purchase_order_status NOT NULL DEFAULT 'created',
     total DECIMAL(12,2) DEFAULT 0,
     notes TEXT,
     created_by UUID,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    -- Identificador humano: número secuencial global (ej: 000123)
+    purchase_seq INTEGER,
+    purchase_code TEXT UNIQUE
 );
 
 -- Tabla de items de compra
@@ -142,6 +151,35 @@ LEFT JOIN
     sale_item si ON so.id = si.sale_order_id
 GROUP BY 
     so.id;
+
+-- Vista que agrega estado efectivo derivado del distribution plan
+CREATE OR REPLACE VIEW sale_order_with_total_and_status AS
+SELECT 
+    so.*,
+    COALESCE(SUM(si.quantity * si.unit_price), 0) + so.service_fee + so.delivery_charge AS total,
+    CASE
+        WHEN so.status = 'cancelled' THEN 'cancelled'
+        WHEN dpo.status IS NULL THEN so.status
+        WHEN dpo.status = 'pending' THEN 'processing'
+        WHEN dpo.status = 'out_for_delivery' THEN 'out_for_delivery'
+        WHEN dpo.status = 'delivered' THEN 'delivered'
+        WHEN dpo.status = 'failed' THEN 'processing'
+        WHEN dpo.status = 'cancelled' THEN CASE WHEN so.status = 'cancelled' THEN 'cancelled' ELSE 'processing' END
+    END AS effective_status
+FROM 
+    sale_order so
+LEFT JOIN 
+    sale_item si ON so.id = si.sale_order_id
+LEFT JOIN LATERAL (
+    SELECT dpo.status
+    FROM distribution_plan_order dpo
+    JOIN distribution_plan dp ON dp.id = dpo.distribution_plan_id
+    WHERE dpo.sale_order_id = so.id
+    ORDER BY dp.plan_date DESC, dpo.created_at DESC
+    LIMIT 1
+) dpo ON TRUE
+GROUP BY 
+    so.id, dpo.status;
 
 -- Índices para mejorar el rendimiento
 CREATE INDEX idx_offer_product ON offer(product_id);
@@ -233,7 +271,7 @@ INSERT INTO offer (product_id, supplier_id, price, available) VALUES
 
 -- Enums de estado
 CREATE TYPE distribution_plan_status AS ENUM ('planned', 'preparing', 'in_progress', 'completed', 'cancelled');
-CREATE TYPE distribution_plan_order_status AS ENUM ('pending', 'handled', 'failed', 'cancelled');
+CREATE TYPE distribution_plan_order_status AS ENUM ('pending', 'out_for_delivery', 'delivered', 'failed', 'cancelled');
 
 -- Entidad principal del plan
 CREATE TABLE distribution_plan (
@@ -243,7 +281,10 @@ CREATE TABLE distribution_plan (
     notes TEXT,
     cutoff_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    -- Identificador humano: número secuencial global (ej: 000123)
+    plan_seq INTEGER,
+    plan_code TEXT UNIQUE
 );
 
 -- Personal asignado al plan (roles se consultan desde app_user)
@@ -264,7 +305,7 @@ CREATE TABLE distribution_plan_order (
     sale_order_id UUID NOT NULL REFERENCES sale_order(id) ON DELETE CASCADE,
     sequence INTEGER NOT NULL,
     status distribution_plan_order_status NOT NULL DEFAULT 'pending',
-    handled_at TIMESTAMPTZ,
+    delivered_at TIMESTAMPTZ,
     assigned_user_id UUID REFERENCES app_user(id),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (distribution_plan_id, sale_order_id),
@@ -276,3 +317,146 @@ CREATE INDEX idx_distribution_plan_date ON distribution_plan(plan_date);
 CREATE INDEX idx_distribution_plan_worker_plan ON distribution_plan_worker(distribution_plan_id);
 CREATE INDEX idx_distribution_plan_order_plan ON distribution_plan_order(distribution_plan_id);
 CREATE INDEX idx_distribution_plan_order_assignee ON distribution_plan_order(assigned_user_id);
+
+-- ================================
+-- Códigos humanos con contador global (sin fecha)
+-- ================================
+
+-- Sequences globales
+CREATE SEQUENCE IF NOT EXISTS sale_order_seq START 1;
+CREATE SEQUENCE IF NOT EXISTS purchase_order_seq START 1;
+CREATE SEQUENCE IF NOT EXISTS distribution_plan_seq START 1;
+
+-- Funciones y triggers secuenciales (sin fecha)
+CREATE OR REPLACE FUNCTION set_sale_order_code() RETURNS TRIGGER AS $$
+DECLARE
+    seq INT;
+BEGIN
+    seq := nextval('sale_order_seq');
+    NEW.order_seq := seq;
+    NEW.order_code := LPAD(seq::text, 6, '0');
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_set_sale_order_code ON sale_order;
+CREATE TRIGGER trg_set_sale_order_code
+BEFORE INSERT ON sale_order
+FOR EACH ROW EXECUTE FUNCTION set_sale_order_code();
+
+CREATE OR REPLACE FUNCTION set_purchase_order_code() RETURNS TRIGGER AS $$
+DECLARE
+    seq INT;
+BEGIN
+    seq := nextval('purchase_order_seq');
+    NEW.purchase_seq := seq;
+    NEW.purchase_code := LPAD(seq::text, 6, '0');
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_set_purchase_order_code ON purchase_order;
+CREATE TRIGGER trg_set_purchase_order_code
+BEFORE INSERT ON purchase_order
+FOR EACH ROW EXECUTE FUNCTION set_purchase_order_code();
+
+CREATE OR REPLACE FUNCTION set_distribution_plan_code() RETURNS TRIGGER AS $$
+DECLARE
+    seq INT;
+BEGIN
+    seq := nextval('distribution_plan_seq');
+    NEW.plan_seq := seq;
+    NEW.plan_code := LPAD(seq::text, 6, '0');
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_set_distribution_plan_code ON distribution_plan;
+CREATE TRIGGER trg_set_distribution_plan_code
+BEFORE INSERT ON distribution_plan
+FOR EACH ROW EXECUTE FUNCTION set_distribution_plan_code();
+
+-- Índices únicos (si no existen)
+CREATE UNIQUE INDEX IF NOT EXISTS sale_order_order_code_unique_idx ON sale_order(order_code);
+CREATE UNIQUE INDEX IF NOT EXISTS purchase_order_purchase_code_unique_idx ON purchase_order(purchase_code);
+CREATE UNIQUE INDEX IF NOT EXISTS distribution_plan_plan_code_unique_idx ON distribution_plan(plan_code);
+CREATE UNIQUE INDEX IF NOT EXISTS sale_order_order_seq_unique_idx ON sale_order(order_seq);
+CREATE UNIQUE INDEX IF NOT EXISTS purchase_order_purchase_seq_unique_idx ON purchase_order(purchase_seq);
+CREATE UNIQUE INDEX IF NOT EXISTS distribution_plan_plan_seq_unique_idx ON distribution_plan(plan_seq);
+
+-- Migración: backfill códigos globales para filas existentes sin código y ajustar sequences
+DO $$
+DECLARE
+    max_so INT;
+    max_po INT;
+    max_dp INT;
+BEGIN
+    -- Sale orders
+    UPDATE sale_order
+    SET order_seq = s.seq,
+        order_code = LPAD(s.seq::text, 6, '0')
+    FROM (
+        SELECT id, row_number() OVER (ORDER BY created_at, id) AS seq
+        FROM sale_order WHERE order_code IS NULL
+    ) AS s
+    WHERE sale_order.id = s.id;
+
+    SELECT COALESCE(MAX(order_seq), 0) INTO max_so FROM sale_order;
+    PERFORM setval('sale_order_seq', max_so);
+
+    -- Purchase orders
+    UPDATE purchase_order
+    SET purchase_seq = p.seq,
+        purchase_code = LPAD(p.seq::text, 6, '0')
+    FROM (
+        SELECT id, row_number() OVER (ORDER BY created_at, id) AS seq
+        FROM purchase_order WHERE purchase_code IS NULL
+    ) AS p
+    WHERE purchase_order.id = p.id;
+
+    SELECT COALESCE(MAX(purchase_seq), 0) INTO max_po FROM purchase_order;
+    PERFORM setval('purchase_order_seq', max_po);
+
+    -- Distribution plans
+    UPDATE distribution_plan
+    SET plan_seq = d.seq,
+        plan_code = LPAD(d.seq::text, 6, '0')
+    FROM (
+        SELECT id, row_number() OVER (ORDER BY created_at, id) AS seq
+        FROM distribution_plan WHERE plan_code IS NULL
+    ) AS d
+    WHERE distribution_plan.id = d.id;
+
+    SELECT COALESCE(MAX(plan_seq), 0) INTO max_dp FROM distribution_plan;
+    PERFORM setval('distribution_plan_seq', max_dp);
+END $$;
+
+-- ================================
+-- Órdenes de venta de ejemplo (pendientes)
+-- ================================
+
+-- Pedido 1: Restaurante El Buen Sabor
+WITH so1 AS (
+  INSERT INTO sale_order (customer_id, status, service_fee, delivery_charge, notes)
+  VALUES ((SELECT id FROM customer WHERE name = 'Restaurante El Buen Sabor'), 'pending', 5000, 10000, 'Entrega mañana')
+  RETURNING id
+)
+INSERT INTO sale_item (sale_order_id, product_id, quantity, unit_price)
+SELECT so1.id, (SELECT id FROM product WHERE name = 'Tomate'), 10, (SELECT reference_price FROM product WHERE name = 'Tomate') FROM so1
+UNION ALL
+SELECT so1.id, (SELECT id FROM product WHERE name = 'Cebolla'), 5, (SELECT reference_price FROM product WHERE name = 'Cebolla') FROM so1
+UNION ALL
+SELECT so1.id, (SELECT id FROM product WHERE name = 'Lechuga'), 3, (SELECT reference_price FROM product WHERE name = 'Lechuga') FROM so1;
+
+-- Pedido 2: Cafetería Central
+WITH so2 AS (
+  INSERT INTO sale_order (customer_id, status, service_fee, delivery_charge, notes)
+  VALUES ((SELECT id FROM customer WHERE name = 'Cafetería Central'), 'pending', 3500, 8000, 'Entrega por la tarde')
+  RETURNING id
+)
+INSERT INTO sale_item (sale_order_id, product_id, quantity, unit_price)
+SELECT so2.id, (SELECT id FROM product WHERE name = 'Papa'), 8, (SELECT reference_price FROM product WHERE name = 'Papa') FROM so2
+UNION ALL
+SELECT so2.id, (SELECT id FROM product WHERE name = 'Zanahoria'), 6, (SELECT reference_price FROM product WHERE name = 'Zanahoria') FROM so2
+UNION ALL
+SELECT so2.id, (SELECT id FROM product WHERE name = 'Ajo'), 2, (SELECT reference_price FROM product WHERE name = 'Ajo') FROM so2;

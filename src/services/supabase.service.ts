@@ -22,10 +22,12 @@ export interface SaleOrder {
   customer_id: string;
   order_date: string;
   delivery_date: string | null;
-  status: "pending" | "processing" | "completed" | "cancelled";
+  status: "pending" | "processing" | "out_for_delivery" | "delivered" | "cancelled";
   service_fee: number;
   delivery_charge: number;
   notes: string | null;
+  order_code?: string;
+  order_seq?: number;
   total?: number;
   user?: {
     name: string;
@@ -491,14 +493,16 @@ export async function clearCart(userId: string) {
 export async function getPendingOrdersForAdmin(): Promise<SaleOrder[]> {
   try {
     const { data, error } = await supabase
-      .from("sale_order_with_total")
+      .from("sale_order_with_total_and_status")
       .select(
         `
         id,
         customer_id,
         order_date,
         delivery_date,
-        status,
+        status:effective_status,
+        order_code,
+        order_seq,
         total,
         service_fee,
         delivery_charge,
@@ -527,7 +531,7 @@ export async function getPendingOrdersForAdmin(): Promise<SaleOrder[]> {
         )
       `
       )
-      .eq("status", "pending")
+      .eq("effective_status", "pending")
       .order("order_date", { ascending: false });
 
     if (error) {
@@ -542,6 +546,8 @@ export async function getPendingOrdersForAdmin(): Promise<SaleOrder[]> {
         order_date: order.order_date,
         delivery_date: order.delivery_date,
         status: order.status,
+        order_code: order.order_code,
+        order_seq: order.order_seq,
         total: order.total,
         service_fee: order.service_fee,
         delivery_charge: order.delivery_charge,
@@ -565,14 +571,16 @@ export async function getPendingOrdersForAdmin(): Promise<SaleOrder[]> {
 export async function getAllOrdersForAdmin(): Promise<SaleOrder[]> {
   try {
     const { data, error } = await supabase
-      .from("sale_order_with_total")
+      .from("sale_order_with_total_and_status")
       .select(
         `
         id,
         customer_id,
         order_date,
         delivery_date,
-        status,
+        status:effective_status,
+        order_code,
+        order_seq,
         total,
         service_fee,
         delivery_charge,
@@ -615,6 +623,8 @@ export async function getAllOrdersForAdmin(): Promise<SaleOrder[]> {
         order_date: order.order_date,
         delivery_date: order.delivery_date,
         status: order.status,
+        order_code: order.order_code,
+        order_seq: order.order_seq,
         total: order.total,
         service_fee: order.service_fee,
         delivery_charge: order.delivery_charge,
