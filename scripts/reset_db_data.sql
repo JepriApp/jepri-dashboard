@@ -6,7 +6,6 @@ BEGIN;
 -- 1) Vaciar datos (con CASCADE) y reiniciar identidades
 TRUNCATE TABLE 
   distribution_plan_order,
-  distribution_plan_worker,
   distribution_plan,
   fulfillment,
   purchase_item,
@@ -18,6 +17,9 @@ TRUNCATE TABLE
   product,
   supplier,
   customer,
+  admin,
+  coordinator,
+  driver,
   app_user
 RESTART IDENTITY CASCADE;
 

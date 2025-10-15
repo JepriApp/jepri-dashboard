@@ -25,7 +25,7 @@ Resumen directo del flujo, desde catálogo hasta entrega planificada.
 
 ## 5. Planificación de distribución
 - Plan diario: `distribution_plan` (fecha y `status` operativo del plan).
-- Asignaciones: `distribution_plan_worker` relaciona personas del equipo al plan.
+ - Coordinador: `distribution_plan.coordinator_id` referencia a `coordinator` (opcional), responsable del plan.
 - Órdenes en el plan: `distribution_plan_order` (lista con `sequence` y estado).
 - Estados de `distribution_plan_order`: `pending`, `out_for_delivery`, `delivered`, `failed`, `cancelled`.
 

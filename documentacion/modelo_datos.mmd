@@ -49,6 +49,30 @@ erDiagram
         datetime created_at
     }
 
+    driver {
+        uuid id PK
+        string name
+        string phone
+        uuid user_id FK
+        datetime created_at
+    }
+
+    coordinator {
+        uuid id PK
+        string name
+        string phone
+        uuid user_id FK
+        datetime created_at
+    }
+
+    admin {
+        uuid id PK
+        string name
+        string phone
+        uuid user_id FK
+        datetime created_at
+    }
+
     sale_order {
         uuid id PK
         uuid customer_id FK
@@ -124,21 +148,13 @@ erDiagram
         uuid id PK
         date plan_date
         enum status
+        uuid coordinator_id FK
         string notes
         datetime cutoff_at
         datetime created_at
         datetime updated_at
         int plan_seq
         string plan_code
-    }
-
-    distribution_plan_worker {
-        uuid id PK
-        uuid distribution_plan_id FK
-        uuid user_id FK
-        datetime assigned_at
-        string notes
-        datetime created_at
     }
 
     distribution_plan_order {
@@ -174,8 +190,11 @@ erDiagram
     shopping_cart }o--|| customer : customer
     shopping_cart }o--|| product : product
 
-    distribution_plan_worker }o--|| distribution_plan : plan
-    distribution_plan_worker }o--|| app_user : worker
+    driver }o--|| app_user : user_account
+    coordinator }o--|| app_user : user_account
+    admin }o--|| app_user : user_account
+
+    distribution_plan }o--|| coordinator : coordinator
 
     distribution_plan_order }o--|| distribution_plan : plan
     distribution_plan_order }o--|| sale_order : sale_order

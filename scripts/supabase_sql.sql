@@ -59,6 +59,33 @@ CREATE TABLE customer (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Tabla de conductores (drivers)
+CREATE TABLE driver (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(200) NOT NULL,
+    phone VARCHAR(20),
+    user_id UUID REFERENCES app_user(id),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Tabla de coordinadores (coordinators)
+CREATE TABLE coordinator (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(200) NOT NULL,
+    phone VARCHAR(20),
+    user_id UUID REFERENCES app_user(id),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Tabla de administradores (admins)
+CREATE TABLE admin (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(200) NOT NULL,
+    phone VARCHAR(20),
+    user_id UUID REFERENCES app_user(id),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Tabla de órdenes de venta (a clientes)
 CREATE TABLE sale_order (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -237,6 +264,7 @@ CREATE TABLE distribution_plan (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     plan_date DATE NOT NULL,
     status distribution_plan_status NOT NULL DEFAULT 'planned',
+    coordinator_id UUID REFERENCES coordinator(id),
     notes TEXT,
     cutoff_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -246,16 +274,7 @@ CREATE TABLE distribution_plan (
     plan_code TEXT UNIQUE
 );
 
--- Personal asignado al plan (roles se consultan desde app_user)
-CREATE TABLE distribution_plan_worker (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    distribution_plan_id UUID NOT NULL REFERENCES distribution_plan(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES app_user(id),
-    assigned_at TIMESTAMPTZ DEFAULT NOW(),
-    notes TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE (distribution_plan_id, user_id)
-);
+-- (Tabla distribution_plan_worker eliminada en MVP simplificado; se usa coordinator_id en distribution_plan)
 
 -- Órdenes incluidas en el plan (lista ordenada)
 CREATE TABLE distribution_plan_order (
@@ -273,7 +292,7 @@ CREATE TABLE distribution_plan_order (
 
 -- Índices
 CREATE INDEX idx_distribution_plan_date ON distribution_plan(plan_date);
-CREATE INDEX idx_distribution_plan_worker_plan ON distribution_plan_worker(distribution_plan_id);
+CREATE INDEX idx_distribution_plan_coordinator ON distribution_plan(coordinator_id);
 CREATE INDEX idx_distribution_plan_order_plan ON distribution_plan_order(distribution_plan_id);
 CREATE INDEX idx_distribution_plan_order_assignee ON distribution_plan_order(assigned_user_id);
 

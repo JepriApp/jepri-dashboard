@@ -11,17 +11,22 @@ type DistributionPlanRow = {
   plan_date: string;
   status: string;
   notes?: string | null;
+  plan_code: string;
   created_at?: string;
 };
 
 const DistributionPlansPage = () => {
-  const { data = [], isLoading, refetch } = useQuery<DistributionPlanRow[]>({
+  const {
+    data = [],
+    isLoading,
+    refetch,
+  } = useQuery<DistributionPlanRow[]>({
     queryKey: ["distributionPlans"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("distribution_plan")
-        .select("id, plan_date, status, notes, created_at")
-        .order("plan_date", { ascending: false });
+        .select("id, plan_code, plan_date, status, notes, created_at")
+        .order("plan_date", { ascending: true });
       if (error) throw error;
       return data as DistributionPlanRow[];
     },
@@ -29,6 +34,11 @@ const DistributionPlansPage = () => {
   });
 
   const columns = [
+    {
+      title: "# Operación",
+      dataIndex: "plan_code",
+      key: "plan_code",
+    },
     {
       title: "Fecha",
       dataIndex: "plan_date",
@@ -51,7 +61,7 @@ const DistributionPlansPage = () => {
       key: "actions",
       render: (_: unknown, record: DistributionPlanRow) => (
         <Space>
-          <Link href={`/a/planning/${record.id}`}>Abrir editor</Link>
+          <Link href={`/a/distribution-plans/${record.id}`}>Abrir editor</Link>
         </Space>
       ),
     },
@@ -60,8 +70,9 @@ const DistributionPlansPage = () => {
   return (
     <>
       <Space style={{ marginBottom: 16 }}>
-        <Button onClick={() => refetch()}>Refrescar</Button>
-        <Link href="/a/planning">Ir a crear plan</Link>
+        <Button href="/a/distribution-plans/calendar">
+          Programar planes futuros
+        </Button>
       </Space>
       <Table
         loading={isLoading}
