@@ -9,6 +9,8 @@ BEGIN;
 
 -- Vistas
 DROP VIEW IF EXISTS sale_order_with_total;
+DROP VIEW IF EXISTS sale_order_with_total_and_status;
+DROP VIEW IF EXISTS purchase_order_with_total;
 
 -- Tablas (ordenadas para evitar dependencias)
 DROP TABLE IF EXISTS distribution_plan_order CASCADE;

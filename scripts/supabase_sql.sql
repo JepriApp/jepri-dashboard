@@ -96,7 +96,6 @@ CREATE TABLE purchase_order (
     order_date TIMESTAMPTZ DEFAULT NOW(),
     expected_delivery_date TIMESTAMPTZ,
     status purchase_order_status NOT NULL DEFAULT 'created',
-    total DECIMAL(12,2) DEFAULT 0,
     notes TEXT,
     created_by UUID,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -140,46 +139,6 @@ CREATE TABLE shopping_cart (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Vista para calcular el total de las órdenes de venta
-CREATE OR REPLACE VIEW sale_order_with_total AS
-SELECT 
-    so.*,
-    COALESCE(SUM(si.quantity * si.unit_price), 0) + so.service_fee + so.delivery_charge AS total
-FROM 
-    sale_order so
-LEFT JOIN 
-    sale_item si ON so.id = si.sale_order_id
-GROUP BY 
-    so.id;
-
--- Vista que agrega estado efectivo derivado del distribution plan
-CREATE OR REPLACE VIEW sale_order_with_total_and_status AS
-SELECT 
-    so.*,
-    COALESCE(SUM(si.quantity * si.unit_price), 0) + so.service_fee + so.delivery_charge AS total,
-    CASE
-        WHEN so.status = 'cancelled' THEN 'cancelled'
-        WHEN dpo.status IS NULL THEN so.status
-        WHEN dpo.status = 'pending' THEN 'processing'
-        WHEN dpo.status = 'out_for_delivery' THEN 'out_for_delivery'
-        WHEN dpo.status = 'delivered' THEN 'delivered'
-        WHEN dpo.status = 'failed' THEN 'processing'
-        WHEN dpo.status = 'cancelled' THEN CASE WHEN so.status = 'cancelled' THEN 'cancelled' ELSE 'processing' END
-    END AS effective_status
-FROM 
-    sale_order so
-LEFT JOIN 
-    sale_item si ON so.id = si.sale_order_id
-LEFT JOIN LATERAL (
-    SELECT dpo.status
-    FROM distribution_plan_order dpo
-    JOIN distribution_plan dp ON dp.id = dpo.distribution_plan_id
-    WHERE dpo.sale_order_id = so.id
-    ORDER BY dp.plan_date DESC, dpo.created_at DESC
-    LIMIT 1
-) dpo ON TRUE
-GROUP BY 
-    so.id, dpo.status;
 
 -- Índices para mejorar el rendimiento
 CREATE INDEX idx_offer_product ON offer(product_id);
@@ -318,6 +277,60 @@ CREATE INDEX idx_distribution_plan_worker_plan ON distribution_plan_worker(distr
 CREATE INDEX idx_distribution_plan_order_plan ON distribution_plan_order(distribution_plan_id);
 CREATE INDEX idx_distribution_plan_order_assignee ON distribution_plan_order(assigned_user_id);
 
+-- Vistas para totales y estado efectivo (ubicadas después de crear distribution_plan y distribution_plan_order)
+-- Vista para calcular el total de las órdenes de venta
+CREATE OR REPLACE VIEW sale_order_with_total AS
+SELECT 
+    so.*,
+    COALESCE(SUM(si.quantity * si.unit_price), 0) + so.service_fee + so.delivery_charge AS total
+FROM 
+    sale_order so
+LEFT JOIN 
+    sale_item si ON so.id = si.sale_order_id
+GROUP BY 
+    so.id;
+
+-- Vista que agrega estado efectivo derivado del distribution plan
+CREATE OR REPLACE VIEW sale_order_with_total_and_status AS
+SELECT 
+    so.*,
+    COALESCE(SUM(si.quantity * si.unit_price), 0) + so.service_fee + so.delivery_charge AS total,
+    CASE
+        WHEN so.status = 'cancelled' THEN 'cancelled'::sale_order_status
+        WHEN dpo.status IS NULL THEN so.status
+        WHEN dpo.status = 'pending' THEN 'processing'::sale_order_status
+        WHEN dpo.status = 'out_for_delivery' THEN 'out_for_delivery'::sale_order_status
+        WHEN dpo.status = 'delivered' THEN 'delivered'::sale_order_status
+        WHEN dpo.status = 'failed' THEN 'processing'::sale_order_status
+        WHEN dpo.status = 'cancelled' THEN CASE WHEN so.status = 'cancelled' THEN 'cancelled'::sale_order_status ELSE 'processing'::sale_order_status END
+    END AS effective_status
+FROM 
+    sale_order so
+LEFT JOIN 
+    sale_item si ON so.id = si.sale_order_id
+LEFT JOIN LATERAL (
+    SELECT dpo.status
+    FROM distribution_plan_order dpo
+    JOIN distribution_plan dp ON dp.id = dpo.distribution_plan_id
+    WHERE dpo.sale_order_id = so.id
+    ORDER BY dp.plan_date DESC, dpo.created_at DESC
+    LIMIT 1
+) dpo ON TRUE
+GROUP BY 
+    so.id, dpo.status;
+
+-- Vista para total de órdenes de compra (derivado de purchase_item)
+CREATE OR REPLACE VIEW purchase_order_with_total AS
+SELECT 
+    po.*,
+    COALESCE(SUM(COALESCE(pi.actual_price, pi.estimated_price) * pi.quantity), 0) AS total
+FROM 
+    purchase_order po
+LEFT JOIN 
+    purchase_item pi ON pi.purchase_order_id = po.id
+GROUP BY 
+    po.id;
+
 -- ================================
 -- Códigos humanos con contador global (sin fecha)
 -- ================================
@@ -402,7 +415,11 @@ BEGIN
     WHERE sale_order.id = s.id;
 
     SELECT COALESCE(MAX(order_seq), 0) INTO max_so FROM sale_order;
-    PERFORM setval('sale_order_seq', max_so);
+    IF max_so > 0 THEN
+        PERFORM setval('sale_order_seq', max_so);
+    ELSE
+        PERFORM setval('sale_order_seq', 1, false);
+    END IF;
 
     -- Purchase orders
     UPDATE purchase_order
@@ -415,7 +432,11 @@ BEGIN
     WHERE purchase_order.id = p.id;
 
     SELECT COALESCE(MAX(purchase_seq), 0) INTO max_po FROM purchase_order;
-    PERFORM setval('purchase_order_seq', max_po);
+    IF max_po > 0 THEN
+        PERFORM setval('purchase_order_seq', max_po);
+    ELSE
+        PERFORM setval('purchase_order_seq', 1, false);
+    END IF;
 
     -- Distribution plans
     UPDATE distribution_plan
@@ -428,7 +449,11 @@ BEGIN
     WHERE distribution_plan.id = d.id;
 
     SELECT COALESCE(MAX(plan_seq), 0) INTO max_dp FROM distribution_plan;
-    PERFORM setval('distribution_plan_seq', max_dp);
+    IF max_dp > 0 THEN
+        PERFORM setval('distribution_plan_seq', max_dp);
+    ELSE
+        PERFORM setval('distribution_plan_seq', 1, false);
+    END IF;
 END $$;
 
 -- ================================
