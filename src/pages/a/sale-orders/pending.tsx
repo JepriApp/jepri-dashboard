@@ -1,9 +1,10 @@
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import React, { ReactElement } from "react";
-import { Table, Tag } from "antd";
+import { Table, Tag, Button } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { getPendingOrdersForAdmin, type SaleOrder } from "@/services/supabase.service";
+import Link from "next/link";
 
 // Página enfocada en: seleccionar órdenes y crear el distribution plan
 
@@ -54,6 +55,11 @@ const PlanningPage = () => {
 
   return (
     <>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+        <Link href="/a/sale-orders/create">
+          <Button type="primary">Crear orden</Button>
+        </Link>
+      </div>
       <Table
         loading={isLoading}
         dataSource={orders}
