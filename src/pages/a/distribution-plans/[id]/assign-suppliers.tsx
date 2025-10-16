@@ -5,6 +5,7 @@ import {
   Typography,
   Card,
   Descriptions,
+  Collapse,
   Row,
   Col,
   Layout,
@@ -12,6 +13,10 @@ import {
   theme,
   Button,
   Checkbox,
+  Drawer,
+  InputNumber,
+  Space,
+  Alert,
 } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/router";
@@ -190,6 +195,9 @@ const AssignSuppliersPage = () => {
     [itemsFlat]
   );
 
+  const { data: offers = [], isLoading: offersLoading } =
+    useOffersForProducts(productIds);
+
   const uniqueProductsCount = useMemo(
     () =>
       Array.from(new Set(itemsFlat.map((i) => i.product_id))).filter(Boolean)
@@ -259,6 +267,120 @@ const AssignSuppliersPage = () => {
     [selectedOrderId, selectedOrder, itemsFlat]
   );
   const { token } = theme.useToken();
+
+  const [assignDrawerOpen, setAssignDrawerOpen] = useState(false);
+  const [assignContext, setAssignContext] = useState<{
+    saleItemId: string;
+    productId: string;
+    productName: string;
+    saleItemQty: number;
+    productUnit: string;
+  } | null>(null);
+  const [selectedSupplierIds, setSelectedSupplierIds] = useState<Set<string>>(
+    new Set()
+  );
+  const [assignmentInputs, setAssignmentInputs] = useState<
+    Record<string, number>
+  >({});
+
+  const getAssignedQtyMapForItem = (saleItemId: string) => {
+    const map = new Map<string, number>();
+    orders.forEach((o) => {
+      (o.items || []).forEach((it: any) => {
+        if (String(it.id) !== String(saleItemId)) return;
+        const links = Array.isArray(it.fulfillment) ? it.fulfillment : [];
+        links.forEach((f: any) => {
+          const supplierId = f?.purchase_item?.purchase_order?.supplier?.id;
+          const qty = Number(f?.quantity || 0);
+          if (!supplierId) return;
+          map.set(supplierId, (map.get(supplierId) || 0) + qty);
+        });
+      });
+    });
+    return map;
+  };
+
+  const getTotalAssignedQtyForItem = (saleItemId: string) => {
+    let total = 0;
+    orders.forEach((o) => {
+      (o.items || []).forEach((it: any) => {
+        if (String(it.id) !== String(saleItemId)) return;
+        const links = Array.isArray(it.fulfillment) ? it.fulfillment : [];
+        links.forEach((f: any) => {
+          total += Number(f?.quantity || 0);
+        });
+      });
+    });
+    return total;
+  };
+
+  const openAssignDrawer = (item: any) => {
+    const ctx = {
+      saleItemId: String(item.id),
+      productId: String(item.product_id),
+      productName: String(item.product?.name || "Producto"),
+      saleItemQty: Number(item.quantity || 0),
+      productUnit: String(item.product?.unit || ""),
+    };
+    setAssignContext(ctx);
+    const assignedMap = getAssignedQtyMapForItem(ctx.saleItemId);
+    const preselected = Array.from(assignedMap.entries())
+      .filter(([, qty]) => Number(qty) > 0)
+      .map(([sid]) => sid);
+    setSelectedSupplierIds(new Set(preselected));
+    setAssignmentInputs({});
+    setAssignDrawerOpen(true);
+  };
+
+  const toggleSupplierSelection = (sid: string, checked: boolean) => {
+    setSelectedSupplierIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(sid);
+      else next.delete(sid);
+      return next;
+    });
+  };
+
+  const offersForCurrentProduct = useMemo(
+    () =>
+      assignContext
+        ? (offers || []).filter(
+            (o: any) => String(o.product_id) === String(assignContext.productId)
+          )
+        : [],
+    [assignContext, offers]
+  );
+
+  const assignedQtyMap = useMemo(
+    () =>
+      assignContext
+        ? getAssignedQtyMapForItem(assignContext.saleItemId)
+        : new Map<string, number>(),
+    [assignContext, orders]
+  );
+
+  const remainingQty = useMemo(() => {
+    if (!assignContext) return 0;
+    const already = getTotalAssignedQtyForItem(assignContext.saleItemId);
+    return Math.max(
+      0,
+      Number(assignContext.saleItemQty || 0) - Number(already || 0)
+    );
+  }, [assignContext]);
+
+  const plannedAssignSum = useMemo(() => {
+    if (!assignContext) return 0;
+    return (offersForCurrentProduct || []).reduce((sum: number, o: any) => {
+      const v = Number(assignmentInputs[o.supplier_id] || 0);
+      return sum + (isNaN(v) ? 0 : v);
+    }, 0);
+  }, [assignContext, offersForCurrentProduct, assignmentInputs]);
+
+  const handleSaveAssignments = () => {
+    // TODO: Integrar persistencia en Supabase según el modelo (purchase_item / fulfillment)
+    // Por ahora, sólo cerramos el Drawer.
+    setAssignDrawerOpen(false);
+  };
   return (
     <Layout hasSider>
       <Sider
@@ -330,104 +452,271 @@ const AssignSuppliersPage = () => {
           overflow: "auto",
           height: "100vh",
           position: "sticky",
-          padding: 4
+          padding: 4,
         }}
       >
         <Content>
-          <Row gutter={[16, 16]}>
-            <Col xs={24} md={16}>
-              <Card
-                title="Ítems del pedido"
-                size="small"
-                extra={
-                  <Typography.Text type="secondary">
-                    {selectedOrder
-                      ? `Orden ${selectedOrder.order_code} — ${
-                          selectedOrder.user?.name ?? "—"
-                        } (${selectedOrder.items?.length ?? 0} ítems)`
-                      : "Mostrando todos"}
-                  </Typography.Text>
-                }
-              >
-                <Table
-                  dataSource={itemsToShow}
-                  rowKey="id"
-                  pagination={false}
-                  size="small"
-                  columns={
-                    [
-                      {
-                        title: "Producto",
-                        dataIndex: ["product", "name"],
-                        key: "product_name",
-                      },
-                      {
-                        title: "Cant./Unidad",
-                        key: "quantity_unit",
-                        render: (_: unknown, it: any) =>
-                          `${Number(it.quantity || 0)} ${
-                            it.product?.unit ?? ""
-                          }`,
-                      },
-                    ] as any
-                  }
-                />
-              </Card>
-            </Col>
-
-            <Col xs={24} md={8}>
-              <Card title="Resumen proveedores" size="small">
-                {assignedBySupplier.length === 0 ? (
-                  <Typography.Text type="secondary">
-                    No hay vínculos registrados
-                  </Typography.Text>
-                ) : (
-                  <Table
-                    dataSource={assignedBySupplier}
-                    rowKey={(r) => r.name}
-                    pagination={false}
-                    size="small"
-                    columns={
-                      [
-                        {
-                          title: "Proveedor",
-                          dataIndex: "name",
-                          key: "name",
-                        },
-                        {
-                          title: "Asignado",
-                          dataIndex: "totalQty",
-                          key: "totalQty",
-                        },
-                        {
-                          title: "Costo (estim.)",
-                          key: "totalCost",
-                          render: (_: unknown, r: any) =>
-                            formatPriceAccounting(Number(r.totalCost || 0)),
-                        },
-                        {
-                          title: "POs",
-                          key: "orders",
-                          render: (_: unknown, r: any) =>
-                            (r.orders || []).join(", "),
-                        },
-                      ] as any
-                    }
-                  />
-                )}
-                <Descriptions size="small" column={1} style={{ marginTop: 12 }}>
-                  <Descriptions.Item label="Productos únicos">
-                    {uniqueProductsCount}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="Estimado ventas">
-                    {formatPriceAccounting(Number(totalSalesEstimate || 0))}
-                  </Descriptions.Item>
-                </Descriptions>
-              </Card>
-            </Col>
-          </Row>
+          <Collapse
+            defaultActiveKey={["resumenProveedores"]}
+            items={[
+              {
+                key: "resumenProveedores",
+                label: "Resumen proveedores",
+                children: (
+                  <>
+                    {assignedBySupplier.length === 0 ? (
+                      <Typography.Text type="secondary">
+                        No hay vínculos registrados
+                      </Typography.Text>
+                    ) : (
+                      <Table
+                        dataSource={assignedBySupplier}
+                        rowKey={(r) => r.name}
+                        pagination={false}
+                        size="small"
+                        columns={
+                          [
+                            {
+                              title: "Proveedor",
+                              dataIndex: "name",
+                              key: "name",
+                            },
+                            {
+                              title: "Asignado",
+                              dataIndex: "totalQty",
+                              key: "totalQty",
+                            },
+                            {
+                              title: "Costo (estim.)",
+                              key: "totalCost",
+                              render: (_: unknown, r: any) =>
+                                formatPriceAccounting(Number(r.totalCost || 0)),
+                            },
+                            {
+                              title: "POs",
+                              key: "orders",
+                              render: (_: unknown, r: any) =>
+                                (r.orders || []).join(", "),
+                            },
+                          ] as any
+                        }
+                      />
+                    )}
+                    <Descriptions size="small" column={1} style={{ marginTop: 12 }}>
+                      <Descriptions.Item label="Productos únicos">
+                        {uniqueProductsCount}
+                      </Descriptions.Item>
+                      <Descriptions.Item label="Estimado ventas">
+                        {formatPriceAccounting(Number(totalSalesEstimate || 0))}
+                      </Descriptions.Item>
+                    </Descriptions>
+                  </>
+                ),
+              },
+            ]}
+          />
+          <Card
+            title="Ítems del pedido"
+            size="small"
+            extra={
+              <Typography.Text type="secondary">
+                {selectedOrder
+                  ? `Orden ${selectedOrder.order_code} — ${
+                      selectedOrder.user?.name ?? "—"
+                    } (${selectedOrder.items?.length ?? 0} ítems)`
+                  : "Mostrando todos"}
+              </Typography.Text>
+            }
+          >
+            <Table
+              dataSource={itemsToShow}
+              rowKey="id"
+              pagination={false}
+              size="small"
+              columns={
+                [
+                  {
+                    title: "Producto",
+                    dataIndex: ["product", "name"],
+                    key: "product_name",
+                  },
+                  {
+                    title: "Cant./Unidad",
+                    key: "quantity_unit",
+                    render: (_: unknown, it: any) =>
+                      `${Number(it.quantity || 0)} ${it.product?.unit ?? ""}`,
+                  },
+                  {
+                    title: "Asignar proveedores",
+                    key: "assign_suppliers",
+                    render: (_: unknown, it: any) => (
+                      <Button
+                        size="small"
+                        type="primary"
+                        onClick={() => openAssignDrawer(it)}
+                      >
+                        Asignar
+                      </Button>
+                    ),
+                  },
+                ] as any
+              }
+            />
+          </Card>
         </Content>
       </Layout>
+      <Drawer
+        placement="right"
+        width={440}
+        title={
+          assignContext
+            ? `Asignar proveedores — ${assignContext.productName}`
+            : "Asignar proveedores"
+        }
+        open={assignDrawerOpen}
+        onClose={() => setAssignDrawerOpen(false)}
+        styles={{ body: { padding: 0 } }}
+        extra={
+          <Space>
+            <Button onClick={() => setAssignDrawerOpen(false)}>Cancelar</Button>
+            <Button
+              type="primary"
+              disabled={plannedAssignSum <= 0}
+              onClick={handleSaveAssignments}
+            >
+              Guardar
+            </Button>
+          </Space>
+        }
+      >
+        {!assignContext ? (
+          <Typography.Text type="secondary">
+            Selecciona un ítem del pedido para asignar proveedores.
+          </Typography.Text>
+        ) : offersLoading ? (
+          <Typography.Text type="secondary">
+            Cargando proveedores...
+          </Typography.Text>
+        ) : offersForCurrentProduct.length === 0 ? (
+          <Typography.Text type="secondary">
+            No hay proveedores disponibles para este producto.
+          </Typography.Text>
+        ) : (
+          <>
+            {plannedAssignSum > remainingQty && (
+              <Alert
+                message="Advertencia: la cantidad por asignar excede la disponible del ítem."
+                type="warning"
+                banner
+              />
+            )}
+            <div style={{ padding: 12 }}>
+              <div style={{ marginBottom: 12 }}>
+                <Typography.Text>
+                  Cantidad requerida:{" "}
+                  <strong>
+                    {remainingQty} {assignContext?.productUnit || ""}
+                  </strong>
+                </Typography.Text>
+                <br />
+                <Typography.Text type="secondary">
+                  Por asignar: {Math.max(0, remainingQty - plannedAssignSum)} —
+                  Restante: {plannedAssignSum}
+                </Typography.Text>
+              </div>
+              <List
+                dataSource={offersForCurrentProduct as any}
+                rowKey={(o: any) => o.id}
+                renderItem={(o: any) => {
+                  const assignedQty = assignedQtyMap.get(o.supplier_id) || 0;
+                  const checked = selectedSupplierIds.has(o.supplier_id);
+                  const value = Number(assignmentInputs[o.supplier_id] || 0);
+                  return (
+                    <List.Item>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: 8,
+                          width: "100%",
+                        }}
+                      >
+                        <Checkbox
+                          checked={checked || value > 0}
+                          onChange={(e) => {
+                            const isChecked = e.target.checked;
+                            toggleSupplierSelection(o.supplier_id, isChecked);
+                            if (!isChecked) {
+                              // Si se desmarca, resetea la cantidad a 0
+                              setAssignmentInputs((prev) => ({
+                                ...prev,
+                                [o.supplier_id]: 0,
+                              }));
+                            }
+                          }}
+                        />
+                        <div style={{ flex: 1 }}>
+                          <Typography.Text strong>
+                            {o.supplier_name}
+                          </Typography.Text>
+                          <div>
+                            <Typography.Text type="secondary">
+                              Precio estimado:{" "}
+                              {formatPriceAccounting(Number(o.price || 0))}
+                            </Typography.Text>
+                          </div>
+                          <div>
+                            <Typography.Text type="secondary">
+                              Ya asignado: {Number(assignedQty || 0)}
+                            </Typography.Text>
+                          </div>
+                        </div>
+                        <InputNumber
+                          min={0}
+                          value={value}
+                          onChange={(val) => {
+                            const num = Number(val || 0);
+                            setAssignmentInputs((prev) => ({
+                              ...prev,
+                              [o.supplier_id]: isNaN(num) ? 0 : num,
+                            }));
+                            if (num > 0) {
+                              setSelectedSupplierIds((prev) =>
+                                new Set(prev).add(o.supplier_id)
+                              );
+                            }
+                          }}
+                          size="small"
+                          style={{ width: 100, marginTop: 4 }}
+                        />
+                      </div>
+                    </List.Item>
+                  );
+                }}
+              />
+              <div
+                style={{
+                  marginTop: 16,
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: 8,
+                }}
+              >
+                <Button onClick={() => setAssignDrawerOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button
+                  type="primary"
+                  disabled={plannedAssignSum <= 0}
+                  onClick={handleSaveAssignments}
+                >
+                  Guardar
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
+      </Drawer>
     </Layout>
   );
 };
