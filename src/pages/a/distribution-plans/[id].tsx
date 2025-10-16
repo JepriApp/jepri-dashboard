@@ -673,7 +673,7 @@ const PlanEditorPage = () => {
                                 const qty = Number(f?.quantity || 0);
                                 const unit = it?.product?.unit ?? "";
                                 const label = [
-                                  poCode ? `PO ${poCode}` : "PO",
+                                  poCode ? `${poCode}` : "",
                                   supplier,
                                   `${qty} ${unit}`,
                                 ]
@@ -760,7 +760,7 @@ const PlanEditorPage = () => {
                                   const qty = Number(f?.quantity || 0);
                                   const unit = f?.sale_item?.product?.unit ?? "";
                                   const label = [
-                                    soCode ? `SO ${soCode}` : "SO",
+                                    soCode ? ` ${soCode}` : "",
                                     `${qty} ${unit}`,
                                   ]
                                     .filter(Boolean)

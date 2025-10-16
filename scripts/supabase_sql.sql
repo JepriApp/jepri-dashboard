@@ -116,46 +116,11 @@ CREATE TABLE sale_item (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Tabla de órdenes de compra (a proveedores)
-CREATE TABLE purchase_order (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    supplier_id UUID NOT NULL REFERENCES supplier(id) ON DELETE RESTRICT,
-    distribution_plan_id UUID NOT NULL REFERENCES distribution_plan(id) ON DELETE RESTRICT,
-    order_date TIMESTAMPTZ DEFAULT NOW(),
-    status purchase_order_status NOT NULL DEFAULT 'created',
-    notes TEXT,
-    created_by UUID,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    received_at TIMESTAMPTZ,
-    -- Identificador humano: número secuencial global (ej: 000123)
-    purchase_seq INTEGER,
-    purchase_code TEXT UNIQUE
-);
+-- (purchase_order se crea más abajo, después de distribution_plan)
 
--- Tabla de items de compra
-CREATE TABLE purchase_item (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    purchase_order_id UUID NOT NULL REFERENCES purchase_order(id) ON DELETE CASCADE,
-    product_id UUID NOT NULL REFERENCES product(id),
-    supplier_id UUID NOT NULL REFERENCES supplier(id),
-    quantity DECIMAL(12,2) NOT NULL,
-    estimated_price DECIMAL(12,2),
-    actual_price DECIMAL(12,2),
-    received_quantity DECIMAL(12,2),
-    received_by UUID,
-    received_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- (purchase_item se crea más abajo, después de purchase_order)
 
--- Tabla de cumplimiento (relación entre ventas y compras)
-CREATE TABLE fulfillment (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    sale_item_id UUID NOT NULL REFERENCES sale_item(id) ON DELETE CASCADE,
-    purchase_item_id UUID NOT NULL REFERENCES purchase_item(id) ON DELETE CASCADE,
-    quantity DECIMAL(12,2) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE (sale_item_id, purchase_item_id)
-);
+-- (fulfillment se crea más abajo, después de purchase_item)
 
 -- Tabla de carrito de compras (temporal antes de crear orden)
 CREATE TABLE shopping_cart (
@@ -173,17 +138,10 @@ CREATE INDEX idx_offer_product ON offer(product_id);
 CREATE INDEX idx_offer_supplier ON offer(supplier_id);
 CREATE INDEX idx_sale_item_order ON sale_item(sale_order_id);
 CREATE INDEX idx_sale_item_product ON sale_item(product_id);
-CREATE INDEX idx_purchase_item_order ON purchase_item(purchase_order_id);
-CREATE INDEX idx_purchase_item_product ON purchase_item(product_id);
-CREATE INDEX idx_purchase_item_supplier ON purchase_item(supplier_id);
-CREATE INDEX idx_purchase_order_plan ON purchase_order(distribution_plan_id);
-CREATE INDEX idx_fulfillment_sale_item ON fulfillment(sale_item_id);
-CREATE INDEX idx_fulfillment_purchase_item ON fulfillment(purchase_item_id);
 CREATE INDEX idx_shopping_cart_customer ON shopping_cart(customer_id);
 CREATE INDEX idx_shopping_cart_product ON shopping_cart(product_id);
 
 -- Índices para consultas por fecha (reportería)
-CREATE INDEX idx_purchase_order_date ON purchase_order(order_date);
 CREATE INDEX idx_sale_order_date ON sale_order(order_date);
 CREATE INDEX idx_sale_order_delivery ON sale_order(delivery_date);
 CREATE INDEX idx_sale_order_customer ON sale_order(customer_id);
@@ -298,6 +256,56 @@ CREATE INDEX idx_distribution_plan_order_plan ON distribution_plan_order(distrib
 CREATE INDEX idx_distribution_plan_order_assignee ON distribution_plan_order(assigned_user_id);
 -- Cardinalidad: cada sale_order sólo puede estar en un plan
 CREATE UNIQUE INDEX idx_distribution_plan_order_sale_order_unique ON distribution_plan_order(sale_order_id);
+
+-- Tabla de órdenes de compra (a proveedores)
+CREATE TABLE purchase_order (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    supplier_id UUID NOT NULL REFERENCES supplier(id) ON DELETE RESTRICT,
+    distribution_plan_id UUID NOT NULL REFERENCES distribution_plan(id) ON DELETE RESTRICT,
+    order_date TIMESTAMPTZ DEFAULT NOW(),
+    status purchase_order_status NOT NULL DEFAULT 'created',
+    notes TEXT,
+    created_by UUID,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    received_at TIMESTAMPTZ,
+    -- Identificador humano: número secuencial global (ej: 000123)
+    purchase_seq INTEGER,
+    purchase_code TEXT UNIQUE
+);
+
+-- Tabla de items de compra
+CREATE TABLE purchase_item (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    purchase_order_id UUID NOT NULL REFERENCES purchase_order(id) ON DELETE CASCADE,
+    product_id UUID NOT NULL REFERENCES product(id),
+    supplier_id UUID NOT NULL REFERENCES supplier(id),
+    quantity DECIMAL(12,2) NOT NULL,
+    estimated_price DECIMAL(12,2),
+    actual_price DECIMAL(12,2),
+    received_quantity DECIMAL(12,2),
+    received_by UUID,
+    received_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Tabla de cumplimiento (relación entre ventas y compras)
+CREATE TABLE fulfillment (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    sale_item_id UUID NOT NULL REFERENCES sale_item(id) ON DELETE CASCADE,
+    purchase_item_id UUID NOT NULL REFERENCES purchase_item(id) ON DELETE CASCADE,
+    quantity DECIMAL(12,2) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (sale_item_id, purchase_item_id)
+);
+
+-- Índices reubicados para purchase_item, purchase_order y fulfillment
+CREATE INDEX idx_purchase_item_order ON purchase_item(purchase_order_id);
+CREATE INDEX idx_purchase_item_product ON purchase_item(product_id);
+CREATE INDEX idx_purchase_item_supplier ON purchase_item(supplier_id);
+CREATE INDEX idx_purchase_order_plan ON purchase_order(distribution_plan_id);
+CREATE INDEX idx_purchase_order_date ON purchase_order(order_date);
+CREATE INDEX idx_fulfillment_sale_item ON fulfillment(sale_item_id);
+CREATE INDEX idx_fulfillment_purchase_item ON fulfillment(purchase_item_id);
 
 -- Vistas para totales y estado efectivo (ubicadas después de crear distribution_plan y distribution_plan_order)
 -- Vista para calcular el total de las órdenes de venta
@@ -649,3 +657,17 @@ SELECT po2.id,
        4,
        (SELECT reference_price FROM product WHERE name = 'Ajo')
 FROM po2;
+
+-- Crear fulfillments de ejemplo enlazando items de venta del plan al ítem de compra del mismo producto
+INSERT INTO fulfillment (sale_item_id, purchase_item_id, quantity)
+SELECT si.id, pi.id, LEAST(si.quantity, pi.quantity)
+FROM distribution_plan dp
+JOIN distribution_plan_order dpo ON dpo.distribution_plan_id = dp.id
+JOIN sale_item si ON si.sale_order_id = dpo.sale_order_id
+JOIN purchase_order po ON po.distribution_plan_id = dp.id
+JOIN purchase_item pi ON pi.purchase_order_id = po.id AND pi.product_id = si.product_id
+WHERE dp.plan_date = CURRENT_DATE + INTERVAL '1 day'
+  AND NOT EXISTS (
+    SELECT 1 FROM fulfillment f
+    WHERE f.sale_item_id = si.id AND f.purchase_item_id = pi.id
+  );

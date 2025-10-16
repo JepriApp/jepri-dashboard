@@ -17,9 +17,12 @@ import {
   InputNumber,
   Space,
   Alert,
+  Progress,
   message,
+  Tag,
+  Tooltip,
 } from "antd";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/router";
 import { supabase } from "@/services/supabase.client";
 import type { SaleOrder, SaleItem } from "@/services/supabase.service";
@@ -28,7 +31,6 @@ import {
   createPurchaseItem,
   upsertFulfillment,
 } from "@/services/supabase.service";
-import { queryClient } from "@/services/query-client";
 import { formatPriceAccounting } from "@/utils/formatPrice";
 const { Header, Content, Footer, Sider } = Layout;
 type PlanOrder = Pick<
@@ -184,11 +186,61 @@ function useOffersForProducts(productIds: string[]) {
     },
   });
 }
+
+function usePurchaseOrdersForPlan(distributionPlanId?: string) {
+  return useQuery<any[]>({
+    queryKey: ["poForPlanAssign", distributionPlanId],
+    enabled: !!distributionPlanId,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("purchase_order")
+        .select(
+          `
+          id,
+          status,
+          created_at,
+          purchase_code,
+          supplier:supplier_id ( id, name ),
+          purchase_item:purchase_item (
+            id,
+            product_id,
+            quantity,
+            estimated_price,
+            actual_price,
+            product:product_id (
+              id,
+              name,
+              unit
+            ),
+            fulfillment:fulfillment (
+              id,
+              quantity,
+              sale_item:sale_item_id (
+                id,
+                quantity,
+                sale_order:sale_order_id ( id, order_code, customer:customer_id ( name ) ),
+                product:product_id ( id, name, unit )
+              )
+            )
+          )
+        `
+        )
+        .eq("distribution_plan_id", distributionPlanId)
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      return data || [];
+    },
+  });
+}
 const AssignSuppliersPage = () => {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const planId = router.query.id as string | undefined;
   const { data, isLoading } = usePlanData(planId);
   const orders = data?.orders || [];
+  const { data: relatedPOs = [], isLoading: posLoading } =
+    usePurchaseOrdersForPlan(planId);
 
   const itemsFlat = useMemo(() => {
     const all: SaleItem[] = [];
@@ -335,7 +387,12 @@ const AssignSuppliersPage = () => {
       .filter(([, qty]) => Number(qty) > 0)
       .map(([sid]) => sid);
     setSelectedSupplierIds(new Set(preselected));
-    setAssignmentInputs({});
+    // Prefill inputs with already assigned quantities so the UI reflects current state
+    const initialInputs: Record<string, number> = {};
+    assignedMap.forEach((qty, sid) => {
+      initialInputs[sid] = Number(qty || 0);
+    });
+    setAssignmentInputs(initialInputs);
     setAssignDrawerOpen(true);
   };
 
@@ -376,12 +433,20 @@ const AssignSuppliersPage = () => {
   }, [assignContext]);
 
   const plannedAssignSum = useMemo(() => {
+    // Sum only the positive delta the user intends to add beyond already assigned
     if (!assignContext) return 0;
     return (offersForCurrentProduct || []).reduce((sum: number, o: any) => {
-      const v = Number(assignmentInputs[o.supplier_id] || 0);
-      return sum + (isNaN(v) ? 0 : v);
+      const current = Number(assignmentInputs[o.supplier_id] || 0);
+      const already = Number(assignedQtyMap.get(o.supplier_id) || 0);
+      const delta = current - already;
+      return sum + (delta > 0 ? delta : 0);
     }, 0);
-  }, [assignContext, offersForCurrentProduct, assignmentInputs]);
+  }, [
+    assignContext,
+    offersForCurrentProduct,
+    assignmentInputs,
+    assignedQtyMap,
+  ]);
 
   const handleSaveAssignments = async () => {
     if (!assignContext) return;
@@ -390,40 +455,144 @@ const AssignSuppliersPage = () => {
         ? `Compra para plan ${data.plan.plan_code}`
         : `Compra para plan ${String(planId || "")}`;
 
-      const entries = Object.entries(assignmentInputs).filter(
-        ([, qty]) => Number(qty) > 0
+      // Preparar mapa de cantidades actuales por proveedor para el ítem
+      const alreadyMap = getAssignedQtyMapForItem(assignContext.saleItemId);
+      const supplierIds = Array.from(
+        new Set([
+          ...(offersForCurrentProduct || []).map((o: any) => o.supplier_id),
+          ...Array.from(alreadyMap.keys()),
+        ])
       );
 
+      // Para cada proveedor involucrado, ajustar al valor deseado (puede subir o bajar)
       await Promise.all(
-        entries.map(async ([supplierId, qty]) => {
-          const po = await getOrCreatePurchaseOrderForSupplier({
-            supplierId,
-            distributionPlanId: String(planId || ""),
-            notes,
-          });
-          const estimatedPrice = (offers || []).find(
-            (o) =>
-              String(o.product_id) === String(assignContext.productId) &&
-              String(o.supplier_id) === String(supplierId)
-          )?.price;
-          const pi = await createPurchaseItem({
-            purchaseOrderId: String(po.id),
-            productId: String(assignContext.productId),
-            supplierId: String(supplierId),
-            quantity: Number(qty),
-            estimatedPrice: estimatedPrice ?? null,
-          });
-          await upsertFulfillment({
-            saleItemId: String(assignContext.saleItemId),
-            purchaseItemId: String(pi.id),
-            quantity: Number(qty),
-          });
+        supplierIds.map(async (supplierId) => {
+          const desired = Number(assignmentInputs[supplierId] || 0);
+          const already = Number(alreadyMap.get(supplierId) || 0);
+          const delta = desired - already; // puede ser positivo, cero o negativo
+
+          // 1) Intentar reutilizar el PI que ya está vinculado (fulfillment) para este sale_item
+          let piExisting: any | null = null;
+          let po: any | null = null;
+          const { data: existingFulLinks, error: findFulErr } = await supabase
+            .from("fulfillment")
+            .select(
+              "id, quantity, purchase_item:purchase_item(id, purchase_order_id, supplier_id, product_id)"
+            )
+            .eq("sale_item_id", String(assignContext.saleItemId))
+            .eq("purchase_item.product_id", String(assignContext.productId))
+            .eq("purchase_item.supplier_id", String(supplierId))
+            .order("id", { ascending: false })
+            .limit(1);
+          if (findFulErr) throw findFulErr;
+          if (existingFulLinks && existingFulLinks.length > 0) {
+            const link = existingFulLinks[0];
+            piExisting = link.purchase_item;
+            po = { id: piExisting?.purchase_order_id };
+          }
+
+          // 2) Si no hay vínculo existente, buscar PO del proveedor para el plan; si no, crear
+          if (!po) {
+            const { data: existingPOs, error: findPoErr } = await supabase
+              .from("purchase_order")
+              .select("id, status")
+              .eq("supplier_id", supplierId)
+              .eq("distribution_plan_id", String(planId || ""))
+              .order("created_at", { ascending: false })
+              .limit(1);
+            if (findPoErr) throw findPoErr;
+            if (existingPOs && existingPOs.length > 0) {
+              po = existingPOs[0];
+            } else {
+              po = await getOrCreatePurchaseOrderForSupplier({
+                supplierId,
+                distributionPlanId: String(planId || ""),
+                notes,
+              });
+            }
+          }
+
+          // 3) Si no había PI vinculado, buscar/crear el PI de ese producto en la PO
+          if (!piExisting) {
+            const { data: piExistingList, error: findPiErr } = await supabase
+              .from("purchase_item")
+              .select("id, quantity")
+              .eq("purchase_order_id", String(po.id))
+              .eq("supplier_id", String(supplierId))
+              .eq("product_id", String(assignContext.productId))
+              .order("id", { ascending: false })
+              .limit(1);
+            if (findPiErr) throw findPiErr;
+            piExisting =
+              piExistingList && piExistingList.length > 0
+                ? piExistingList[0]
+                : null;
+          }
+
+          // 3) Actualizar fulfillment del sale_item hacia ese PI (crear/actualizar/eliminar)
+          if (piExisting) {
+            // Fulfillment: si desired > 0, upsert; si 0, eliminar
+            if (desired > 0) {
+              await upsertFulfillment({
+                saleItemId: String(assignContext.saleItemId),
+                purchaseItemId: String(piExisting.id),
+                quantity: Number(desired),
+              });
+            } else {
+              // Eliminar vínculo si se reduce a cero
+              const { error: delFulErr } = await supabase
+                .from("fulfillment")
+                .delete()
+                .eq("sale_item_id", String(assignContext.saleItemId))
+                .eq("purchase_item_id", String(piExisting.id));
+              if (delFulErr) throw delFulErr;
+            }
+
+            // 4) Ajustar cantidad del purchase_item sumando el delta
+            const nextPiQty = Math.max(
+              0,
+              Number(piExisting.quantity || 0) + Number(delta || 0)
+            );
+            const { error: updPiErr } = await supabase
+              .from("purchase_item")
+              .update({ quantity: nextPiQty })
+              .eq("id", String(piExisting.id));
+            if (updPiErr) throw updPiErr;
+          } else {
+            // No existe PI: crear sólo si se desea cantidad positiva
+            if (desired > 0) {
+              const estimatedPrice = (offers || []).find(
+                (o) =>
+                  String(o.product_id) === String(assignContext.productId) &&
+                  String(o.supplier_id) === String(supplierId)
+              )?.price;
+              const pi = await createPurchaseItem({
+                purchaseOrderId: String(po.id),
+                productId: String(assignContext.productId),
+                supplierId: String(supplierId),
+                quantity: Number(desired),
+                estimatedPrice: estimatedPrice ?? null,
+              });
+              await upsertFulfillment({
+                saleItemId: String(assignContext.saleItemId),
+                purchaseItemId: String(pi.id),
+                quantity: Number(desired),
+              });
+            }
+          }
         })
       );
 
-      message.success("Asignaciones guardadas y órdenes de compra creadas.");
+      message.success(
+        "Asignaciones guardadas y órdenes de compra actualizadas."
+      );
       setAssignDrawerOpen(false);
-      queryClient.invalidateQueries({ queryKey: ["assignSuppliersPlan", planId] });
+      queryClient.invalidateQueries({
+        queryKey: ["assignSuppliersPlan", planId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["poForPlanAssign", planId],
+      });
     } catch (err) {
       console.error("Error guardando asignaciones", err);
       message.error("Error al guardar asignaciones.");
@@ -512,45 +681,193 @@ const AssignSuppliersPage = () => {
                 label: "Resumen proveedores",
                 children: (
                   <>
-                    {assignedBySupplier.length === 0 ? (
+                    {posLoading ? (
                       <Typography.Text type="secondary">
-                        No hay vínculos registrados
+                        Cargando órdenes de compra…
+                      </Typography.Text>
+                    ) : relatedPOs.length === 0 ? (
+                      <Typography.Text type="secondary">
+                        No hay órdenes de compra para este plan
                       </Typography.Text>
                     ) : (
                       <Table
-                        dataSource={assignedBySupplier}
-                        rowKey={(r) => r.name}
+                        dataSource={relatedPOs}
+                        rowKey={(r) => r.id}
                         pagination={false}
                         size="small"
                         columns={
                           [
                             {
+                              title: "Código de órden de compra",
+                              dataIndex: "purchase_code",
+                              key: "purchase_code",
+                            },
+                            {
                               title: "Proveedor",
-                              dataIndex: "name",
-                              key: "name",
+                              dataIndex: ["supplier", "name"],
+                              key: "supplier_name",
                             },
                             {
-                              title: "Asignado",
-                              dataIndex: "totalQty",
-                              key: "totalQty",
+                              title: "Total",
+                              key: "po_total",
+                              render: (_: unknown, record: any) => {
+                                const items = record.purchase_item || [];
+                                const total = items.reduce(
+                                  (sum: number, it: any) =>
+                                    sum +
+                                    Number(it.quantity || 0) *
+                                      Number(
+                                        it.actual_price ??
+                                          it.estimated_price ??
+                                          0
+                                      ),
+                                  0
+                                );
+                                return formatPriceAccounting(total);
+                              },
                             },
                             {
-                              title: "Costo (estim.)",
-                              key: "totalCost",
-                              render: (_: unknown, r: any) =>
-                                formatPriceAccounting(Number(r.totalCost || 0)),
-                            },
-                            {
-                              title: "POs",
-                              key: "orders",
-                              render: (_: unknown, r: any) =>
-                                (r.orders || []).join(", "),
+                              title: "Vínculos",
+                              key: "po_links",
+                              render: (_: unknown, record: any) => {
+                                const items = Array.isArray(
+                                  record.purchase_item
+                                )
+                                  ? record.purchase_item
+                                  : [];
+                                const links = items.flatMap((it: any) =>
+                                  Array.isArray(it.fulfillment)
+                                    ? it.fulfillment.map((f: any) => ({
+                                        f,
+                                        it,
+                                      }))
+                                    : []
+                                );
+                                if (links.length === 0)
+                                  return (
+                                    <Typography.Text type="secondary">
+                                      —
+                                    </Typography.Text>
+                                  );
+                                return (
+                                  <Space wrap size={4}>
+                                    {links.map(({ f, it }: any) => {
+                                      const soCode =
+                                        f?.sale_item?.sale_order?.order_code ??
+                                        "";
+                                      const qty = Number(f?.quantity || 0);
+                                      const unit =
+                                        f?.sale_item?.product?.unit ?? "";
+                                      const productName =
+                                        f?.sale_item?.product?.name ?? "";
+                                      const customerName =
+                                        f?.sale_item?.sale_order?.customer
+                                          ?.name ?? "";
+                                      const label = [
+                                        productName,
+                                        `${qty} ${unit}`,
+                                        customerName,
+                                      ]
+                                        .filter(Boolean)
+                                        .join(" · ");
+                                      return <Tag>{label}</Tag>;
+                                    })}
+                                  </Space>
+                                );
+                              },
                             },
                           ] as any
                         }
+                        expandable={{
+                          expandedRowRender: (po: any) => (
+                            <Table
+                              dataSource={po.purchase_item || []}
+                              rowKey="id"
+                              pagination={false}
+                              size="small"
+                              columns={
+                                [
+                                  {
+                                    title: "Producto",
+                                    dataIndex: ["product", "name"],
+                                    key: "product_name",
+                                  },
+                                  {
+                                    title: "Cant./Unidad",
+                                    key: "quantity_unit",
+                                    render: (_: unknown, it: any) =>
+                                      `${Number(it.quantity || 0)} ${
+                                        it.product?.unit ?? ""
+                                      }`,
+                                  },
+                                  {
+                                    title: "Precio",
+                                    key: "price",
+                                    render: (_: unknown, it: any) =>
+                                      formatPriceAccounting(
+                                        Number(
+                                          it.actual_price ??
+                                            it.estimated_price ??
+                                            0
+                                        )
+                                      ),
+                                  },
+                                  {
+                                    title: "Vínculos",
+                                    key: "pi_links",
+                                    render: (_: unknown, it: any) => {
+                                      const links = Array.isArray(
+                                        it.fulfillment
+                                      )
+                                        ? it.fulfillment
+                                        : [];
+                                      if (links.length === 0)
+                                        return (
+                                          <Typography.Text type="secondary">
+                                            —
+                                          </Typography.Text>
+                                        );
+                                      return (
+                                        <Space wrap size={4}>
+                                          {links.map((f: any) => {
+                                            const soCode =
+                                              f?.sale_item?.sale_order
+                                                ?.order_code ?? "";
+                                            const qty = Number(
+                                              f?.quantity || 0
+                                            );
+                                            const unit =
+                                              f?.sale_item?.product?.unit ?? "";
+                                            const customerName =
+                                              f?.sale_item?.sale_order?.customer
+                                                ?.name ?? "";
+                                            const label = [
+                                              soCode ? ` ${soCode}` : "",
+                                              `${qty} ${unit}`,
+                                              customerName,
+                                            ]
+                                              .filter(Boolean)
+                                              .join(" · ");
+                                            return (
+                                              <Tag color="blue">{label}</Tag>
+                                            );
+                                          })}
+                                        </Space>
+                                      );
+                                    },
+                                  },
+                                ] as any
+                              }
+                            />
+                          ),
+                        }}
                       />
                     )}
-                    <Descriptions size="small" column={1} style={{ marginTop: 12 }}>
+                    <Descriptions
+                      size="small"
+                      column={1}
+                      style={{ marginTop: 12 }}
+                    >
                       <Descriptions.Item label="Productos únicos">
                         {uniqueProductsCount}
                       </Descriptions.Item>
@@ -595,7 +912,75 @@ const AssignSuppliersPage = () => {
                       `${Number(it.quantity || 0)} ${it.product?.unit ?? ""}`,
                   },
                   {
-                    title: "Asignar proveedores",
+                    title: "Cumplimiento",
+                    key: "fulfillment_progress",
+                    render: (_: unknown, it: any) => {
+                      const totalQty = Number(it.quantity || 0);
+                      const assigned = Array.isArray(it.fulfillment)
+                        ? it.fulfillment.reduce(
+                            (sum: number, f: any) =>
+                              sum + Number(f?.quantity || 0),
+                            0
+                          )
+                        : 0;
+                      const percent =
+                        totalQty > 0
+                          ? Math.min(
+                              100,
+                              Math.round((assigned / totalQty) * 100)
+                            )
+                          : 0;
+                      return (
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                          }}
+                        >
+                          <Progress percent={percent} style={{ width: 140 }} />
+                          <Typography.Text type="secondary">
+                            {`${assigned} / ${totalQty} ${
+                              it.product?.unit ?? ""
+                            }`}
+                          </Typography.Text>
+                        </div>
+                      );
+                    },
+                  },
+                  {
+                    title: "Proveedores",
+                    key: "item_links",
+                    render: (_: unknown, it: any) => {
+                      const links = Array.isArray(it.fulfillment)
+                        ? it.fulfillment
+                        : [];
+                      if (links.length === 0)
+                        return (
+                          <Typography.Text type="secondary">—</Typography.Text>
+                        );
+                      return (
+                        <Space wrap size={4}>
+                          {links.map((f: any) => {
+                            const poCode =
+                              f?.purchase_item?.purchase_order?.purchase_code ??
+                              "";
+                            const supplier =
+                              f?.purchase_item?.purchase_order?.supplier
+                                ?.name ?? "";
+                            const qty = Number(f?.quantity || 0);
+                            const unit = it?.product?.unit ?? "";
+                            const label = [supplier, `${qty} ${unit}`]
+                              .filter(Boolean)
+                              .join(" · ");
+                            return <Tag>{label}</Tag>;
+                          })}
+                        </Space>
+                      );
+                    },
+                  },
+                  {
+                    title: "Accion",
                     key: "assign_suppliers",
                     render: (_: unknown, it: any) => (
                       <Button
@@ -627,11 +1012,7 @@ const AssignSuppliersPage = () => {
         extra={
           <Space>
             <Button onClick={() => setAssignDrawerOpen(false)}>Cancelar</Button>
-            <Button
-              type="primary"
-              disabled={plannedAssignSum <= 0}
-              onClick={handleSaveAssignments}
-            >
+            <Button type="primary" onClick={handleSaveAssignments}>
               Guardar
             </Button>
           </Space>
@@ -753,11 +1134,7 @@ const AssignSuppliersPage = () => {
                 <Button onClick={() => setAssignDrawerOpen(false)}>
                   Cancelar
                 </Button>
-                <Button
-                  type="primary"
-                  disabled={plannedAssignSum <= 0}
-                  onClick={handleSaveAssignments}
-                >
+                <Button type="primary" onClick={handleSaveAssignments}>
                   Guardar
                 </Button>
               </div>
