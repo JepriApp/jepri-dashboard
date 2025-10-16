@@ -80,6 +80,7 @@ const roleLabels: Record<string, string> = {
 interface DashboardLayoutProps {
   children: React.ReactNode;
   backButton?: boolean;
+  noStyle?: boolean;
 }
 
 const { Header, Content, Sider, Footer } = Layout;
@@ -88,6 +89,7 @@ const { Text, Title } = Typography;
 function DashboardLayout({
   children,
   backButton = false,
+  noStyle = false,
 }: DashboardLayoutProps) {
   const router = useRouter();
   const {
@@ -182,37 +184,43 @@ function DashboardLayout({
       </Sider>
       <Layout
         style={{
-          padding: "16px",
+          padding: noStyle ? "0" : "16px",
           marginLeft: sideMenuCollapsed
             ? SIDER_WIDTH["COLLAPSED"]
             : SIDER_WIDTH["EXPANDED"],
           width: "100%",
         }}
       >
-        <Header
-          style={{
-            backgroundColor: "transparent",
-            height: "auto",
-            lineHeight: "36px",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "space-between",
-              flexWrap: "wrap",
-              alignItems: "flex-start",
-              width: "100%",
-            }}
-          >
-            {/* <AutoBreadcrumb breadcrumItemTree={breadcrumItemTree} /> */}
-            {backButton && <GoBackButton />}
-            <AutoTitle titles={titles} subtitles={subtitles} />
-          </div>
-        </Header>
-        <Content style={{ margin: "24px 16px 0" }}>{children}</Content>
-        {footer}
+        {noStyle ? (
+          children
+        ) : (
+          <>
+            <Header
+              style={{
+                backgroundColor: "transparent",
+                height: "auto",
+                lineHeight: "36px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  alignItems: "flex-start",
+                  width: "100%",
+                }}
+              >
+                {/* <AutoBreadcrumb breadcrumItemTree={breadcrumItemTree} /> */}
+                {backButton && <GoBackButton />}
+                <AutoTitle titles={titles} subtitles={subtitles} />
+              </div>
+            </Header>
+            <Content style={{ margin: "24px 16px 0" }}>{children}</Content>
+            {footer}
+          </>
+        )}
       </Layout>
     </Layout>
   );

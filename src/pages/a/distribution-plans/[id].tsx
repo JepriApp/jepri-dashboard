@@ -14,6 +14,7 @@ import {
   Skeleton,
   Descriptions,
   Statistic,
+  Tooltip,
 } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
@@ -102,6 +103,19 @@ function usePlanData(planId?: string) {
                 description,
                 reference_price,
                 main_photo
+              ),
+              fulfillment:fulfillment (
+                id,
+                quantity,
+                purchase_item:purchase_item_id (
+                  id,
+                  quantity,
+                  purchase_order:purchase_order_id (
+                    id,
+                    purchase_code,
+                    supplier:supplier_id ( id, name )
+                  )
+                )
               )
             )
           )
@@ -182,6 +196,16 @@ function usePurchaseOrdersForDate(planDate?: string) {
               id,
               name,
               unit
+            ),
+            fulfillment:fulfillment (
+              id,
+              quantity,
+              sale_item:sale_item_id (
+                id,
+                quantity,
+                sale_order:sale_order_id ( id, order_code ),
+                product:product_id ( id, name, unit )
+              )
             )
           )
         `
@@ -431,6 +455,17 @@ const PlanEditorPage = () => {
       render: (t: number | undefined) => formatPriceAccounting(Number(t ?? 0)),
     },
     {
+      title: "Cargos",
+      key: "charges",
+      render: (_: unknown, record: PlanOrder) => (
+        <Typography.Text style={{ whiteSpace: "nowrap" }}>
+          Servicio: {formatPriceAccounting(Number(record.service_fee || 0))} 
+          <br/>
+          Domicilio: {formatPriceAccounting(Number(record.delivery_charge || 0))}
+        </Typography.Text>
+      ),
+    },
+    {
       title: "Total",
       dataIndex: "total",
       key: "total",
@@ -506,6 +541,9 @@ const PlanEditorPage = () => {
           </Button>
         )}
         <Button onClick={() => refetch()}>Refrescar</Button>
+        <Button onClick={() => router.push(`/a/distribution-plans/${planId}/assign-suppliers`)}>
+          Asignar proveedores
+        </Button>
       </Space>
 
       <Card title="Reporte del plan" style={{ marginBottom: 16 }}>
@@ -617,6 +655,46 @@ const PlanEditorPage = () => {
                           return formatPriceAccounting(subtotal);
                         },
                       },
+                      {
+                        title: "Vínculos",
+                        key: "item_links",
+                        render: (_: unknown, it: any) => {
+                          const links = Array.isArray(it.fulfillment)
+                            ? it.fulfillment
+                            : [];
+                          if (links.length === 0)
+                            return (
+                              <Typography.Text type="secondary">—</Typography.Text>
+                            );
+                          return (
+                            <Space wrap size={4}>
+                              {links.map((f: any) => {
+                                const poCode =
+                                  f?.purchase_item?.purchase_order?.purchase_code ?? "";
+                                const supplier =
+                                  f?.purchase_item?.purchase_order?.supplier?.name ?? "";
+                                const qty = Number(f?.quantity || 0);
+                                const unit = it?.product?.unit ?? "";
+                                const label = [
+                                  poCode ? `PO ${poCode}` : "PO",
+                                  supplier,
+                                  `${qty} ${unit}`,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ");
+                                return (
+                                  <Tooltip
+                                    key={`${it.id}-${poCode}-${qty}`}
+                                    title={`Cumplimiento: ${qty} ${unit}`}
+                                  >
+                                    <Tag>{label}</Tag>
+                                  </Tooltip>
+                                );
+                              })}
+                            </Space>
+                          );
+                        },
+                      },
                     ] as any
                   }
                 />
@@ -665,6 +743,43 @@ const PlanEditorPage = () => {
                             formatPriceAccounting(
                               Number(it.actual_price ?? it.estimated_price ?? 0)
                             ),
+                        },
+                        {
+                          title: "Vínculos",
+                          key: "pi_links",
+                          render: (_: unknown, it: any) => {
+                            const links = Array.isArray(it.fulfillment)
+                              ? it.fulfillment
+                              : [];
+                            if (links.length === 0)
+                              return (
+                                <Typography.Text type="secondary">—</Typography.Text>
+                              );
+                            return (
+                              <Space wrap size={4}>
+                                {links.map((f: any) => {
+                                  const soCode =
+                                    f?.sale_item?.sale_order?.order_code ?? "";
+                                  const qty = Number(f?.quantity || 0);
+                                  const unit = f?.sale_item?.product?.unit ?? "";
+                                  const label = [
+                                    soCode ? `SO ${soCode}` : "SO",
+                                    `${qty} ${unit}`,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" · ");
+                                  return (
+                                    <Tooltip
+                                      key={`${it.id}-${soCode}-${qty}`}
+                                      title={`Cumple pedido: ${qty} ${unit}`}
+                                    >
+                                      <Tag color="blue">{label}</Tag>
+                                    </Tooltip>
+                                  );
+                                })}
+                              </Space>
+                            );
+                          },
                         },
                       ] as any
                     }
