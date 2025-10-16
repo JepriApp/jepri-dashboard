@@ -168,21 +168,18 @@ function usePlanData(planId?: string) {
   });
 }
 
-function usePurchaseOrdersForDate(planDate?: string) {
+function usePurchaseOrdersForPlan(distributionPlanId?: string) {
   return useQuery<any[]>({
-    queryKey: ["poForPlanDate", planDate],
-    enabled: !!planDate,
+    queryKey: ["poForPlan", distributionPlanId],
+    enabled: !!distributionPlanId,
     staleTime: 60_000,
     queryFn: async () => {
-      const start = dayjs(planDate).startOf("day").toISOString();
-      const end = dayjs(planDate).endOf("day").toISOString();
       const { data, error } = await supabase
         .from("purchase_order")
         .select(
           `
           id,
           status,
-          expected_delivery_date,
           created_at,
           purchase_code,
           supplier:supplier_id ( id, name ),
@@ -210,8 +207,7 @@ function usePurchaseOrdersForDate(planDate?: string) {
           )
         `
         )
-        .gte("expected_delivery_date", start)
-        .lt("expected_delivery_date", end)
+        .eq("distribution_plan_id", distributionPlanId)
         .order("created_at", { ascending: true });
       if (error) throw error;
       return data || [];
@@ -297,7 +293,7 @@ const PlanEditorPage = () => {
   }, [offersList]);
 
   const { data: relatedPOs = [], isLoading: posLoading } =
-    usePurchaseOrdersForDate(plan?.plan_date);
+    usePurchaseOrdersForPlan(planId);
 
   const statusNow = plan?.status as string | undefined;
   const showPurchaseSection =
@@ -348,7 +344,6 @@ const PlanEditorPage = () => {
       message.warning("El plan no está cargado");
       return;
     }
-    const planDate = dayjs(plan.plan_date);
     const bySupplier = new Map<
       string,
       {
@@ -384,8 +379,8 @@ const PlanEditorPage = () => {
     try {
       const poRows = Array.from(bySupplier.entries()).map(([supplier_id]) => ({
         supplier_id,
+        distribution_plan_id: String(plan.id),
         order_date: dayjs().toISOString(),
-        expected_delivery_date: planDate.startOf("day").toISOString(),
         total: 0,
       }));
       const { data: createdPOs, error: poErr } = await supabase
@@ -485,10 +480,12 @@ const PlanEditorPage = () => {
       key: "purchase_code",
     },
     {
-      title: "Entrega esperada",
-      dataIndex: "expected_delivery_date",
-      key: "expected_delivery_date",
-      render: (val: string) => dayjs(val).format("YYYY-MM-DD HH:mm"),
+      title: "Entrega esperada (plan)",
+      key: "expected_delivery_date_plan",
+      render: () =>
+        plan?.plan_date
+          ? dayjs(plan.plan_date).startOf("day").format("YYYY-MM-DD")
+          : "-",
     },
     {
       title: "Proveedor",

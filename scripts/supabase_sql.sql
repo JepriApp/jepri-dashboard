@@ -4,7 +4,7 @@ CREATE TYPE unit_type AS ENUM ('lb', 'kg', 'atado');
 CREATE TYPE user_role AS ENUM ('admin', 'operator', 'supplier', 'customer');
 -- Estados de órdenes
 CREATE TYPE sale_order_status AS ENUM ('pending', 'processing', 'out_for_delivery', 'delivered', 'cancelled');
-CREATE TYPE purchase_order_status AS ENUM ('created', 'accepted', 'delivered', 'cancelled', 'rejected');
+CREATE TYPE purchase_order_status AS ENUM ('created', 'published', 'accepted', 'delivered', 'cancelled', 'rejected');
 
 -- Tabla de usuarios simplificada
 CREATE TABLE app_user (
@@ -43,7 +43,7 @@ CREATE TABLE supplier (
 CREATE TABLE offer (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     product_id UUID NOT NULL REFERENCES product(id) ON DELETE CASCADE,
-    supplier_id UUID NOT NULL REFERENCES supplier(id) ON DELETE CASCADE,
+    supplier_id UUID NOT NULL REFERENCES supplier(id) ON DELETE RESTRICT,
     price DECIMAL(12,2) NOT NULL,
     available BOOLEAN DEFAULT true,
     UNIQUE(product_id, supplier_id)
@@ -119,13 +119,14 @@ CREATE TABLE sale_item (
 -- Tabla de órdenes de compra (a proveedores)
 CREATE TABLE purchase_order (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    supplier_id UUID NOT NULL REFERENCES supplier(id),
+    supplier_id UUID NOT NULL REFERENCES supplier(id) ON DELETE RESTRICT,
+    distribution_plan_id UUID NOT NULL REFERENCES distribution_plan(id) ON DELETE RESTRICT,
     order_date TIMESTAMPTZ DEFAULT NOW(),
-    expected_delivery_date TIMESTAMPTZ,
     status purchase_order_status NOT NULL DEFAULT 'created',
     notes TEXT,
     created_by UUID,
     created_at TIMESTAMPTZ DEFAULT NOW(),
+    received_at TIMESTAMPTZ,
     -- Identificador humano: número secuencial global (ej: 000123)
     purchase_seq INTEGER,
     purchase_code TEXT UNIQUE
@@ -153,7 +154,7 @@ CREATE TABLE fulfillment (
     purchase_item_id UUID NOT NULL REFERENCES purchase_item(id) ON DELETE CASCADE,
     quantity DECIMAL(12,2) NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(sale_item_id, purchase_item_id)
+    UNIQUE (sale_item_id, purchase_item_id)
 );
 
 -- Tabla de carrito de compras (temporal antes de crear orden)
@@ -175,6 +176,7 @@ CREATE INDEX idx_sale_item_product ON sale_item(product_id);
 CREATE INDEX idx_purchase_item_order ON purchase_item(purchase_order_id);
 CREATE INDEX idx_purchase_item_product ON purchase_item(product_id);
 CREATE INDEX idx_purchase_item_supplier ON purchase_item(supplier_id);
+CREATE INDEX idx_purchase_order_plan ON purchase_order(distribution_plan_id);
 CREATE INDEX idx_fulfillment_sale_item ON fulfillment(sale_item_id);
 CREATE INDEX idx_fulfillment_purchase_item ON fulfillment(purchase_item_id);
 CREATE INDEX idx_shopping_cart_customer ON shopping_cart(customer_id);
@@ -182,7 +184,6 @@ CREATE INDEX idx_shopping_cart_product ON shopping_cart(product_id);
 
 -- Índices para consultas por fecha (reportería)
 CREATE INDEX idx_purchase_order_date ON purchase_order(order_date);
-CREATE INDEX idx_purchase_order_delivery ON purchase_order(expected_delivery_date);
 CREATE INDEX idx_sale_order_date ON sale_order(order_date);
 CREATE INDEX idx_sale_order_delivery ON sale_order(delivery_date);
 CREATE INDEX idx_sale_order_customer ON sale_order(customer_id);
@@ -295,6 +296,8 @@ CREATE INDEX idx_distribution_plan_date ON distribution_plan(plan_date);
 CREATE INDEX idx_distribution_plan_coordinator ON distribution_plan(coordinator_id);
 CREATE INDEX idx_distribution_plan_order_plan ON distribution_plan_order(distribution_plan_id);
 CREATE INDEX idx_distribution_plan_order_assignee ON distribution_plan_order(assigned_user_id);
+-- Cardinalidad: cada sale_order sólo puede estar en un plan
+CREATE UNIQUE INDEX idx_distribution_plan_order_sale_order_unique ON distribution_plan_order(sale_order_id);
 
 -- Vistas para totales y estado efectivo (ubicadas después de crear distribution_plan y distribution_plan_order)
 -- Vista para calcular el total de las órdenes de venta
@@ -408,6 +411,79 @@ CREATE TRIGGER trg_set_distribution_plan_code
 BEFORE INSERT ON distribution_plan
 FOR EACH ROW EXECUTE FUNCTION set_distribution_plan_code();
 
+-- ================================
+-- Automatizaciones de estado según excepciones
+-- ================================
+
+-- Al insertar el primer purchase_order del plan: pasar plan de 'planned' a 'preparing'
+CREATE OR REPLACE FUNCTION set_plan_preparing_on_po_insert() RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE distribution_plan dp
+    SET status = 'preparing'
+    WHERE dp.id = NEW.distribution_plan_id
+      AND dp.status = 'planned';
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_set_plan_preparing_on_po_insert ON purchase_order;
+CREATE TRIGGER trg_set_plan_preparing_on_po_insert
+AFTER INSERT ON purchase_order
+FOR EACH ROW EXECUTE FUNCTION set_plan_preparing_on_po_insert();
+
+-- Al registrar por primera vez received_quantity en un purchase_item:
+-- marcar received_at del purchase_order y pasar plan de 'preparing' a 'in_progress'
+CREATE OR REPLACE FUNCTION set_po_received_at_and_plan_in_progress_on_pi_update() RETURNS TRIGGER AS $$
+DECLARE
+    v_po_id UUID;
+    v_dp_id UUID;
+BEGIN
+    IF COALESCE(NEW.received_quantity, 0) > 0 AND COALESCE(OLD.received_quantity, 0) <= 0 THEN
+        v_po_id := NEW.purchase_order_id;
+        UPDATE purchase_order
+        SET received_at = COALESCE(received_at, NOW())
+        WHERE id = v_po_id;
+
+        SELECT distribution_plan_id INTO v_dp_id FROM purchase_order WHERE id = v_po_id;
+        UPDATE distribution_plan
+        SET status = 'in_progress'
+        WHERE id = v_dp_id AND status = 'preparing';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_set_po_received_at_and_plan_in_progress_on_pi_update ON purchase_item;
+CREATE TRIGGER trg_set_po_received_at_and_plan_in_progress_on_pi_update
+AFTER UPDATE OF received_quantity ON purchase_item
+FOR EACH ROW EXECUTE FUNCTION set_po_received_at_and_plan_in_progress_on_pi_update();
+
+-- Completar el plan cuando todas sus órdenes asociadas están en estado final (delivered/cancelled)
+CREATE OR REPLACE FUNCTION set_plan_completed_on_dpo_status_update() RETURNS TRIGGER AS $$
+DECLARE
+    remaining_count INT;
+BEGIN
+    IF NEW.status IN ('delivered', 'cancelled') THEN
+        SELECT COUNT(*) INTO remaining_count
+        FROM distribution_plan_order dpo
+        WHERE dpo.distribution_plan_id = NEW.distribution_plan_id
+          AND dpo.status IN ('pending', 'out_for_delivery', 'failed');
+
+        IF remaining_count = 0 THEN
+            UPDATE distribution_plan dp
+            SET status = 'completed'
+            WHERE dp.id = NEW.distribution_plan_id AND dp.status <> 'cancelled';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_set_plan_completed_on_dpo_status_update ON distribution_plan_order;
+CREATE TRIGGER trg_set_plan_completed_on_dpo_status_update
+AFTER UPDATE OF status ON distribution_plan_order
+FOR EACH ROW EXECUTE FUNCTION set_plan_completed_on_dpo_status_update();
+
 -- Índices únicos (si no existen)
 CREATE UNIQUE INDEX IF NOT EXISTS sale_order_order_code_unique_idx ON sale_order(order_code);
 CREATE UNIQUE INDEX IF NOT EXISTS purchase_order_purchase_code_unique_idx ON purchase_order(purchase_code);
@@ -514,7 +590,7 @@ SELECT so2.id, (SELECT id FROM product WHERE name = 'Ajo'), 2, (SELECT reference
 -- para esa misma fecha con ítems asociados a proveedores existentes.
 WITH dp AS (
   INSERT INTO distribution_plan (plan_date, status, cutoff_at)
-  SELECT CURRENT_DATE + INTERVAL '1 day', 'in_progress', NOW()
+  SELECT CURRENT_DATE + INTERVAL '1 day', 'planned', NOW()
   WHERE NOT EXISTS (
     SELECT 1 FROM distribution_plan WHERE plan_date = CURRENT_DATE + INTERVAL '1 day'
   )
@@ -536,17 +612,17 @@ WITH dp AS (
   SELECT dp.id, so_b.id, 2, 'delivered'::distribution_plan_order_status FROM dp, so_b
   RETURNING distribution_plan_id
 ), po1 AS (
-  INSERT INTO purchase_order (supplier_id, expected_delivery_date, status, notes)
+  INSERT INTO purchase_order (supplier_id, distribution_plan_id, status, notes)
   SELECT (SELECT id FROM supplier WHERE name = 'Agroventas del Caribe'),
-         (SELECT plan_date::timestamptz + INTERVAL '8 hours' FROM dp),
+         (SELECT id FROM dp),
          'created'::purchase_order_status,
          'Compra para plan (Agroventas del Caribe)'
   FROM dp
   RETURNING id, supplier_id
 ), po2 AS (
-  INSERT INTO purchase_order (supplier_id, expected_delivery_date, status, notes)
+  INSERT INTO purchase_order (supplier_id, distribution_plan_id, status, notes)
   SELECT (SELECT id FROM supplier WHERE name = 'Mercado Central - Local 12'),
-         (SELECT plan_date::timestamptz + INTERVAL '9 hours' FROM dp),
+         (SELECT id FROM dp),
          'created'::purchase_order_status,
          'Compra para plan (Mercado Central - Local 12)'
   FROM dp

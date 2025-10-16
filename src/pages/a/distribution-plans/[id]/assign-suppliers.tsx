@@ -17,11 +17,18 @@ import {
   InputNumber,
   Space,
   Alert,
+  message,
 } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/router";
 import { supabase } from "@/services/supabase.client";
 import type { SaleOrder, SaleItem } from "@/services/supabase.service";
+import {
+  getOrCreatePurchaseOrderForSupplier,
+  createPurchaseItem,
+  upsertFulfillment,
+} from "@/services/supabase.service";
+import { queryClient } from "@/services/query-client";
 import { formatPriceAccounting } from "@/utils/formatPrice";
 const { Header, Content, Footer, Sider } = Layout;
 type PlanOrder = Pick<
@@ -376,10 +383,51 @@ const AssignSuppliersPage = () => {
     }, 0);
   }, [assignContext, offersForCurrentProduct, assignmentInputs]);
 
-  const handleSaveAssignments = () => {
-    // TODO: Integrar persistencia en Supabase según el modelo (purchase_item / fulfillment)
-    // Por ahora, sólo cerramos el Drawer.
-    setAssignDrawerOpen(false);
+  const handleSaveAssignments = async () => {
+    if (!assignContext) return;
+    try {
+      const notes = data?.plan?.plan_code
+        ? `Compra para plan ${data.plan.plan_code}`
+        : `Compra para plan ${String(planId || "")}`;
+
+      const entries = Object.entries(assignmentInputs).filter(
+        ([, qty]) => Number(qty) > 0
+      );
+
+      await Promise.all(
+        entries.map(async ([supplierId, qty]) => {
+          const po = await getOrCreatePurchaseOrderForSupplier({
+            supplierId,
+            distributionPlanId: String(planId || ""),
+            notes,
+          });
+          const estimatedPrice = (offers || []).find(
+            (o) =>
+              String(o.product_id) === String(assignContext.productId) &&
+              String(o.supplier_id) === String(supplierId)
+          )?.price;
+          const pi = await createPurchaseItem({
+            purchaseOrderId: String(po.id),
+            productId: String(assignContext.productId),
+            supplierId: String(supplierId),
+            quantity: Number(qty),
+            estimatedPrice: estimatedPrice ?? null,
+          });
+          await upsertFulfillment({
+            saleItemId: String(assignContext.saleItemId),
+            purchaseItemId: String(pi.id),
+            quantity: Number(qty),
+          });
+        })
+      );
+
+      message.success("Asignaciones guardadas y órdenes de compra creadas.");
+      setAssignDrawerOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["assignSuppliersPlan", planId] });
+    } catch (err) {
+      console.error("Error guardando asignaciones", err);
+      message.error("Error al guardar asignaciones.");
+    }
   };
   return (
     <Layout hasSider>
