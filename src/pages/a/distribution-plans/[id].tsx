@@ -229,14 +229,12 @@ const PlanEditorPage = () => {
   const [linkModalOpen, setLinkModalOpen] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [linking, setLinking] = useState(false);
-  const {
-    data: pendingOrders = [],
-    isLoading: loadingPendingOrders,
-  } = useQuery<SaleOrder[]>({
-    queryKey: ["pendingOrdersForLinking"],
-    queryFn: getPendingOrdersForAdmin,
-    staleTime: 60_000,
-  });
+  const { data: pendingOrders = [], isLoading: loadingPendingOrders } =
+    useQuery<SaleOrder[]>({
+      queryKey: ["pendingOrdersForLinking"],
+      queryFn: getPendingOrdersForAdmin,
+      staleTime: 60_000,
+    });
 
   const [assignments, setAssignments] = useState<Record<string, Assignment[]>>(
     {}
@@ -469,9 +467,10 @@ const PlanEditorPage = () => {
       key: "charges",
       render: (_: unknown, record: PlanOrder) => (
         <Typography.Text style={{ whiteSpace: "nowrap" }}>
-          Servicio: {formatPriceAccounting(Number(record.service_fee || 0))} 
-          <br/>
-          Domicilio: {formatPriceAccounting(Number(record.delivery_charge || 0))}
+          Servicio: {formatPriceAccounting(Number(record.service_fee || 0))}
+          <br />
+          Domicilio:{" "}
+          {formatPriceAccounting(Number(record.delivery_charge || 0))}
         </Typography.Text>
       ),
     },
@@ -588,9 +587,10 @@ const PlanEditorPage = () => {
         .order("sequence", { ascending: false })
         .limit(1);
       if (seqErr) throw seqErr;
-      const lastSeq = Array.isArray(seqRows) && seqRows.length > 0
-        ? Number(seqRows[0]?.sequence || 0)
-        : 0;
+      const lastSeq =
+        Array.isArray(seqRows) && seqRows.length > 0
+          ? Number(seqRows[0]?.sequence || 0)
+          : 0;
       const startSeq = lastSeq + 1;
       const rows = selectedOrderIds.map((soId, idx) => ({
         distribution_plan_id: String(planId),
@@ -616,33 +616,6 @@ const PlanEditorPage = () => {
 
   return (
     <>
-      <Space style={{ marginBottom: 16 }} wrap>
-        <Typography.Title level={4}>
-          Plan {plan?.plan_code ?? planId} —{" "}
-          {plan ? dayjs(plan.plan_date).format("YYYY-MM-DD") : ""}
-        </Typography.Title>
-        <Tag color="blue">{plan?.status}</Tag>
-        {allowAssignments && (
-          <Button
-            type="primary"
-            onClick={handleGeneratePurchaseOrders}
-            disabled={itemsFlat.length === 0}
-          >
-            Generar órdenes de compra
-          </Button>
-        )}
-        <Button onClick={() => refetch()}>Refrescar</Button>
-        <Button onClick={() => router.push(`/a/sale-orders/create?planId=${planId}`)}>
-          Agregar nueva orden de venta
-        </Button>
-        <Button onClick={() => setLinkModalOpen(true)}>
-          Agregar orden de venta existente
-        </Button>
-        <Button onClick={() => router.push(`/a/distribution-plans/${planId}/assign-suppliers`)}>
-          Asignar proveedores
-        </Button>
-      </Space>
-
       <Modal
         open={linkModalOpen}
         title="Agregar orden de venta existente"
@@ -676,7 +649,39 @@ const PlanEditorPage = () => {
         />
       </Modal>
 
-      <Card title="Reporte del plan" style={{ marginBottom: 16 }}>
+      <Card
+        title="Reporte del plan"
+        style={{ marginBottom: 16 }}
+        actions={[
+          <Space>
+            <Button
+              type="primary"
+              onClick={handleGeneratePurchaseOrders}
+              disabled={!allowAssignments || itemsFlat.length === 0}
+            >
+              Generar órdenes de compra
+            </Button>
+            <Button onClick={() => refetch()}>Refrescar</Button>
+            <Button
+              onClick={() =>
+                router.push(`/a/sale-orders/create?planId=${planId}`)
+              }
+            >
+              Agregar nueva orden de venta
+            </Button>
+            <Button onClick={() => setLinkModalOpen(true)}>
+              Agregar orden de venta existente
+            </Button>
+            <Button
+              onClick={() =>
+                router.push(`/a/distribution-plans/${planId}/assign-suppliers`)
+              }
+            >
+              Asignar proveedores
+            </Button>
+          </Space>,
+        ]}
+      >
         <Descriptions
           size="small"
           column={{ xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 4 }}
@@ -794,15 +799,19 @@ const PlanEditorPage = () => {
                             : [];
                           if (links.length === 0)
                             return (
-                              <Typography.Text type="secondary">—</Typography.Text>
+                              <Typography.Text type="secondary">
+                                —
+                              </Typography.Text>
                             );
                           return (
                             <Space wrap size={4}>
                               {links.map((f: any) => {
                                 const poCode =
-                                  f?.purchase_item?.purchase_order?.purchase_code ?? "";
+                                  f?.purchase_item?.purchase_order
+                                    ?.purchase_code ?? "";
                                 const supplier =
-                                  f?.purchase_item?.purchase_order?.supplier?.name ?? "";
+                                  f?.purchase_item?.purchase_order?.supplier
+                                    ?.name ?? "";
                                 const qty = Number(f?.quantity || 0);
                                 const unit = it?.product?.unit ?? "";
                                 const label = [
@@ -883,7 +892,9 @@ const PlanEditorPage = () => {
                               : [];
                             if (links.length === 0)
                               return (
-                                <Typography.Text type="secondary">—</Typography.Text>
+                                <Typography.Text type="secondary">
+                                  —
+                                </Typography.Text>
                               );
                             return (
                               <Space wrap size={4}>
@@ -891,7 +902,8 @@ const PlanEditorPage = () => {
                                   const soCode =
                                     f?.sale_item?.sale_order?.order_code ?? "";
                                   const qty = Number(f?.quantity || 0);
-                                  const unit = f?.sale_item?.product?.unit ?? "";
+                                  const unit =
+                                    f?.sale_item?.product?.unit ?? "";
                                   const label = [
                                     soCode ? ` ${soCode}` : "",
                                     `${qty} ${unit}`,

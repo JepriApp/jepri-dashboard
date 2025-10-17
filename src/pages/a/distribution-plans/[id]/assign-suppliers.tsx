@@ -6,8 +6,6 @@ import {
   Card,
   Descriptions,
   Collapse,
-  Row,
-  Col,
   Layout,
   List,
   theme,
@@ -18,11 +16,10 @@ import {
   Space,
   Alert,
   Progress,
-  message,
+  App,
   Tag,
-  Tooltip,
 } from "antd";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/router";
 import { supabase } from "@/services/supabase.client";
 import type { SaleOrder, SaleItem } from "@/services/supabase.service";
@@ -32,7 +29,7 @@ import {
   upsertFulfillment,
 } from "@/services/supabase.service";
 import { formatPriceAccounting } from "@/utils/formatPrice";
-const { Header, Content, Footer, Sider } = Layout;
+const { Content, Sider } = Layout;
 type PlanOrder = Pick<
   SaleOrder,
   | "id"
@@ -236,8 +233,9 @@ function usePurchaseOrdersForPlan(distributionPlanId?: string) {
 const AssignSuppliersPage = () => {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { message } = App.useApp();
   const planId = router.query.id as string | undefined;
-  const { data, isLoading } = usePlanData(planId);
+  const { data } = usePlanData(planId);
   const orders = data?.orders || [];
   const { data: relatedPOs = [], isLoading: posLoading } =
     usePurchaseOrdersForPlan(planId);
@@ -273,46 +271,6 @@ const AssignSuppliersPage = () => {
     [itemsFlat]
   );
 
-  const assignedBySupplier: Array<{
-    name: string;
-    totalQty: number;
-    orders: string[];
-    totalCost: number;
-  }> = useMemo(() => {
-    const map = new Map<
-      string,
-      { totalQty: number; orders: Set<string>; totalCost: number }
-    >();
-    orders.forEach((o) => {
-      (o.items || []).forEach((it: any) => {
-        const links = Array.isArray(it.fulfillment) ? it.fulfillment : [];
-        links.forEach((f: any) => {
-          const supplierName =
-            f?.purchase_item?.purchase_order?.supplier?.name ?? "";
-          const poCode = f?.purchase_item?.purchase_order?.purchase_code ?? "";
-          const qty = Number(f?.quantity || 0);
-          const unitPrice = Number(it?.unit_price || 0);
-          if (!supplierName) return;
-          if (!map.has(supplierName))
-            map.set(supplierName, {
-              totalQty: 0,
-              orders: new Set<string>(),
-              totalCost: 0,
-            });
-          const acc = map.get(supplierName)!;
-          acc.totalQty += qty;
-          if (poCode) acc.orders.add(poCode);
-          acc.totalCost += qty * unitPrice;
-        });
-      });
-    });
-    return Array.from(map.entries()).map(([name, v]) => ({
-      name,
-      totalQty: v.totalQty,
-      orders: Array.from(v.orders),
-      totalCost: v.totalCost,
-    }));
-  }, [orders]);
 
   const [selectedOrderId, setSelectedOrderId] = useState<
     string | number | undefined
@@ -325,6 +283,17 @@ const AssignSuppliersPage = () => {
     () => (selectedOrderId ? selectedOrder?.items || [] : itemsFlat),
     [selectedOrderId, selectedOrder, itemsFlat]
   );
+  const itemCustomerById = useMemo(() => {
+    const map = new Map<string, { name: string; email?: string }>();
+    orders.forEach((o) => {
+      const name = o.user?.name ?? "";
+      const email = o.user?.email ?? "";
+      (o.items || []).forEach((it: any) => {
+        if (it?.id) map.set(String(it.id), { name, email });
+      });
+    });
+    return map;
+  }, [orders]);
   const { token } = theme.useToken();
 
   const [assignDrawerOpen, setAssignDrawerOpen] = useState(false);
@@ -448,14 +417,26 @@ const AssignSuppliersPage = () => {
     assignedQtyMap,
   ]);
 
-  const handleSaveAssignments = async () => {
-    if (!assignContext) return;
-    try {
+  const MSG_SAVE_KEY = "assign-save";
+  const saveAssignmentsMutation = useMutation({
+    mutationKey: ["saveAssignments", planId],
+    mutationFn: async () => {
+      if (!assignContext) return;
+      if (!planId) throw new Error("Plan no identificado");
+      const ensureValidUuid = (v: any) => typeof v === "string" && v && v !== "undefined";
+      const productId = String(assignContext.productId || "");
+      if (!ensureValidUuid(productId)) {
+        throw new Error("Ítem sin producto válido (UUID). No se puede asignar.");
+      }
+      const saleItemId = String(assignContext.saleItemId || "");
+      if (!ensureValidUuid(saleItemId)) {
+        throw new Error("Ítem de venta inválido (UUID). No se puede asignar.");
+      }
+
       const notes = data?.plan?.plan_code
         ? `Compra para plan ${data.plan.plan_code}`
         : `Compra para plan ${String(planId || "")}`;
 
-      // Preparar mapa de cantidades actuales por proveedor para el ítem
       const alreadyMap = getAssignedQtyMapForItem(assignContext.saleItemId);
       const supplierIds = Array.from(
         new Set([
@@ -463,15 +444,19 @@ const AssignSuppliersPage = () => {
           ...Array.from(alreadyMap.keys()),
         ])
       );
+      const validSupplierIds = supplierIds
+        .map((sid) => String(sid || ""))
+        .filter((sid) => ensureValidUuid(sid));
+      if (validSupplierIds.length === 0) {
+        // No hay proveedores válidos a ajustar; salir temprano sin error
+        return;
+      }
 
-      // Para cada proveedor involucrado, ajustar al valor deseado (puede subir o bajar)
       await Promise.all(
-        supplierIds.map(async (supplierId) => {
+        validSupplierIds.map(async (supplierId) => {
           const desired = Number(assignmentInputs[supplierId] || 0);
           const already = Number(alreadyMap.get(supplierId) || 0);
-          const delta = desired - already; // puede ser positivo, cero o negativo
 
-          // 1) Intentar reutilizar el PI que ya está vinculado (fulfillment) para este sale_item
           let piExisting: any | null = null;
           let po: any | null = null;
           const { data: existingFulLinks, error: findFulErr } = await supabase
@@ -479,8 +464,8 @@ const AssignSuppliersPage = () => {
             .select(
               "id, quantity, purchase_item:purchase_item(id, purchase_order_id, supplier_id, product_id)"
             )
-            .eq("sale_item_id", String(assignContext.saleItemId))
-            .eq("purchase_item.product_id", String(assignContext.productId))
+            .eq("sale_item_id", saleItemId)
+            .eq("purchase_item.product_id", productId)
             .eq("purchase_item.supplier_id", String(supplierId))
             .order("id", { ascending: false })
             .limit(1);
@@ -488,16 +473,16 @@ const AssignSuppliersPage = () => {
           if (existingFulLinks && existingFulLinks.length > 0) {
             const link = existingFulLinks[0];
             piExisting = link.purchase_item;
-            po = { id: piExisting?.purchase_order_id };
+            const poCandidate = String(piExisting?.purchase_order_id || "");
+            po = ensureValidUuid(poCandidate) ? { id: poCandidate } : null;
           }
 
-          // 2) Si no hay vínculo existente, buscar PO del proveedor para el plan; si no, crear
           if (!po) {
             const { data: existingPOs, error: findPoErr } = await supabase
               .from("purchase_order")
               .select("id, status")
               .eq("supplier_id", supplierId)
-              .eq("distribution_plan_id", String(planId || ""))
+              .eq("distribution_plan_id", String(planId))
               .order("created_at", { ascending: false })
               .limit(1);
             if (findPoErr) throw findPoErr;
@@ -506,20 +491,19 @@ const AssignSuppliersPage = () => {
             } else {
               po = await getOrCreatePurchaseOrderForSupplier({
                 supplierId,
-                distributionPlanId: String(planId || ""),
+                distributionPlanId: String(planId),
                 notes,
               });
             }
           }
 
-          // 3) Si no había PI vinculado, buscar/crear el PI de ese producto en la PO
           if (!piExisting) {
             const { data: piExistingList, error: findPiErr } = await supabase
               .from("purchase_item")
               .select("id, quantity")
               .eq("purchase_order_id", String(po.id))
               .eq("supplier_id", String(supplierId))
-              .eq("product_id", String(assignContext.productId))
+              .eq("product_id", productId)
               .order("id", { ascending: false })
               .limit(1);
             if (findPiErr) throw findPiErr;
@@ -529,52 +513,68 @@ const AssignSuppliersPage = () => {
                 : null;
           }
 
-          // 3) Actualizar fulfillment del sale_item hacia ese PI (crear/actualizar/eliminar)
           if (piExisting) {
-            // Fulfillment: si desired > 0, upsert; si 0, eliminar
+            const existingFulfillmentId =
+              existingFulLinks && existingFulLinks.length > 0
+                ? String(existingFulLinks[0].id)
+                : undefined;
             if (desired > 0) {
-              await upsertFulfillment({
-                saleItemId: String(assignContext.saleItemId),
-                purchaseItemId: String(piExisting.id),
-                quantity: Number(desired),
-              });
+              if (existingFulfillmentId) {
+                // Actualiza directamente el vínculo existente
+                const { error: updFulErr } = await supabase
+                  .from("fulfillment")
+                  .update({ quantity: Number(desired) })
+                  .eq("id", existingFulfillmentId);
+                if (updFulErr) throw updFulErr;
+              } else {
+                // No existe vínculo previo, crear con el par saleItem-purchaseItem
+                await upsertFulfillment({
+                  saleItemId: saleItemId,
+                  purchaseItemId: String(piExisting.id),
+                  quantity: Number(desired),
+                });
+              }
             } else {
-              // Eliminar vínculo si se reduce a cero
-              const { error: delFulErr } = await supabase
-                .from("fulfillment")
-                .delete()
-                .eq("sale_item_id", String(assignContext.saleItemId))
-                .eq("purchase_item_id", String(piExisting.id));
-              if (delFulErr) throw delFulErr;
+              if (existingFulfillmentId) {
+                const { error: delFulErr } = await supabase
+                  .from("fulfillment")
+                  .delete()
+                  .eq("id", existingFulfillmentId);
+                if (delFulErr) throw delFulErr;
+              }
             }
 
-            // 4) Ajustar cantidad del purchase_item sumando el delta
-            const nextPiQty = Math.max(
-              0,
-              Number(piExisting.quantity || 0) + Number(delta || 0)
+            // Recalcular la cantidad del purchase_item a partir de sus vínculos
+            const { data: piFuls, error: piFulsErr } = await supabase
+              .from("fulfillment")
+              .select("quantity")
+              .eq("purchase_item_id", String(piExisting.id));
+            if (piFulsErr) throw piFulsErr;
+            const summedQty = (piFuls || []).reduce(
+              (sum: number, f: any) => sum + Number(f.quantity || 0),
+              0
             );
             const { error: updPiErr } = await supabase
               .from("purchase_item")
-              .update({ quantity: nextPiQty })
+              .update({ quantity: summedQty })
               .eq("id", String(piExisting.id));
             if (updPiErr) throw updPiErr;
           } else {
-            // No existe PI: crear sólo si se desea cantidad positiva
             if (desired > 0) {
               const estimatedPrice = (offers || []).find(
                 (o) =>
-                  String(o.product_id) === String(assignContext.productId) &&
+                  String(o.product_id) === productId &&
                   String(o.supplier_id) === String(supplierId)
               )?.price;
               const pi = await createPurchaseItem({
                 purchaseOrderId: String(po.id),
-                productId: String(assignContext.productId),
+                productId: productId,
                 supplierId: String(supplierId),
                 quantity: Number(desired),
                 estimatedPrice: estimatedPrice ?? null,
               });
               await upsertFulfillment({
-                saleItemId: String(assignContext.saleItemId),
+                saleItemId: saleItemId,
                 purchaseItemId: String(pi.id),
                 quantity: Number(desired),
               });
@@ -582,21 +582,42 @@ const AssignSuppliersPage = () => {
           }
         })
       );
-
-      message.success(
-        "Asignaciones guardadas y órdenes de compra actualizadas."
-      );
+    },
+    onMutate: async () => {
+      message.loading({
+        content: "Guardando asignaciones...",
+        key: MSG_SAVE_KEY,
+      });
+    },
+    onSuccess: async () => {
+      message.success({
+        content: "Asignaciones guardadas y órdenes de compra actualizadas.",
+        key: MSG_SAVE_KEY,
+        duration: 2,
+      });
       setAssignDrawerOpen(false);
-      queryClient.invalidateQueries({
+      await queryClient.invalidateQueries({
         queryKey: ["assignSuppliersPlan", planId],
       });
-      queryClient.invalidateQueries({
+      await queryClient.invalidateQueries({
         queryKey: ["poForPlanAssign", planId],
       });
-    } catch (err) {
+    },
+    onError: (err) => {
       console.error("Error guardando asignaciones", err);
-      message.error("Error al guardar asignaciones.");
+      message.error({
+        content: "Error al guardar asignaciones.",
+        key: MSG_SAVE_KEY,
+      });
+    },
+  });
+
+  const handleSaveAssignments = () => {
+    if (!assignContext) {
+      message.warning("Selecciona un ítem para guardar asignaciones.");
+      return;
     }
+    saveAssignmentsMutation.mutate();
   };
   return (
     <Layout hasSider>
@@ -698,14 +719,14 @@ const AssignSuppliersPage = () => {
                         columns={
                           [
                             {
-                              title: "Código de órden de compra",
-                              dataIndex: "purchase_code",
-                              key: "purchase_code",
-                            },
-                            {
                               title: "Proveedor",
                               dataIndex: ["supplier", "name"],
                               key: "supplier_name",
+                            },
+                            {
+                              title: "Código de órden de compra",
+                              dataIndex: "purchase_code",
+                              key: "purchase_code",
                             },
                             {
                               title: "Total",
@@ -751,10 +772,7 @@ const AssignSuppliersPage = () => {
                                   );
                                 return (
                                   <Space wrap size={4}>
-                                    {links.map(({ f, it }: any) => {
-                                      const soCode =
-                                        f?.sale_item?.sale_order?.order_code ??
-                                        "";
+                                    {links.map(({ f }: any) => {
                                       const qty = Number(f?.quantity || 0);
                                       const unit =
                                         f?.sale_item?.product?.unit ?? "";
@@ -901,6 +919,16 @@ const AssignSuppliersPage = () => {
               columns={
                 [
                   {
+                    title: "Cliente",
+                    key: "customer",
+                    render: (_: unknown, it: any) => {
+                      const c = itemCustomerById.get(String(it?.id ?? ""));
+                      return (
+                        <Typography.Text>{c?.name || "—"}</Typography.Text>
+                      );
+                    },
+                  },
+                  {
                     title: "Producto",
                     dataIndex: ["product", "name"],
                     key: "product_name",
@@ -962,9 +990,6 @@ const AssignSuppliersPage = () => {
                       return (
                         <Space wrap size={4}>
                           {links.map((f: any) => {
-                            const poCode =
-                              f?.purchase_item?.purchase_order?.purchase_code ??
-                              "";
                             const supplier =
                               f?.purchase_item?.purchase_order?.supplier
                                 ?.name ?? "";
@@ -1012,7 +1037,11 @@ const AssignSuppliersPage = () => {
         extra={
           <Space>
             <Button onClick={() => setAssignDrawerOpen(false)}>Cancelar</Button>
-            <Button type="primary" onClick={handleSaveAssignments}>
+            <Button
+              type="primary"
+              onClick={handleSaveAssignments}
+              loading={saveAssignmentsMutation.isPending}
+            >
               Guardar
             </Button>
           </Space>
@@ -1134,7 +1163,11 @@ const AssignSuppliersPage = () => {
                 <Button onClick={() => setAssignDrawerOpen(false)}>
                   Cancelar
                 </Button>
-                <Button type="primary" onClick={handleSaveAssignments}>
+                <Button
+                  type="primary"
+                  onClick={handleSaveAssignments}
+                  loading={saveAssignmentsMutation.isPending}
+                >
                   Guardar
                 </Button>
               </div>
