@@ -37,6 +37,7 @@ interface ProductOption {
 
 const CreateSaleOrderPage = () => {
   const router = useRouter();
+  const planId = router.query.planId as string | undefined;
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
   const { data: customers = [], isLoading: loadingCustomers } = useQuery<
@@ -151,6 +152,30 @@ const CreateSaleOrderPage = () => {
       if (error) throw error;
       const orderId = data.id;
 
+      // Si se abrió desde un plan, vincular la nueva orden al plan con secuencia siguiente
+      if (planId) {
+        const { data: seqRows, error: seqErr } = await supabase
+          .from("distribution_plan_order")
+          .select("sequence")
+          .eq("distribution_plan_id", planId)
+          .order("sequence", { ascending: false })
+          .limit(1);
+        if (seqErr) throw seqErr;
+        const nextSeq = (Array.isArray(seqRows) && seqRows.length > 0
+          ? Number(seqRows[0]?.sequence || 0)
+          : 0) + 1;
+        const { error: linkErr } = await supabase
+          .from("distribution_plan_order")
+          .insert({
+            distribution_plan_id: planId,
+            sale_order_id: orderId,
+            sequence: nextSeq,
+            status: "pending",
+          })
+          .select();
+        if (linkErr) throw linkErr;
+      }
+
       const items: Array<{ product_id: string; quantity: number }> =
         values.items || [];
       if (items.length > 0) {
@@ -170,8 +195,8 @@ const CreateSaleOrderPage = () => {
           .select();
         if (itemsErr) throw itemsErr;
       }
-      message.success("Orden creada exitosamente");
-      router.push("/a/sale-orders/pending");
+      message.success(planId ? "Orden creada y agregada al plan" : "Orden creada exitosamente");
+      router.push(planId ? `/a/distribution-plans/${planId}` : "/a/sale-orders/pending");
     } catch (err) {
       console.error("Error creando orden", err);
       message.error("No se pudo crear la orden");

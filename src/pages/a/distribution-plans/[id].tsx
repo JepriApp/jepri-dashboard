@@ -5,6 +5,7 @@ import {
   Tag,
   Button,
   Space,
+  Modal,
   Select,
   InputNumber,
   message,
@@ -21,6 +22,7 @@ import dayjs from "dayjs";
 import { useRouter } from "next/router";
 import { supabase } from "@/services/supabase.client";
 import type { SaleOrder, SaleItem } from "@/services/supabase.service";
+import { getPendingOrdersForAdmin } from "@/services/supabase.service";
 import { formatPriceAccounting } from "@/utils/formatPrice";
 
 type OfferOption = {
@@ -222,6 +224,19 @@ const PlanEditorPage = () => {
   const plan = data?.plan;
   const orders = data?.orders || [];
   const dpoStatusCounts = data?.dpoStatusCounts || {};
+
+  // Modal para vincular órdenes existentes
+  const [linkModalOpen, setLinkModalOpen] = useState(false);
+  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+  const [linking, setLinking] = useState(false);
+  const {
+    data: pendingOrders = [],
+    isLoading: loadingPendingOrders,
+  } = useQuery<SaleOrder[]>({
+    queryKey: ["pendingOrdersForLinking"],
+    queryFn: getPendingOrdersForAdmin,
+    staleTime: 60_000,
+  });
 
   const [assignments, setAssignments] = useState<Record<string, Assignment[]>>(
     {}
@@ -520,6 +535,85 @@ const PlanEditorPage = () => {
     },
   ];
 
+  const pendingOrderColumns = [
+    {
+      title: "Código",
+      dataIndex: "order_code",
+      key: "order_code",
+    },
+    {
+      title: "Fecha",
+      dataIndex: "order_date",
+      key: "order_date",
+      render: (val: string) => dayjs(val).format("YYYY-MM-DD HH:mm"),
+    },
+    {
+      title: "Cliente",
+      dataIndex: ["user", "name"],
+      key: "user_name",
+    },
+    {
+      title: "Email",
+      dataIndex: ["user", "email"],
+      key: "user_email",
+    },
+    {
+      title: "Total",
+      dataIndex: "total",
+      key: "total",
+      render: (t: number | undefined) => formatPriceAccounting(Number(t ?? 0)),
+    },
+    {
+      title: "Items",
+      key: "items_count",
+      render: (_: unknown, record: SaleOrder) => record.items?.length ?? 0,
+    },
+  ];
+
+  async function handleLinkSelectedOrders() {
+    if (!planId) {
+      message.warning("Plan no identificado");
+      return;
+    }
+    if (selectedOrderIds.length === 0) {
+      message.warning("Seleccione al menos una orden");
+      return;
+    }
+    try {
+      setLinking(true);
+      const { data: seqRows, error: seqErr } = await supabase
+        .from("distribution_plan_order")
+        .select("sequence")
+        .eq("distribution_plan_id", planId)
+        .order("sequence", { ascending: false })
+        .limit(1);
+      if (seqErr) throw seqErr;
+      const lastSeq = Array.isArray(seqRows) && seqRows.length > 0
+        ? Number(seqRows[0]?.sequence || 0)
+        : 0;
+      const startSeq = lastSeq + 1;
+      const rows = selectedOrderIds.map((soId, idx) => ({
+        distribution_plan_id: String(planId),
+        sale_order_id: String(soId),
+        sequence: startSeq + idx,
+        status: "pending",
+      }));
+      const { error: insErr } = await supabase
+        .from("distribution_plan_order")
+        .insert(rows);
+      if (insErr) throw insErr;
+      message.success("Órdenes vinculadas al plan");
+      setLinkModalOpen(false);
+      setSelectedOrderIds([]);
+      await refetch();
+    } catch (e: any) {
+      console.error(e);
+      message.error("No se pudieron vincular las órdenes");
+    } finally {
+      setLinking(false);
+    }
+  }
+
   return (
     <>
       <Space style={{ marginBottom: 16 }} wrap>
@@ -538,10 +632,49 @@ const PlanEditorPage = () => {
           </Button>
         )}
         <Button onClick={() => refetch()}>Refrescar</Button>
+        <Button onClick={() => router.push(`/a/sale-orders/create?planId=${planId}`)}>
+          Agregar nueva orden de venta
+        </Button>
+        <Button onClick={() => setLinkModalOpen(true)}>
+          Agregar orden de venta existente
+        </Button>
         <Button onClick={() => router.push(`/a/distribution-plans/${planId}/assign-suppliers`)}>
           Asignar proveedores
         </Button>
       </Space>
+
+      <Modal
+        open={linkModalOpen}
+        title="Agregar orden de venta existente"
+        onCancel={() => setLinkModalOpen(false)}
+        width={900}
+        footer={[
+          <Button key="cancel" onClick={() => setLinkModalOpen(false)}>
+            Cancelar
+          </Button>,
+          <Button
+            key="link"
+            type="primary"
+            disabled={selectedOrderIds.length === 0}
+            loading={linking}
+            onClick={handleLinkSelectedOrders}
+          >
+            Agregar al plan
+          </Button>,
+        ]}
+      >
+        <Table
+          dataSource={pendingOrders}
+          columns={pendingOrderColumns as any}
+          rowKey="id"
+          loading={loadingPendingOrders}
+          pagination={{ pageSize: 8 }}
+          rowSelection={{
+            selectedRowKeys: selectedOrderIds as any,
+            onChange: (keys) => setSelectedOrderIds(keys as string[]),
+          }}
+        />
+      </Modal>
 
       <Card title="Reporte del plan" style={{ marginBottom: 16 }}>
         <Descriptions
