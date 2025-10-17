@@ -74,7 +74,7 @@ export async function getProducts() {
 // Obtener usuario por email
 export async function getUserByEmail(email: string) {
   const { data, error } = await supabase
-    .from("app_user")
+    .from("auth")
     .select("*")
     .eq("email", email)
     .single();
@@ -493,33 +493,30 @@ export async function clearCart(userId: string) {
 export async function getPendingOrdersForAdmin(): Promise<SaleOrder[]> {
   try {
     const { data, error } = await supabase
-      .from("sale_order_with_total_and_status")
+      .from("sale_order")
       .select(
         `
         id,
         customer_id,
-        order_date,
-        delivery_date,
-        status:effective_status,
+        created_at,
+        status,
         order_code,
         order_seq,
-        total,
         service_fee,
-        delivery_charge,
+        delivery_fee,
         notes,
         customer:customer_id (
           id,
           user_id,
           name,
-          app_user:user_id (
+          auth:user_id (
             email
           )
         ),
         sale_item:sale_item (
           id,
           product_id,
-          quantity,
-          unit_price,
+          required_quantity,
           product:product_id (
             id,
             name,
@@ -531,34 +528,47 @@ export async function getPendingOrdersForAdmin(): Promise<SaleOrder[]> {
         )
       `
       )
-      .eq("effective_status", "pending")
-      .order("order_date", { ascending: false });
+      .eq("status", "pending")
+      .eq("distribution_plan_id", null)
+      .order("created_at", { ascending: false });
 
     if (error) {
       console.error("Error al obtener órdenes pendientes:", error);
       throw error;
     }
 
-    // Adaptar la respuesta al formato esperado por el frontend
-    const adaptedData =
-      data?.map((order) => ({
-        id: order.id,
-        order_date: order.order_date,
-        delivery_date: order.delivery_date,
-        status: order.status,
-        order_code: order.order_code,
-        order_seq: order.order_seq,
-        total: order.total,
-        service_fee: order.service_fee,
-        delivery_charge: order.delivery_charge,
-        notes: order.notes,
-        user_id: order.customer?.user_id,
-        user: {
-          name: order.customer?.name || "Sin nombre",
-          email: order.customer?.app_user?.email || "Sin email",
-        },
-        items: order.sale_item,
-      })) || [];
+    const adaptedData: SaleOrder[] =
+      (data || []).map((order: any) => {
+        const items = (order.sale_item || []).map((item: any) => ({
+          id: item.id,
+          sale_order_id: order.id,
+          product_id: item.product_id,
+          quantity: item.required_quantity,
+          unit_price: item.product?.reference_price ?? 0,
+          product: item.product,
+        }));
+        const itemsTotal = items.reduce((sum: number, it: any) => sum + (it.unit_price || 0) * (it.quantity || 0), 0);
+        const total = itemsTotal + (order.service_fee ?? 0) + (order.delivery_fee ?? 0);
+
+        return {
+          id: order.id,
+          customer_id: order.customer_id,
+          order_date: order.created_at,
+          delivery_date: order.created_at,
+          status: order.status,
+          order_code: order.order_code,
+          order_seq: order.order_seq,
+          total,
+          service_fee: order.service_fee,
+          delivery_charge: order.delivery_fee,
+          notes: order.notes,
+          user: {
+            name: order.customer?.name ?? "Sin nombre",
+            email: order.customer?.auth?.email ?? "Sin email",
+          },
+          items,
+        };
+      }) || [];
 
     return adaptedData;
   } catch (error) {
@@ -571,33 +581,30 @@ export async function getPendingOrdersForAdmin(): Promise<SaleOrder[]> {
 export async function getAllOrdersForAdmin(): Promise<SaleOrder[]> {
   try {
     const { data, error } = await supabase
-      .from("sale_order_with_total_and_status")
+      .from("sale_order")
       .select(
         `
         id,
         customer_id,
-        order_date,
-        delivery_date,
-        status:effective_status,
+        created_at,
+        status,
         order_code,
         order_seq,
-        total,
         service_fee,
-        delivery_charge,
+        delivery_fee,
         notes,
         customer:customer_id (
           id,
           user_id,
           name,
-          app_user:user_id (
+          auth:user_id (
             email
           )
         ),
         sale_item:sale_item (
           id,
           product_id,
-          quantity,
-          unit_price,
+          required_quantity,
           product:product_id (
             id,
             name,
@@ -609,33 +616,45 @@ export async function getAllOrdersForAdmin(): Promise<SaleOrder[]> {
         )
       `
       )
-      .order("order_date", { ascending: false });
+      .order("created_at", { ascending: false });
 
     if (error) {
       console.error("Error al obtener todas las órdenes:", error);
       throw error;
     }
 
-    // Adaptar la respuesta al formato esperado por el frontend
-    const adaptedData =
-      data?.map((order) => ({
-        id: order.id,
-        order_date: order.order_date,
-        delivery_date: order.delivery_date,
-        status: order.status,
-        order_code: order.order_code,
-        order_seq: order.order_seq,
-        total: order.total,
-        service_fee: order.service_fee,
-        delivery_charge: order.delivery_charge,
-        notes: order.notes,
-        user_id: order.customer?.user_id,
-        user: {
-          name: order.customer?.name || "Sin nombre",
-          email: order.customer?.app_user?.email || "Sin email",
-        },
-        items: order.sale_item,
-      })) || [];
+    const adaptedData: SaleOrder[] =
+      (data || []).map((order: any) => {
+        const items = (order.sale_item || []).map((item: any) => ({
+          id: item.id,
+          sale_order_id: order.id,
+          product_id: item.product_id,
+          quantity: item.required_quantity,
+          unit_price: item.product?.reference_price ?? 0,
+          product: item.product,
+        }));
+        const itemsTotal = items.reduce((sum: number, it: any) => sum + (it.unit_price || 0) * (it.quantity || 0), 0);
+        const total = itemsTotal + (order.service_fee ?? 0) + (order.delivery_fee ?? 0);
+
+        return {
+          id: order.id,
+          customer_id: order.customer_id,
+          order_date: order.created_at,
+          delivery_date: order.created_at,
+          status: order.status,
+          order_code: order.order_code,
+          order_seq: order.order_seq,
+          total,
+          service_fee: order.service_fee,
+          delivery_charge: order.delivery_fee,
+          notes: order.notes,
+          user: {
+            name: order.customer?.name ?? "Sin nombre",
+            email: order.customer?.auth?.email ?? "Sin email",
+          },
+          items,
+        };
+      }) || [];
 
     return adaptedData;
   } catch (error) {

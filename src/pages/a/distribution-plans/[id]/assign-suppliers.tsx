@@ -29,6 +29,7 @@ import {
   upsertFulfillment,
 } from "@/services/supabase.service";
 import { formatPriceAccounting } from "@/utils/formatPrice";
+import { useAuthStore } from "@/store/auth.store";
 const { Content, Sider } = Layout;
 type PlanOrder = Pick<
   SaleOrder,
@@ -66,54 +67,56 @@ function usePlanData(planId?: string) {
       const { data: plan, error: planErr } = await supabase
         .from("distribution_plan")
         .select(
-          "id, plan_date, status, notes, plan_code, cutoff_at, created_at, updated_at, coordinator:coordinator_id ( id, name )"
+          "id, plan_date, status, notes, plan_code, cutoff_at, created_at, updated_at, operator:operator_id ( id, name )"
         )
         .eq("id", planId)
         .single();
       if (planErr) throw planErr;
 
-      const { data: rows, error: dpoErr } = await supabase
-        .from("distribution_plan_order")
+      const { data: rows, error: soErr } = await supabase
+        .from("sale_order")
         .select(
           `
-          id, sequence, status,
-          sale_order:sale_order_id (
+          id,
+          created_at,
+          status,
+          notes,
+          order_code,
+          service_fee,
+          delivery_fee,
+          customer:customer_id (
+            name,
+            auth:user_id ( email )
+          ),
+          sale_item:sale_item (
             id,
-            order_date,
-            delivery_date,
-            status,
-            notes,
-            order_code,
-            service_fee,
-            delivery_charge,
-            customer:customer_id (
-              name,
-              app_user:user_id ( email )
-            ),
-            sale_item:sale_item (
+            product_id,
+            required_quantity,
+            delivered_quantity,
+            product:product_id (
               id,
-              product_id,
-              quantity,
-              unit_price,
-              product:product_id (
-                id,
-                name,
-                unit,
-                description,
-                reference_price,
-                main_photo
-              ),
-              fulfillment:fulfillment (
+              name,
+              unit,
+              description,
+              reference_price,
+              main_photo
+            ),
+            fulfillment:fulfillment (
+              id,
+              purchase_item:purchase_item_id (
                 id,
                 quantity,
-                purchase_item:purchase_item_id (
+                actual_price,
+                purchase_order:purchase_order_id (
                   id,
-                  quantity,
-                  purchase_order:purchase_order_id (
-                    id,
-                    purchase_code,
-                    supplier:supplier_id ( id, name )
-                  )
+                  purchase_code,
+                  supplier:supplier_id ( id, name )
+                ),
+                offer:offer_id (
+                  id,
+                  price,
+                  product:product_id ( id, name, unit ),
+                  supplier:supplier_id ( id, name )
                 )
               )
             )
@@ -121,36 +124,37 @@ function usePlanData(planId?: string) {
         `
         )
         .eq("distribution_plan_id", planId)
-        .order("sequence", { ascending: true });
-      if (dpoErr) throw dpoErr;
+        .order("created_at", { ascending: true });
+      if (soErr) throw soErr;
 
       const orders: PlanOrder[] = (rows || []).map((r: any) => {
-        const saleItems = r.sale_order?.sale_item ?? [];
-        const service_fee = r.sale_order?.service_fee ?? 0;
-        const delivery_charge = r.sale_order?.delivery_charge ?? 0;
+        const rawItems = r.sale_item ?? [];
+        const saleItems = rawItems.map((it: any) => ({
+          ...it,
+          quantity: Number(it.required_quantity || 0),
+          unit_price: Number(it?.product?.reference_price ?? 0),
+        }));
+        const service_fee = r?.service_fee ?? 0;
+        const delivery_charge = r?.delivery_fee ?? 0;
         const subtotal = saleItems.reduce(
-          (acc: number, it: any) =>
-            acc + Number(it.quantity) * Number(it.unit_price || 0),
+          (acc: number, it: any) => acc + Number(it.quantity) * Number(it.unit_price || 0),
           0
         );
-        const total =
-          typeof r.sale_order?.total === "number"
-            ? r.sale_order.total
-            : subtotal + service_fee + delivery_charge;
+        const total = subtotal + service_fee + delivery_charge;
         return {
-          id: r.sale_order?.id,
-          order_code: r.sale_order?.order_code,
-          order_date: r.sale_order?.order_date,
-          delivery_date: r.sale_order?.delivery_date,
-          status: r.sale_order?.status,
+          id: r.id,
+          order_code: r.order_code,
+          order_date: r.created_at,
+          delivery_date: plan?.plan_date,
+          status: r.status,
           total,
           subtotal,
           service_fee,
           delivery_charge,
-          notes: r.sale_order?.notes,
+          notes: r.notes,
           user: {
-            name: r.sale_order?.customer?.name ?? "",
-            email: r.sale_order?.customer?.app_user?.email ?? "",
+            name: r.customer?.name ?? "",
+            email: r.customer?.auth?.email ?? "",
           },
           items: saleItems,
         } as PlanOrder;
@@ -170,8 +174,7 @@ function useOffersForProducts(productIds: string[]) {
       const { data, error } = await supabase
         .from("offer")
         .select(`id, price, product_id, supplier:supplier_id ( id, name )`)
-        .in("product_id", productIds)
-        .eq("available", true);
+        .in("product_id", productIds);
       if (error) throw error;
       return (data || []).map((o: any) => ({
         id: o.id,
@@ -201,21 +204,22 @@ function usePurchaseOrdersForPlan(distributionPlanId?: string) {
           supplier:supplier_id ( id, name ),
           purchase_item:purchase_item (
             id,
-            product_id,
             quantity,
-            estimated_price,
             actual_price,
-            product:product_id (
+            offer:offer_id (
               id,
-              name,
-              unit
+              price,
+              product:product_id (
+                id,
+                name,
+                unit
+              )
             ),
             fulfillment:fulfillment (
               id,
-              quantity,
               sale_item:sale_item_id (
                 id,
-                quantity,
+                required_quantity,
                 sale_order:sale_order_id ( id, order_code, customer:customer_id ( name ) ),
                 product:product_id ( id, name, unit )
               )
@@ -421,6 +425,7 @@ const AssignSuppliersPage = () => {
   const saveAssignmentsMutation = useMutation({
     mutationKey: ["saveAssignments", planId],
     mutationFn: async () => {
+      const { user } = useAuthStore.getState();
       if (!assignContext) return;
       if (!planId) throw new Error("Plan no identificado");
       const ensureValidUuid = (v: any) => typeof v === "string" && v && v !== "undefined";
@@ -431,6 +436,9 @@ const AssignSuppliersPage = () => {
       const saleItemId = String(assignContext.saleItemId || "");
       if (!ensureValidUuid(saleItemId)) {
         throw new Error("Ítem de venta inválido (UUID). No se puede asignar.");
+      }
+      if (!user?.id) {
+        throw new Error("Usuario no identificado");
       }
 
       const notes = data?.plan?.plan_code
@@ -448,136 +456,132 @@ const AssignSuppliersPage = () => {
         .map((sid) => String(sid || ""))
         .filter((sid) => ensureValidUuid(sid));
       if (validSupplierIds.length === 0) {
-        // No hay proveedores válidos a ajustar; salir temprano sin error
         return;
       }
+
+      const ensureOfferId = async (
+        product_id: string,
+        supplier_id: string,
+        price: number
+      ): Promise<string> => {
+        const { data: existing, error: findErr } = await supabase
+          .from("offer")
+          .select("id")
+          .eq("product_id", product_id)
+          .eq("supplier_id", supplier_id)
+          .maybeSingle();
+        if (findErr) throw findErr;
+        if (existing?.id) return existing.id;
+        const { data: created, error: createErr } = await supabase
+          .from("offer")
+          .insert({ product_id, supplier_id, price, available: true })
+          .select("id")
+          .single();
+        if (createErr) throw createErr;
+        return created.id as string;
+      };
 
       await Promise.all(
         validSupplierIds.map(async (supplierId) => {
           const desired = Number(assignmentInputs[supplierId] || 0);
           const already = Number(alreadyMap.get(supplierId) || 0);
+          const price = (offers || []).find(
+            (o) => String(o.product_id) === productId && String(o.supplier_id) === String(supplierId)
+          )?.price ?? 0;
 
-          let piExisting: any | null = null;
-          let po: any | null = null;
-          const { data: existingFulLinks, error: findFulErr } = await supabase
+          // 1) Obtener/crear PO para proveedor y plan (con created_by)
+          const { data: existingPOs, error: findPoErr } = await supabase
+            .from("purchase_order")
+            .select("id, status")
+            .eq("supplier_id", supplierId)
+            .eq("distribution_plan_id", String(planId))
+            .order("created_at", { ascending: false })
+            .limit(1);
+          if (findPoErr) throw findPoErr;
+          let po = existingPOs && existingPOs.length > 0 ? existingPOs[0] : null;
+          if (!po) {
+            const { data: createdPO, error: poCreateErr } = await supabase
+              .from("purchase_order")
+              .insert({
+                supplier_id: supplierId,
+                distribution_plan_id: String(planId),
+                status: "created",
+                notes,
+                created_by: user.id,
+              })
+              .select()
+              .single();
+            if (poCreateErr) throw poCreateErr;
+            po = createdPO;
+          }
+
+          // 2) Asegurar oferta
+          const offerId = await ensureOfferId(productId, supplierId, price);
+
+          // 3) Buscar fulfillment existente del sale_item hacia un purchase_item de este proveedor
+          const { data: existingFul, error: findFulErr } = await supabase
             .from("fulfillment")
             .select(
-              "id, quantity, purchase_item:purchase_item(id, purchase_order_id, supplier_id, product_id)"
+              `id,
+               purchase_item:purchase_item_id (
+                 id,
+                 quantity,
+                 offer:offer_id ( id ),
+                 purchase_order:purchase_order_id ( id, supplier_id )
+               )`
             )
             .eq("sale_item_id", saleItemId)
-            .eq("purchase_item.product_id", productId)
-            .eq("purchase_item.supplier_id", String(supplierId))
+            .eq("purchase_item.purchase_order.supplier_id", String(supplierId))
             .order("id", { ascending: false })
             .limit(1);
           if (findFulErr) throw findFulErr;
-          if (existingFulLinks && existingFulLinks.length > 0) {
-            const link = existingFulLinks[0];
-            piExisting = link.purchase_item;
-            const poCandidate = String(piExisting?.purchase_order_id || "");
-            po = ensureValidUuid(poCandidate) ? { id: poCandidate } : null;
-          }
+          const existingLink = existingFul && existingFul.length > 0 ? existingFul[0] : null;
 
-          if (!po) {
-            const { data: existingPOs, error: findPoErr } = await supabase
-              .from("purchase_order")
-              .select("id, status")
-              .eq("supplier_id", supplierId)
-              .eq("distribution_plan_id", String(planId))
-              .order("created_at", { ascending: false })
-              .limit(1);
-            if (findPoErr) throw findPoErr;
-            if (existingPOs && existingPOs.length > 0) {
-              po = existingPOs[0];
+          if (desired > 0) {
+            if (existingLink?.purchase_item) {
+              // actualizar cantidad del purchase_item
+              const { error: updPiErr } = await supabase
+                .from("purchase_item")
+                .update({ quantity: desired })
+                .eq("id", String(existingLink.purchase_item.id));
+              if (updPiErr) throw updPiErr;
             } else {
-              po = await getOrCreatePurchaseOrderForSupplier({
-                supplierId,
-                distributionPlanId: String(planId),
-                notes,
-              });
-            }
-          }
+              // crear purchase_item y fulfillment
+              const { data: createdPi, error: piErr } = await supabase
+                .from("purchase_item")
+                .insert({
+                  purchase_order_id: String(po.id),
+                  offer_id: String(offerId),
+                  quantity: desired,
+                  actual_price: null,
+                  received_by: user.id,
+                })
+                .select("id")
+                .single();
+              if (piErr) throw piErr;
 
-          if (!piExisting) {
-            const { data: piExistingList, error: findPiErr } = await supabase
-              .from("purchase_item")
-              .select("id, quantity")
-              .eq("purchase_order_id", String(po.id))
-              .eq("supplier_id", String(supplierId))
-              .eq("product_id", productId)
-              .order("id", { ascending: false })
-              .limit(1);
-            if (findPiErr) throw findPiErr;
-            piExisting =
-              piExistingList && piExistingList.length > 0
-                ? piExistingList[0]
-                : null;
-          }
-
-          if (piExisting) {
-            const existingFulfillmentId =
-              existingFulLinks && existingFulLinks.length > 0
-                ? String(existingFulLinks[0].id)
-                : undefined;
-            if (desired > 0) {
-              if (existingFulfillmentId) {
-                // Actualiza directamente el vínculo existente
-                const { error: updFulErr } = await supabase
-                  .from("fulfillment")
-                  .update({ quantity: Number(desired) })
-                  .eq("id", existingFulfillmentId);
-                if (updFulErr) throw updFulErr;
-              } else {
-                // No existe vínculo previo, crear con el par saleItem-purchaseItem
-                await upsertFulfillment({
-                  saleItemId: saleItemId,
-                  purchaseItemId: String(piExisting.id),
-                  quantity: Number(desired),
+              const { error: fulErr } = await supabase
+                .from("fulfillment")
+                .insert({
+                  sale_item_id: saleItemId,
+                  purchase_item_id: String(createdPi.id),
                 });
-              }
-            } else {
-              if (existingFulfillmentId) {
-                const { error: delFulErr } = await supabase
-                  .from("fulfillment")
-                  .delete()
-                  .eq("id", existingFulfillmentId);
-                if (delFulErr) throw delFulErr;
-              }
+              if (fulErr) throw fulErr;
             }
-
-            // Recalcular la cantidad del purchase_item a partir de sus vínculos
-            const { data: piFuls, error: piFulsErr } = await supabase
-              .from("fulfillment")
-              .select("quantity")
-              .eq("purchase_item_id", String(piExisting.id));
-            if (piFulsErr) throw piFulsErr;
-            const summedQty = (piFuls || []).reduce(
-              (sum: number, f: any) => sum + Number(f.quantity || 0),
-              0
-            );
-            const { error: updPiErr } = await supabase
-              .from("purchase_item")
-              .update({ quantity: summedQty })
-              .eq("id", String(piExisting.id));
-            if (updPiErr) throw updPiErr;
           } else {
-            if (desired > 0) {
-              const estimatedPrice = (offers || []).find(
-                (o) =>
-                  String(o.product_id) === productId &&
-                  String(o.supplier_id) === String(supplierId)
-              )?.price;
-              const pi = await createPurchaseItem({
-                purchaseOrderId: String(po.id),
-                productId: productId,
-                supplierId: String(supplierId),
-                quantity: Number(desired),
-                estimatedPrice: estimatedPrice ?? null,
-              });
-              await upsertFulfillment({
-                saleItemId: saleItemId,
-                purchaseItemId: String(pi.id),
-                quantity: Number(desired),
-              });
+            // desired == 0: si existe vínculo, eliminar fulfillment y poner PI en 0
+            if (existingLink?.purchase_item) {
+              const { error: delFulErr } = await supabase
+                .from("fulfillment")
+                .delete()
+                .eq("sale_item_id", saleItemId)
+                .eq("purchase_item_id", String(existingLink.purchase_item.id));
+              if (delFulErr) throw delFulErr;
+              const { error: updPiZeroErr } = await supabase
+                .from("purchase_item")
+                .update({ quantity: 0 })
+                .eq("id", String(existingLink.purchase_item.id));
+              if (updPiZeroErr) throw updPiZeroErr;
             }
           }
         })

@@ -6,15 +6,16 @@ import {
   Input,
   InputNumber,
   Select,
-  message,
   Card,
   Divider,
+  App,
 } from "antd";
 import { useRouter } from "next/router";
 import dayjs from "dayjs";
 import { supabase } from "@/services/supabase.client";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { PlusOutlined, MinusCircleOutlined } from "@ant-design/icons";
+import { useAuthStore } from "@/store/auth.store";
 
 interface CustomerOption {
   id: string;
@@ -38,8 +39,10 @@ interface ProductOption {
 const CreateSaleOrderPage = () => {
   const router = useRouter();
   const planId = router.query.planId as string | undefined;
+  const { message } = App.useApp();
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
+  const { user } = useAuthStore();
   const { data: customers = [], isLoading: loadingCustomers } = useQuery<
     CustomerOption[]
   >({
@@ -51,7 +54,7 @@ const CreateSaleOrderPage = () => {
           `
           id,
           name,
-          app_user:user_id ( email )
+          auth:user_id ( email )
         `
         )
         .order("name", { ascending: true });
@@ -59,13 +62,12 @@ const CreateSaleOrderPage = () => {
       const opts: CustomerOption[] = (data || []).map((c: any) => ({
         id: c.id,
         name: c.name,
-        email: c.app_user?.email,
+        email: c.auth?.email,
       }));
       return opts;
     },
     staleTime: 300_000,
     retry: 1,
-    onError: () => message.error("No se pudieron cargar los clientes"),
   });
 
   const { data: plans = [], isLoading: loadingPlans } = useQuery<
@@ -89,8 +91,6 @@ const CreateSaleOrderPage = () => {
     },
     staleTime: 300_000,
     retry: 1,
-    onError: () =>
-      message.error("No se pudieron cargar los planes de distribución"),
   });
 
   const { data: products = [], isLoading: loadingProducts } = useQuery<
@@ -112,38 +112,16 @@ const CreateSaleOrderPage = () => {
     },
     staleTime: 300_000,
     retry: 1,
-    onError: () => message.error("No se pudieron cargar los productos"),
   });
 
-  const onFinish = async (values: any) => {
-    try {
-      setSubmitting(true);
-      const payload: any = {
-        customer_id: values.customer_id,
-        status: "pending",
-        service_fee: values.service_fee ?? 0,
-        delivery_charge: values.delivery_charge ?? 0,
-        notes: values.notes ?? null,
-      };
-      if (values.delivery_date) {
-        let chosenDate: string | null = null;
-        if (values.delivery_date === "nearest") {
-          chosenDate = plans.length > 0 ? plans[0].plan_date : null;
-          if (!chosenDate) {
-            message.warning(
-              "No hay planes próximos; la orden se creará sin fecha de entrega"
-            );
-          }
-        } else {
-          const selected = plans.find((p) => p.id === values.delivery_date);
-          chosenDate = selected?.plan_date ?? null;
-        }
-        if (chosenDate) {
-          payload.delivery_date = dayjs(chosenDate)
-            .startOf("day")
-            .toISOString();
-        }
-      }
+  const createOrderMutation = useMutation({
+    mutationFn: async ({
+      payload,
+      items,
+    }: {
+      payload: any;
+      items: Array<{ product_id: string; quantity: number }>;
+    }) => {
       const { data, error } = await supabase
         .from("sale_order")
         .insert(payload)
@@ -152,51 +130,74 @@ const CreateSaleOrderPage = () => {
       if (error) throw error;
       const orderId = data.id;
 
-      // Si se abrió desde un plan, vincular la nueva orden al plan con secuencia siguiente
-      if (planId) {
-        const { data: seqRows, error: seqErr } = await supabase
-          .from("distribution_plan_order")
-          .select("sequence")
-          .eq("distribution_plan_id", planId)
-          .order("sequence", { ascending: false })
-          .limit(1);
-        if (seqErr) throw seqErr;
-        const nextSeq = (Array.isArray(seqRows) && seqRows.length > 0
-          ? Number(seqRows[0]?.sequence || 0)
-          : 0) + 1;
-        const { error: linkErr } = await supabase
-          .from("distribution_plan_order")
-          .insert({
-            distribution_plan_id: planId,
-            sale_order_id: orderId,
-            sequence: nextSeq,
-            status: "pending",
-          })
-          .select();
-        if (linkErr) throw linkErr;
-      }
-
-      const items: Array<{ product_id: string; quantity: number }> =
-        values.items || [];
       if (items.length > 0) {
-        const saleItems = items.map((it) => {
-          const p = products.find((pr) => pr.id === it.product_id);
-          const unit_price = p?.reference_price ?? 0;
-          return {
-            sale_order_id: orderId,
-            product_id: it.product_id,
-            quantity: Number(it.quantity),
-            unit_price,
-          };
-        });
+        const saleItems = items.map((it) => ({
+          sale_order_id: orderId,
+          product_id: it.product_id,
+          required_quantity: Number(it.quantity),
+        }));
         const { error: itemsErr } = await supabase
           .from("sale_item")
           .insert(saleItems)
           .select();
         if (itemsErr) throw itemsErr;
       }
-      message.success(planId ? "Orden creada y agregada al plan" : "Orden creada exitosamente");
-      router.push(planId ? `/a/distribution-plans/${planId}` : "/a/sale-orders/pending");
+
+      return data;
+    },
+  });
+
+  const onFinish = async (values: any) => {
+    try {
+      setSubmitting(true);
+
+      // Validar y determinar el plan de distribución (requerido por el esquema)
+      const availablePlanIds = new Set((plans || []).map((p) => p.id));
+      const deliveryDateSelection: string | undefined = values?.delivery_date;
+      const distributionPlanId: string | undefined =
+        planId ?? deliveryDateSelection;
+      if (!distributionPlanId || !availablePlanIds.has(distributionPlanId)) {
+        message.error("Debes seleccionar un plan de distribución válido");
+        return;
+      }
+
+      // Verificar creador: admin en este flujo (página de administración)
+      if (!user?.id) {
+        message.error("Usuario no identificado");
+        return;
+      }
+      const { data: adminRow, error: adminErr } = await supabase
+        .from("admin")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (adminErr || !adminRow?.id) {
+        console.error("No se encontró admin para el usuario actual", adminErr);
+        message.error("No se encontró admin para el usuario actual");
+        return;
+      }
+
+      const payload: any = {
+        customer_id: values.customer_id,
+        distribution_plan_id: distributionPlanId,
+        status: "pending",
+        service_fee: values.service_fee ?? 0,
+        delivery_fee: values.delivery_charge ?? 0,
+        notes: values.notes ?? null,
+        created_by_admin_id: adminRow.id,
+      };
+
+      const items: Array<{ product_id: string; quantity: number }> =
+        values.items || [];
+
+      await createOrderMutation.mutateAsync({ payload, items });
+
+      message.success(
+        planId ? "Orden creada y agregada al plan" : "Orden creada exitosamente"
+      );
+      router.push(
+        planId ? `/a/distribution-plans/${planId}` : "/a/sale-orders/pending"
+      );
     } catch (err) {
       console.error("Error creando orden", err);
       message.error("No se pudo crear la orden");
@@ -214,7 +215,6 @@ const CreateSaleOrderPage = () => {
         initialValues={{
           service_fee: 0,
           delivery_charge: 0,
-          delivery_date: "nearest",
         }}
       >
         <Form.Item
@@ -241,7 +241,6 @@ const CreateSaleOrderPage = () => {
             showSearch
             optionFilterProp="label"
             options={[
-              { value: "nearest", label: "La más próxima" },
               ...plans.map((p) => ({
                 value: p.id,
                 label: `${dayjs(p.plan_date).format("YYYY-MM-DD")}`,
@@ -297,18 +296,30 @@ const CreateSaleOrderPage = () => {
                     marginBottom: 8,
                   }}
                 >
-                  <Form.Item noStyle shouldUpdate={(prev, curr) => prev.items !== curr.items}>
+                  <Form.Item
+                    noStyle
+                    shouldUpdate={(prev, curr) => prev.items !== curr.items}
+                  >
                     {() => {
                       const items = form.getFieldValue("items") || [];
                       const selectedIds: string[] = items
                         .map((it: any) => it?.product_id)
                         .filter((id: any) => !!id);
-                      const currentId = form.getFieldValue(["items", field.name, "product_id"]);
+                      const currentId = form.getFieldValue([
+                        "items",
+                        field.name,
+                        "product_id",
+                      ]);
                       const filteredOptions = products
-                        .filter((p) => p.id === currentId || !selectedIds.includes(p.id))
+                        .filter(
+                          (p) =>
+                            p.id === currentId || !selectedIds.includes(p.id)
+                        )
                         .map((p) => ({
                           value: p.id,
-                          label: `${p.name} (${p.unit}) · $${p.reference_price.toFixed(2)}`,
+                          label: `${p.name} (${
+                            p.unit
+                          }) · $${p.reference_price.toFixed(2)}`,
                         }));
                       return (
                         <Form.Item
@@ -316,7 +327,10 @@ const CreateSaleOrderPage = () => {
                           name={[field.name, "product_id"]}
                           fieldKey={[field.fieldKey!, "product_id"]}
                           rules={[
-                            { required: true, message: "Selecciona un producto" },
+                            {
+                              required: true,
+                              message: "Selecciona un producto",
+                            },
                           ]}
                         >
                           <Select

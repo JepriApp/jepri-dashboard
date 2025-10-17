@@ -24,6 +24,7 @@ import { supabase } from "@/services/supabase.client";
 import type { SaleOrder, SaleItem } from "@/services/supabase.service";
 import { getPendingOrdersForAdmin } from "@/services/supabase.service";
 import { formatPriceAccounting } from "@/utils/formatPrice";
+import { useAuthStore } from "@/store/auth.store";
 
 type OfferOption = {
   id: string;
@@ -69,54 +70,56 @@ function usePlanData(planId?: string) {
       const { data: plan, error: planErr } = await supabase
         .from("distribution_plan")
         .select(
-          "id, plan_date, status, notes, plan_code, cutoff_at, created_at, updated_at, coordinator:coordinator_id ( id, name )"
+          "id, plan_date, status, notes, plan_code, cutoff_at, created_at, updated_at, operator:operator_id ( id, name )"
         )
         .eq("id", planId)
         .single();
       if (planErr) throw planErr;
 
-      const { data: rows, error: dpoErr } = await supabase
-        .from("distribution_plan_order")
+      const { data: rows, error: soErr } = await supabase
+        .from("sale_order")
         .select(
           `
-          id, sequence, status,
-          sale_order:sale_order_id (
+          id,
+          created_at,
+          status,
+          notes,
+          order_code,
+          service_fee,
+          delivery_fee,
+          customer:customer_id (
+            name,
+            auth:user_id ( email )
+          ),
+          sale_item:sale_item (
             id,
-            order_date,
-            delivery_date,
-            status,
-            notes,
-            order_code,
-            service_fee,
-            delivery_charge,
-            customer:customer_id (
-              name,
-              app_user:user_id ( email )
-            ),
-            sale_item:sale_item (
+            product_id,
+            required_quantity,
+            delivered_quantity,
+            product:product_id (
               id,
-              product_id,
-              quantity,
-              unit_price,
-              product:product_id (
-                id,
-                name,
-                unit,
-                description,
-                reference_price,
-                main_photo
-              ),
-              fulfillment:fulfillment (
+              name,
+              unit,
+              description,
+              reference_price,
+              main_photo
+            ),
+            fulfillment:fulfillment (
+              id,
+              purchase_item:purchase_item_id (
                 id,
                 quantity,
-                purchase_item:purchase_item_id (
+                actual_price,
+                purchase_order:purchase_order_id (
                   id,
-                  quantity,
-                  purchase_order:purchase_order_id (
-                    id,
-                    purchase_code,
-                    supplier:supplier_id ( id, name )
-                  )
+                  purchase_code,
+                  supplier:supplier_id ( id, name )
+                ),
+                offer:offer_id (
+                  id,
+                  price,
+                  product:product_id ( id, name, unit ),
+                  supplier:supplier_id ( id, name )
                 )
               )
             )
@@ -124,36 +127,45 @@ function usePlanData(planId?: string) {
         `
         )
         .eq("distribution_plan_id", planId)
-        .order("sequence", { ascending: true });
-      if (dpoErr) throw dpoErr;
+        .order("created_at", { ascending: true });
+      if (soErr) throw soErr;
 
       const orders: PlanOrder[] = (rows || []).map((r: any) => {
-        const saleItems = r.sale_order?.sale_item ?? [];
-        const service_fee = r.sale_order?.service_fee ?? 0;
-        const delivery_charge = r.sale_order?.delivery_charge ?? 0;
+        const rawItems = r.sale_item ?? [];
+        const saleItems = rawItems.map((it: any) => {
+          const assigned_quantity = (Array.isArray(it.fulfillment) ? it.fulfillment : []).reduce(
+            (sum: number, f: any) => sum + Number(f?.purchase_item?.quantity ?? 0),
+            0
+          );
+          return {
+            ...it,
+            quantity: Number(it.required_quantity || 0),
+            unit_price: Number(it?.product?.reference_price ?? 0),
+            assigned_quantity,
+          };
+        });
+        const service_fee = r?.service_fee ?? 0;
+        const delivery_charge = r?.delivery_fee ?? 0;
         const subtotal = saleItems.reduce(
           (acc: number, it: any) =>
             acc + Number(it.quantity) * Number(it.unit_price || 0),
           0
         );
-        const total =
-          typeof r.sale_order?.total === "number"
-            ? r.sale_order.total
-            : subtotal + service_fee + delivery_charge;
+        const total = subtotal + service_fee + delivery_charge;
         return {
-          id: r.sale_order?.id,
-          order_code: r.sale_order?.order_code,
-          order_date: r.sale_order?.order_date,
-          delivery_date: r.sale_order?.delivery_date,
-          status: r.sale_order?.status,
+          id: r.id,
+          order_code: r.order_code,
+          order_date: r.created_at,
+          delivery_date: plan?.plan_date,
+          status: r.status,
           total,
           subtotal,
           service_fee,
           delivery_charge,
-          notes: r.sale_order?.notes,
+          notes: r.notes,
           user: {
-            name: r.sale_order?.customer?.name ?? "",
-            email: r.sale_order?.customer?.app_user?.email ?? "",
+            name: r.customer?.name ?? "",
+            email: r.customer?.auth?.email ?? "",
           },
           items: saleItems,
         } as PlanOrder;
@@ -187,21 +199,22 @@ function usePurchaseOrdersForPlan(distributionPlanId?: string) {
           supplier:supplier_id ( id, name ),
           purchase_item:purchase_item (
             id,
-            product_id,
             quantity,
-            estimated_price,
             actual_price,
-            product:product_id (
+            offer:offer_id (
               id,
-              name,
-              unit
+              price,
+              product:product_id (
+                id,
+                name,
+                unit
+              )
             ),
             fulfillment:fulfillment (
               id,
-              quantity,
               sale_item:sale_item_id (
                 id,
-                quantity,
+                required_quantity,
                 sale_order:sale_order_id ( id, order_code ),
                 product:product_id ( id, name, unit )
               )
@@ -225,16 +238,8 @@ const PlanEditorPage = () => {
   const orders = data?.orders || [];
   const dpoStatusCounts = data?.dpoStatusCounts || {};
 
-  // Modal para vincular órdenes existentes
-  const [linkModalOpen, setLinkModalOpen] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [linking, setLinking] = useState(false);
-  const { data: pendingOrders = [], isLoading: loadingPendingOrders } =
-    useQuery<SaleOrder[]>({
-      queryKey: ["pendingOrdersForLinking"],
-      queryFn: getPendingOrdersForAdmin,
-      staleTime: 60_000,
-    });
 
   const [assignments, setAssignments] = useState<Record<string, Assignment[]>>(
     {}
@@ -279,8 +284,7 @@ const PlanEditorPage = () => {
       const { data, error } = await supabase
         .from("offer")
         .select(`id, price, product_id, supplier:supplier_id ( id, name )`)
-        .in("product_id", productIds)
-        .eq("available", true);
+        .in("product_id", productIds);
       if (error) throw error;
       return (data || []).map((o: any) => ({
         id: o.id,
@@ -353,8 +357,13 @@ const PlanEditorPage = () => {
   }
 
   async function handleGeneratePurchaseOrders() {
+    const { user } = useAuthStore();
     if (!plan || !plan.plan_date) {
       message.warning("El plan no está cargado");
+      return;
+    }
+    if (!user?.id) {
+      message.error("Usuario no identificado");
       return;
     }
     const bySupplier = new Map<
@@ -390,36 +399,129 @@ const PlanEditorPage = () => {
     }
 
     try {
-      const poRows = Array.from(bySupplier.entries()).map(([supplier_id]) => ({
-        supplier_id,
-        distribution_plan_id: String(plan.id),
-        order_date: dayjs().toISOString(),
-        total: 0,
-      }));
-      const { data: createdPOs, error: poErr } = await supabase
+      // 1) Obtener/crear órdenes de compra por proveedor para este plan
+      const supplierIds = Array.from(bySupplier.keys());
+      const { data: existingPOs, error: poFetchErr } = await supabase
         .from("purchase_order")
-        .insert(poRows)
-        .select();
-      if (poErr) throw poErr;
+        .select("id, supplier_id")
+        .eq("distribution_plan_id", String(plan.id))
+        .in("supplier_id", supplierIds);
+      if (poFetchErr) throw poFetchErr;
       const poBySupplier = new Map<string, string>();
-      createdPOs.forEach((po: any) => poBySupplier.set(po.supplier_id, po.id));
+      (existingPOs || []).forEach((po: any) =>
+        poBySupplier.set(po.supplier_id, po.id)
+      );
+      const toCreate = supplierIds.filter((sid) => !poBySupplier.has(sid));
+      if (toCreate.length > 0) {
+        const rows = toCreate.map((supplier_id) => ({
+          supplier_id,
+          distribution_plan_id: String(plan.id),
+          created_by: user.id,
+          status: "created",
+        }));
+        const { data: createdPOs, error: poCreateErr } = await supabase
+          .from("purchase_order")
+          .insert(rows)
+          .select();
+        if (poCreateErr) throw poCreateErr;
+        (createdPOs || []).forEach((po: any) =>
+          poBySupplier.set(po.supplier_id, po.id)
+        );
+      }
 
+      // 2) Asegurar ofertas existentes por producto-proveedor; crear si faltan
+      const ensureOfferId = async (
+        product_id: string,
+        supplier_id: string,
+        price: number
+      ): Promise<string> => {
+        const existing = (offersByProduct[product_id] || []).find(
+          (o) => o.supplier_id === supplier_id
+        );
+        if (existing?.id) return existing.id;
+        const { data: found, error: findErr } = await supabase
+          .from("offer")
+          .select("id")
+          .eq("product_id", product_id)
+          .eq("supplier_id", supplier_id)
+          .maybeSingle();
+        if (findErr) throw findErr;
+        if (found?.id) return found.id;
+        const { data: created, error: createErr } = await supabase
+          .from("offer")
+          .insert({ product_id, supplier_id, price, available: true })
+          .select("id")
+          .single();
+        if (createErr) throw createErr;
+        // actualizar cache local
+        if (!offersByProduct[product_id]) offersByProduct[product_id] = [];
+        offersByProduct[product_id].push({
+          id: created.id,
+          supplier_id,
+          supplier_name: "",
+          price,
+        });
+        return created.id;
+      };
+
+      // 3) Crear items de compra
       const piRows: any[] = [];
       bySupplier.forEach((payload, supplier_id) => {
         const purchase_order_id = poBySupplier.get(supplier_id)!;
         payload.items.forEach((it) => {
           piRows.push({
             purchase_order_id,
-            product_id: it.product_id,
-            supplier_id,
+            offer_id: undefined, // será resuelto antes de insertar
             quantity: it.quantity,
-            estimated_price: it.price,
+            actual_price: null,
+            received_by: user.id,
           });
         });
       });
-      const { error: piErr } = await supabase
-        .from("purchase_item")
-        .insert(piRows);
+      // Resolver offer_id por cada fila antes de insertar
+      for (let i = 0; i < piRows.length; i++) {
+        const row = piRows[i];
+        // Para resolver product_id y supplier_id, buscamos en 'bySupplier'
+        // Recorremos nuevamente el mapa para encontrar la combinación de item que generó esta fila
+        let resolvedOfferId: string | undefined;
+        bySupplier.forEach((payload, supplier_id) => {
+          if (resolvedOfferId) return;
+          const purchase_order_id = poBySupplier.get(supplier_id)!;
+          if (row.purchase_order_id !== purchase_order_id) return;
+          const item = payload.items.find((it) => it.quantity === row.quantity);
+          if (!item) return;
+          resolvedOfferId = undefined;
+        });
+        // Como tenemos el contexto original en 'payload.items', reconstruimos de forma segura
+        // en una segunda pasada con indices para determinar oferta
+        if (!resolvedOfferId) {
+          for (const [supplier_id, payload] of bySupplier.entries()) {
+            const purchase_order_id = poBySupplier.get(supplier_id)!;
+            if (row.purchase_order_id !== purchase_order_id) continue;
+            const candidate = payload.items.find(
+              (it) => it.quantity === row.quantity
+            );
+            if (!candidate) continue;
+            const offerId = await ensureOfferId(
+              candidate.product_id,
+              supplier_id,
+              candidate.price
+            );
+            row.offer_id = offerId;
+            break;
+          }
+        }
+      }
+
+      const { error: piErr } = await supabase.from("purchase_item").insert(
+        piRows.map((r) => ({
+          purchase_order_id: r.purchase_order_id,
+          offer_id: r.offer_id,
+          quantity: r.quantity,
+          actual_price: r.actual_price,
+          received_by: r.received_by,
+        }))
+      );
       if (piErr) throw piErr;
       message.success("Órdenes de compra generadas según asignaciones");
     } catch (e: any) {
@@ -521,7 +623,7 @@ const PlanEditorPage = () => {
           (sum: number, it: any) =>
             sum +
             Number(it.quantity || 0) *
-              Number(it.actual_price ?? it.estimated_price ?? 0),
+              Number(it.actual_price ?? it.offer?.price ?? 0),
           0
         );
         return formatPriceAccounting(total);
@@ -569,86 +671,8 @@ const PlanEditorPage = () => {
     },
   ];
 
-  async function handleLinkSelectedOrders() {
-    if (!planId) {
-      message.warning("Plan no identificado");
-      return;
-    }
-    if (selectedOrderIds.length === 0) {
-      message.warning("Seleccione al menos una orden");
-      return;
-    }
-    try {
-      setLinking(true);
-      const { data: seqRows, error: seqErr } = await supabase
-        .from("distribution_plan_order")
-        .select("sequence")
-        .eq("distribution_plan_id", planId)
-        .order("sequence", { ascending: false })
-        .limit(1);
-      if (seqErr) throw seqErr;
-      const lastSeq =
-        Array.isArray(seqRows) && seqRows.length > 0
-          ? Number(seqRows[0]?.sequence || 0)
-          : 0;
-      const startSeq = lastSeq + 1;
-      const rows = selectedOrderIds.map((soId, idx) => ({
-        distribution_plan_id: String(planId),
-        sale_order_id: String(soId),
-        sequence: startSeq + idx,
-        status: "pending",
-      }));
-      const { error: insErr } = await supabase
-        .from("distribution_plan_order")
-        .insert(rows);
-      if (insErr) throw insErr;
-      message.success("Órdenes vinculadas al plan");
-      setLinkModalOpen(false);
-      setSelectedOrderIds([]);
-      await refetch();
-    } catch (e: any) {
-      console.error(e);
-      message.error("No se pudieron vincular las órdenes");
-    } finally {
-      setLinking(false);
-    }
-  }
-
   return (
     <>
-      <Modal
-        open={linkModalOpen}
-        title="Agregar orden de venta existente"
-        onCancel={() => setLinkModalOpen(false)}
-        width={900}
-        footer={[
-          <Button key="cancel" onClick={() => setLinkModalOpen(false)}>
-            Cancelar
-          </Button>,
-          <Button
-            key="link"
-            type="primary"
-            disabled={selectedOrderIds.length === 0}
-            loading={linking}
-            onClick={handleLinkSelectedOrders}
-          >
-            Agregar al plan
-          </Button>,
-        ]}
-      >
-        <Table
-          dataSource={pendingOrders}
-          columns={pendingOrderColumns as any}
-          rowKey="id"
-          loading={loadingPendingOrders}
-          pagination={{ pageSize: 8 }}
-          rowSelection={{
-            selectedRowKeys: selectedOrderIds as any,
-            onChange: (keys) => setSelectedOrderIds(keys as string[]),
-          }}
-        />
-      </Modal>
-
       <Card
         title="Reporte del plan"
         style={{ marginBottom: 16 }}
@@ -668,9 +692,6 @@ const PlanEditorPage = () => {
               }
             >
               Agregar nueva orden de venta
-            </Button>
-            <Button onClick={() => setLinkModalOpen(true)}>
-              Agregar orden de venta existente
             </Button>
             <Button
               onClick={() =>
@@ -696,7 +717,7 @@ const PlanEditorPage = () => {
             <Tag color="blue">{plan?.status}</Tag>
           </Descriptions.Item>
           <Descriptions.Item label="Coordinador">
-            {plan?.coordinator?.name ?? "-"}
+            {plan?.operator?.name ?? "-"}
           </Descriptions.Item>
           <Descriptions.Item label="Corte">
             {plan?.cutoff_at
@@ -741,7 +762,6 @@ const PlanEditorPage = () => {
           />
         </Card>
       </Space>
-
       {isLoading ? (
         <Skeleton active />
       ) : (
@@ -799,39 +819,40 @@ const PlanEditorPage = () => {
                             : [];
                           if (links.length === 0)
                             return (
-                              <Typography.Text type="secondary">
-                                —
-                              </Typography.Text>
+                              <Typography.Text type="secondary">—</Typography.Text>
                             );
-                          return (
-                            <Space wrap size={4}>
-                              {links.map((f: any) => {
-                                const poCode =
-                                  f?.purchase_item?.purchase_order
-                                    ?.purchase_code ?? "";
-                                const supplier =
-                                  f?.purchase_item?.purchase_order?.supplier
-                                    ?.name ?? "";
-                                const qty = Number(f?.quantity || 0);
-                                const unit = it?.product?.unit ?? "";
-                                const label = [
-                                  poCode ? `${poCode}` : "",
-                                  supplier,
-                                  `${qty} ${unit}`,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" · ");
-                                return (
-                                  <Tooltip
-                                    key={`${it.id}-${poCode}-${qty}`}
-                                    title={`Cumplimiento: ${qty} ${unit}`}
-                                  >
-                                    <Tag>{label}</Tag>
-                                  </Tooltip>
-                                );
-                              })}
-                            </Space>
-                          );
+                          const unit = it?.product?.unit ?? "";
+                          // Agrupar por proveedor y sumar cantidad del purchase_item
+                          const agg = new Map<string, { name: string; qty: number; poCodes: string[] }>();
+                          links.forEach((f: any) => {
+                            const supplierId = f?.purchase_item?.purchase_order?.supplier?.id;
+                            const supplierName = f?.purchase_item?.purchase_order?.supplier?.name ?? "";
+                            const poCode = f?.purchase_item?.purchase_order?.purchase_code ?? "";
+                            const qty = Number(f?.purchase_item?.quantity ?? 0);
+                            if (!supplierId) return;
+                            const prev = agg.get(String(supplierId));
+                            if (prev) {
+                              prev.qty += qty;
+                              if (poCode && !prev.poCodes.includes(poCode)) prev.poCodes.push(poCode);
+                              agg.set(String(supplierId), prev);
+                            } else {
+                              agg.set(String(supplierId), {
+                                name: supplierName,
+                                qty,
+                                poCodes: poCode ? [poCode] : [],
+                              });
+                            }
+                          });
+                          const tags = Array.from(agg.entries()).map(([sid, info]) => {
+                            const label = `${info.name} · ${info.qty} ${unit}`;
+                            const tooltip = info.poCodes.length > 0 ? `POs: ${info.poCodes.join(", ")}` : undefined;
+                            return (
+                              <Tooltip key={`${it.id}-${sid}`} title={tooltip}>
+                                <Tag>{label}</Tag>
+                              </Tooltip>
+                            );
+                          });
+                          return <Space wrap size={4}>{tags}</Space>;
                         },
                       },
                     ] as any
@@ -842,7 +863,6 @@ const PlanEditorPage = () => {
           />
         </>
       )}
-
       {showPurchaseSection && (
         <>
           <Divider orientation="left">Órdenes de compra</Divider>
@@ -880,7 +900,7 @@ const PlanEditorPage = () => {
                           key: "price",
                           render: (_: unknown, it: any) =>
                             formatPriceAccounting(
-                              Number(it.actual_price ?? it.estimated_price ?? 0)
+                              Number(it.actual_price ?? it.offer?.price ?? 0)
                             ),
                         },
                         {
@@ -892,28 +912,24 @@ const PlanEditorPage = () => {
                               : [];
                             if (links.length === 0)
                               return (
-                                <Typography.Text type="secondary">
-                                  —
-                                </Typography.Text>
+                                <Typography.Text type="secondary">—</Typography.Text>
                               );
+                            const qtyPi = Number(it?.quantity ?? 0);
                             return (
                               <Space wrap size={4}>
                                 {links.map((f: any) => {
-                                  const soCode =
-                                    f?.sale_item?.sale_order?.order_code ?? "";
-                                  const qty = Number(f?.quantity || 0);
-                                  const unit =
-                                    f?.sale_item?.product?.unit ?? "";
+                                  const soCode = f?.sale_item?.sale_order?.order_code ?? "";
+                                  const unit = f?.sale_item?.product?.unit ?? "";
                                   const label = [
                                     soCode ? ` ${soCode}` : "",
-                                    `${qty} ${unit}`,
+                                    `${qtyPi} ${unit}`,
                                   ]
                                     .filter(Boolean)
                                     .join(" · ");
                                   return (
                                     <Tooltip
-                                      key={`${it.id}-${soCode}-${qty}`}
-                                      title={`Cumple pedido: ${qty} ${unit}`}
+                                      key={`${it.id}-${soCode}-${qtyPi}`}
+                                      title={`Cumple pedido: ${qtyPi} ${unit}`}
                                     >
                                       <Tag color="blue">{label}</Tag>
                                     </Tooltip>
