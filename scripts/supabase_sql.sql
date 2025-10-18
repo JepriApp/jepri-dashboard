@@ -120,13 +120,13 @@ CREATE TABLE sale_order (
     notes TEXT,
     created_by_admin_id UUID REFERENCES admin(id) ON DELETE RESTRICT,
     created_by_customer_id UUID REFERENCES customer(id) ON DELETE RESTRICT,
+    CONSTRAINT sale_order_exactly_one_creator CHECK (
+        (created_by_admin_id IS NOT NULL) <> (created_by_customer_id IS NOT NULL)
+    )
     created_at TIMESTAMPTZ DEFAULT NOW(),
     -- Identificador humano: número secuencial global (ej: 000123)
     order_seq INTEGER,
     order_code TEXT UNIQUE,
-    CONSTRAINT sale_order_exactly_one_creator CHECK (
-        (created_by_admin_id IS NOT NULL) <> (created_by_customer_id IS NOT NULL)
-    )
 );
 
 -- Tabla de items de venta
@@ -168,7 +168,7 @@ CREATE TABLE purchase_item (
     quantity DECIMAL(12,2) NOT NULL,
     actual_price DECIMAL(12,2),
     received_quantity DECIMAL(12,2),
-    received_by UUID NOT NULL REFERENCES auth(id) ON DELETE RESTRICT,
+    received_by UUID REFERENCES auth(id) ON DELETE RESTRICT,
     received_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );

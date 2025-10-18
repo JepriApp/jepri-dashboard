@@ -671,15 +671,15 @@ export async function getOrCreatePurchaseOrderForSupplier(params: {
   supplierId: string;
   distributionPlanId: string;
   notes?: string | null;
+  createdBy?: string | null;
 }) {
-  const { supplierId, distributionPlanId, notes = null } = params;
-  // Reutiliza una PO en estado 'created' para el proveedor si existe; si no, crea una nueva
+  const { supplierId, distributionPlanId, notes = null, createdBy = null } = params;
+  // Reutiliza la PO para el proveedor en el plan si existe (cualquier estado); si no, crea una nueva
   const { data: existing, error: findErr } = await supabase
     .from("purchase_order")
     .select("id, status")
     .eq("supplier_id", supplierId)
     .eq("distribution_plan_id", distributionPlanId)
-    .eq("status", "created")
     .order("created_at", { ascending: false })
     .limit(1);
   if (findErr) throw findErr;
@@ -693,6 +693,7 @@ export async function getOrCreatePurchaseOrderForSupplier(params: {
       distribution_plan_id: distributionPlanId,
       status: "created",
       notes: notes ?? undefined,
+      created_by: createdBy ?? undefined,
     })
     .select()
     .single();
@@ -702,26 +703,18 @@ export async function getOrCreatePurchaseOrderForSupplier(params: {
 
 export async function createPurchaseItem(params: {
   purchaseOrderId: string;
-  productId: string;
-  supplierId: string;
+  offerId: string;
   quantity: number;
-  estimatedPrice?: number | null;
+  actualPrice?: number | null;
 }) {
-  const {
-    purchaseOrderId,
-    productId,
-    supplierId,
-    quantity,
-    estimatedPrice = null,
-  } = params;
+  const { purchaseOrderId, offerId, quantity, actualPrice = null } = params;
   const { data, error } = await supabase
     .from("purchase_item")
     .insert({
       purchase_order_id: purchaseOrderId,
-      product_id: productId,
-      supplier_id: supplierId,
+      offer_id: offerId,
       quantity,
-      estimated_price: estimatedPrice ?? undefined,
+      actual_price: actualPrice ?? undefined,
     })
     .select()
     .single();
@@ -732,31 +725,22 @@ export async function createPurchaseItem(params: {
 export async function upsertFulfillment(params: {
   saleItemId: string;
   purchaseItemId: string;
-  quantity: number;
 }) {
-  const { saleItemId, purchaseItemId, quantity } = params;
+  const { saleItemId, purchaseItemId } = params;
   // Intenta encontrar el cumplimiento existente para la pareja
   const { data: existing, error: findErr } = await supabase
     .from("fulfillment")
-    .select("id, quantity")
+    .select("id")
     .eq("sale_item_id", saleItemId)
     .eq("purchase_item_id", purchaseItemId)
     .limit(1);
   if (findErr) throw findErr;
   if (existing && existing.length > 0) {
-    const current = existing[0];
-    const { data: updated, error: updErr } = await supabase
-      .from("fulfillment")
-      .update({ quantity })
-      .eq("id", current.id)
-      .select()
-      .single();
-    if (updErr) throw updErr;
-    return updated;
+    return existing[0];
   }
   const { data: created, error: createErr } = await supabase
     .from("fulfillment")
-    .insert({ sale_item_id: saleItemId, purchase_item_id: purchaseItemId, quantity })
+    .insert({ sale_item_id: saleItemId, purchase_item_id: purchaseItemId })
     .select()
     .single();
   if (createErr) throw createErr;

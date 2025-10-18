@@ -30,6 +30,7 @@ import {
 } from "@/services/supabase.service";
 import { formatPriceAccounting } from "@/utils/formatPrice";
 import { useAuthStore } from "@/store/auth.store";
+import { CheckCircleFilled } from "@ant-design/icons";
 const { Content, Sider } = Layout;
 type PlanOrder = Pick<
   SaleOrder,
@@ -137,7 +138,8 @@ function usePlanData(planId?: string) {
         const service_fee = r?.service_fee ?? 0;
         const delivery_charge = r?.delivery_fee ?? 0;
         const subtotal = saleItems.reduce(
-          (acc: number, it: any) => acc + Number(it.quantity) * Number(it.unit_price || 0),
+          (acc: number, it: any) =>
+            acc + Number(it.quantity) * Number(it.unit_price || 0),
           0
         );
         const total = subtotal + service_fee + delivery_charge;
@@ -198,14 +200,11 @@ function usePurchaseOrdersForPlan(distributionPlanId?: string) {
         .select(
           `
           id,
-          status,
-          created_at,
           purchase_code,
           supplier:supplier_id ( id, name ),
           purchase_item:purchase_item (
             id,
             quantity,
-            actual_price,
             offer:offer_id (
               id,
               price,
@@ -219,16 +218,14 @@ function usePurchaseOrdersForPlan(distributionPlanId?: string) {
               id,
               sale_item:sale_item_id (
                 id,
-                required_quantity,
-                sale_order:sale_order_id ( id, order_code, customer:customer_id ( name ) ),
-                product:product_id ( id, name, unit )
+                sale_order:sale_order_id ( id, order_code, customer:customer_id ( name ) )
               )
             )
           )
         `
         )
         .eq("distribution_plan_id", distributionPlanId)
-        .order("created_at", { ascending: true });
+        .order("purchase_seq", { ascending: true });
       if (error) throw error;
       return data || [];
     },
@@ -274,7 +271,6 @@ const AssignSuppliersPage = () => {
       ),
     [itemsFlat]
   );
-
 
   const [selectedOrderId, setSelectedOrderId] = useState<
     string | number | undefined
@@ -323,7 +319,7 @@ const AssignSuppliersPage = () => {
         const links = Array.isArray(it.fulfillment) ? it.fulfillment : [];
         links.forEach((f: any) => {
           const supplierId = f?.purchase_item?.purchase_order?.supplier?.id;
-          const qty = Number(f?.quantity || 0);
+          const qty = Number(f?.purchase_item?.quantity || 0);
           if (!supplierId) return;
           map.set(supplierId, (map.get(supplierId) || 0) + qty);
         });
@@ -339,7 +335,7 @@ const AssignSuppliersPage = () => {
         if (String(it.id) !== String(saleItemId)) return;
         const links = Array.isArray(it.fulfillment) ? it.fulfillment : [];
         links.forEach((f: any) => {
-          total += Number(f?.quantity || 0);
+          total += Number(f?.purchase_item?.quantity || 0);
         });
       });
     });
@@ -428,170 +424,170 @@ const AssignSuppliersPage = () => {
       const { user } = useAuthStore.getState();
       if (!assignContext) return;
       if (!planId) throw new Error("Plan no identificado");
-      const ensureValidUuid = (v: any) => typeof v === "string" && v && v !== "undefined";
-      const productId = String(assignContext.productId || "");
-      if (!ensureValidUuid(productId)) {
-        throw new Error("Ítem sin producto válido (UUID). No se puede asignar.");
-      }
-      const saleItemId = String(assignContext.saleItemId || "");
-      if (!ensureValidUuid(saleItemId)) {
-        throw new Error("Ítem de venta inválido (UUID). No se puede asignar.");
-      }
-      if (!user?.id) {
-        throw new Error("Usuario no identificado");
-      }
+      if (!user?.id)
+        throw new Error(
+          "Usuario no autenticado: no se puede crear/actualizar órdenes de compra"
+        );
 
-      const notes = data?.plan?.plan_code
-        ? `Compra para plan ${data.plan.plan_code}`
-        : `Compra para plan ${String(planId || "")}`;
+      const saleItemId = assignContext.saleItemId;
 
-      const alreadyMap = getAssignedQtyMapForItem(assignContext.saleItemId);
-      const supplierIds = Array.from(
-        new Set([
-          ...(offersForCurrentProduct || []).map((o: any) => o.supplier_id),
-          ...Array.from(alreadyMap.keys()),
-        ])
-      );
-      const validSupplierIds = supplierIds
-        .map((sid) => String(sid || ""))
-        .filter((sid) => ensureValidUuid(sid));
-      if (validSupplierIds.length === 0) {
-        return;
-      }
-
-      const ensureOfferId = async (
-        product_id: string,
-        supplier_id: string,
-        price: number
-      ): Promise<string> => {
-        const { data: existing, error: findErr } = await supabase
-          .from("offer")
-          .select("id")
-          .eq("product_id", product_id)
-          .eq("supplier_id", supplier_id)
-          .maybeSingle();
-        if (findErr) throw findErr;
-        if (existing?.id) return existing.id;
-        const { data: created, error: createErr } = await supabase
-          .from("offer")
-          .insert({ product_id, supplier_id, price, available: true })
-          .select("id")
-          .single();
-        if (createErr) throw createErr;
-        return created.id as string;
+      // Helper: localizar PI/PO existentes para este sale item y proveedor
+      const findExistingForSupplier = (supplierId: string) => {
+        let found: {
+          purchaseItemId?: string;
+          purchaseOrderId?: string;
+          fulfillmentId?: string;
+        } = {};
+        orders.forEach((o) => {
+          (o.items || []).forEach((it: any) => {
+            if (String(it.id) !== String(saleItemId)) return;
+            const links = Array.isArray(it.fulfillment) ? it.fulfillment : [];
+            links.forEach((f: any) => {
+              const supId = f?.purchase_item?.purchase_order?.supplier?.id;
+              if (String(supId) === String(supplierId)) {
+                found = {
+                  purchaseItemId: f?.purchase_item?.id,
+                  purchaseOrderId: f?.purchase_item?.purchase_order?.id,
+                  fulfillmentId: f?.id,
+                };
+              }
+            });
+          });
+        });
+        return found;
       };
 
-      await Promise.all(
-        validSupplierIds.map(async (supplierId) => {
-          const desired = Number(assignmentInputs[supplierId] || 0);
-          const already = Number(alreadyMap.get(supplierId) || 0);
-          const price = (offers || []).find(
-            (o) => String(o.product_id) === productId && String(o.supplier_id) === String(supplierId)
-          )?.price ?? 0;
+      // Iterar las ofertas del producto actual y aplicar cambios donde difiera de lo ya asignado
+      for (const offer of offersForCurrentProduct) {
+        const supplierId = offer.supplier_id;
+        const desiredQty = Number(assignmentInputs[supplierId] || 0);
+        const alreadyQty = Number(assignedQtyMap.get(supplierId) || 0);
 
-          // 1) Obtener/crear PO para proveedor y plan (con created_by)
-          const { data: existingPOs, error: findPoErr } = await supabase
-            .from("purchase_order")
-            .select("id, status")
-            .eq("supplier_id", supplierId)
-            .eq("distribution_plan_id", String(planId))
-            .order("created_at", { ascending: false })
-            .limit(1);
-          if (findPoErr) throw findPoErr;
-          let po = existingPOs && existingPOs.length > 0 ? existingPOs[0] : null;
-          if (!po) {
-            const { data: createdPO, error: poCreateErr } = await supabase
-              .from("purchase_order")
-              .insert({
-                supplier_id: supplierId,
-                distribution_plan_id: String(planId),
-                status: "created",
-                notes,
-                created_by: user.id,
-              })
-              .select()
-              .single();
-            if (poCreateErr) throw poCreateErr;
-            po = createdPO;
-          }
+        // Saltar si no hay cambios
+        if (desiredQty === alreadyQty) continue;
 
-          // 2) Asegurar oferta
-          const offerId = await ensureOfferId(productId, supplierId, price);
+        const {
+          purchaseItemId: existingPI,
+          purchaseOrderId: existingPO,
+          fulfillmentId,
+        } = findExistingForSupplier(supplierId);
 
-          // 3) Buscar fulfillment existente del sale_item hacia un purchase_item de este proveedor
-          const { data: existingFul, error: findFulErr } = await supabase
-            .from("fulfillment")
-            .select(
-              `id,
-               purchase_item:purchase_item_id (
-                 id,
-                 quantity,
-                 offer:offer_id ( id ),
-                 purchase_order:purchase_order_id ( id, supplier_id )
-               )`
-            )
-            .eq("sale_item_id", saleItemId)
-            .eq("purchase_item.purchase_order.supplier_id", String(supplierId))
-            .order("id", { ascending: false })
-            .limit(1);
-          if (findFulErr) throw findFulErr;
-          const existingLink = existingFul && existingFul.length > 0 ? existingFul[0] : null;
-
-          if (desired > 0) {
-            if (existingLink?.purchase_item) {
-              // actualizar cantidad del purchase_item
-              const { error: updPiErr } = await supabase
-                .from("purchase_item")
-                .update({ quantity: desired })
-                .eq("id", String(existingLink.purchase_item.id));
-              if (updPiErr) throw updPiErr;
-            } else {
-              // crear purchase_item y fulfillment
-              const { data: createdPi, error: piErr } = await supabase
-                .from("purchase_item")
-                .insert({
-                  purchase_order_id: String(po.id),
-                  offer_id: String(offerId),
-                  quantity: desired,
-                  actual_price: null,
-                  received_by: user.id,
-                })
-                .select("id")
-                .single();
-              if (piErr) throw piErr;
-
-              const { error: fulErr } = await supabase
+        if (desiredQty <= 0) {
+          // Eliminar asignación: borrar fulfillment, purchase_item y quizá la PO si queda vacía
+          if (existingPI) {
+            // Borrar el fulfillment específico (por id si está disponible)
+            if (fulfillmentId) {
+              const { error: delFulErr } = await supabase
                 .from("fulfillment")
-                .insert({
-                  sale_item_id: saleItemId,
-                  purchase_item_id: String(createdPi.id),
-                });
-              if (fulErr) throw fulErr;
-            }
-          } else {
-            // desired == 0: si existe vínculo, eliminar fulfillment y poner PI en 0
-            if (existingLink?.purchase_item) {
+                .delete()
+                .eq("id", fulfillmentId);
+              if (delFulErr) throw delFulErr;
+            } else {
               const { error: delFulErr } = await supabase
                 .from("fulfillment")
                 .delete()
                 .eq("sale_item_id", saleItemId)
-                .eq("purchase_item_id", String(existingLink.purchase_item.id));
+                .eq("purchase_item_id", existingPI);
               if (delFulErr) throw delFulErr;
-              const { error: updPiZeroErr } = await supabase
+            }
+
+            // Eliminar el purchase_item (si ya no tiene más vínculos)
+            const { data: refs, error: refErr } = await supabase
+              .from("fulfillment")
+              .select("id")
+              .eq("purchase_item_id", existingPI)
+              .limit(1);
+            if (refErr) throw refErr;
+            if (!refs || refs.length === 0) {
+              const { error: delPIErr } = await supabase
                 .from("purchase_item")
-                .update({ quantity: 0 })
-                .eq("id", String(existingLink.purchase_item.id));
-              if (updPiZeroErr) throw updPiZeroErr;
+                .delete()
+                .eq("id", existingPI);
+              if (delPIErr) throw delPIErr;
+            }
+
+            if (existingPO) {
+              const { data: remaining, error: remErr } = await supabase
+                .from("purchase_item")
+                .select("id")
+                .eq("purchase_order_id", existingPO)
+                .limit(1);
+              if (remErr) throw remErr;
+              if (!remaining || remaining.length === 0) {
+                const { error: delPOErr } = await supabase
+                  .from("purchase_order")
+                  .delete()
+                  .eq("id", existingPO);
+                if (delPOErr) throw delPOErr;
+              }
             }
           }
-        })
-      );
+          continue;
+        }
+
+        // Asegurar purchase order para el proveedor en el plan
+        let po = existingPO ? { id: existingPO } : null;
+        if (!po) {
+          po = (await getOrCreatePurchaseOrderForSupplier({
+            supplierId,
+            distributionPlanId: String(planId),
+            notes: null,
+            createdBy: user?.id ?? null,
+          })) as any;
+        }
+
+        // Asegurar/actualizar purchase item para la oferta
+        let piId = existingPI;
+        if (piId) {
+          const { error: updErr } = await supabase
+            .from("purchase_item")
+            .update({
+              quantity: desiredQty,
+              actual_price: offer.price ?? null,
+            })
+            .eq("id", piId);
+          if (updErr) throw updErr;
+        } else {
+          const { data: createdPI, error: createPIErr } = await supabase
+            .from("purchase_item")
+            .insert({
+              purchase_order_id: po!.id,
+              offer_id: offer.id,
+              quantity: desiredQty,
+              actual_price: offer.price ?? null,
+            })
+            .select("id")
+            .single();
+          if (createPIErr) throw createPIErr;
+          piId = createdPI?.id;
+        }
+
+        // Asegurar fulfillment entre sale item y purchase item
+        if (piId) {
+          await upsertFulfillment({
+            saleItemId,
+            purchaseItemId: piId,
+          });
+        }
+      }
     },
     onMutate: async () => {
       message.loading({
         content: "Guardando asignaciones...",
         key: MSG_SAVE_KEY,
       });
+
+      //como datos iniciales se que oferta se escogió, que cantidad y el sale item al que se va asignar
+      //cuando la cantidad es mayor que 0 entonces
+      //consulta si existe una purchase_order para este supplier en este plan, y guarda el id. si no existe, crealo
+      //consulta si existe un purchse_item para ese purchase_order que acabas de consultar, y para la oferta que se escogió.
+      //si no existe, crealo con la cantidad deseada y un fullfilment que lo enlace a el sale_item actual.
+      //si si existe, actualiza la cantidad y verifica que el fullfilment exista, si no existe crealo.
+      //cuando la cantidad es 0, entonces
+      //consulta si existe una purchase_order para este supplier en este plan,
+      //si existe, consulta si existe un purchase_item para ese purchase_order que acabas de consultar, y para la oferta que se escogió.
+      //si existe elimina ese purchase item y su fullfilment asociado.
+      //luego consulta si ese purchase_order tiene mas purchase_item asociados, si no tiene mas eliminalo.
     },
     onSuccess: async () => {
       message.success({
@@ -623,6 +619,42 @@ const AssignSuppliersPage = () => {
     }
     saveAssignmentsMutation.mutate();
   };
+  interface DataType {
+    id: string;
+    purchase_code: string;
+    supplier: {
+      id: string;
+      name: string;
+    };
+    purchase_item: {
+      id: string;
+      offer: {
+        id: string;
+        price: number;
+        product: {
+          id: string;
+          name: string;
+          unit: string;
+        };
+      };
+      quantity: number;
+      fulfillment: [
+        {
+          id: string;
+          sale_item: {
+            id: string;
+            sale_order: {
+              id: string;
+              customer: {
+                name: string;
+              };
+              order_code: string;
+            };
+          };
+        }
+      ];
+    }[];
+  }
   return (
     <Layout hasSider>
       <Sider
@@ -645,12 +677,126 @@ const AssignSuppliersPage = () => {
           <Typography.Title level={4}>Pedidos</Typography.Title>
         </div>
         <List
-          dataSource={orders}
+          dataSource={orders as any}
           rowKey={(o) =>
             o.id ? String(o.id) : o.order_code || String(Math.random())
           }
-          renderItem={(o) => {
+          renderItem={(o: {
+            id: string;
+            order_code: string;
+            order_date: string;
+            delivery_date: string;
+            status: "pending";
+            total: number;
+            subtotal: number;
+            service_fee: number;
+            delivery_charge: number;
+            notes: null;
+            user: {
+              name: string;
+              email: string;
+            };
+            items: [
+              {
+                id: string;
+                product: {
+                  id: string;
+                  name: string;
+                  unit: string;
+                  main_photo: string;
+                  description: string;
+                  reference_price: number;
+                };
+                product_id: string;
+                fulfillment: [
+                  {
+                    id: string;
+                    purchase_item: {
+                      id: string;
+                      offer: {
+                        id: string;
+                        price: number;
+                        product: {
+                          id: string;
+                          name: string;
+                          unit: string;
+                        };
+                        supplier: {
+                          id: string;
+                          name: string;
+                        };
+                      };
+                      quantity: number;
+                      actual_price: number;
+                      purchase_order: {
+                        id: string;
+                        supplier: {
+                          id: string;
+                          name: string;
+                        };
+                        purchase_code: string;
+                      };
+                    };
+                  },
+                  {
+                    id: string;
+                    purchase_item: {
+                      id: string;
+                      offer: {
+                        id: string;
+                        price: number;
+                        product: {
+                          id: string;
+                          name: string;
+                          unit: string;
+                        };
+                        supplier: {
+                          id: string;
+                          name: string;
+                        };
+                      };
+                      quantity: number;
+                      actual_price: number;
+                      purchase_order: {
+                        id: string;
+                        supplier: {
+                          id: string;
+                          name: string;
+                        };
+                        purchase_code: string;
+                      };
+                    };
+                  }
+                ];
+                required_quantity: number;
+                delivered_quantity: number;
+                quantity: number;
+                unit_price: number;
+              }
+            ];
+          }) => {
             const isSelected = o.id === selectedOrderId;
+            const isSaleOrderCompletelyAsignned = (() => {
+              const sale_items = Array.isArray(o.items) ? o.items : [];
+              return sale_items.every((sale_item) => {
+                const requiredQty = Number(sale_item.quantity || 0);
+                if (requiredQty <= 0) return true;
+                const fulfillments = Array.isArray(sale_item.fulfillment)
+                  ? sale_item.fulfillment
+                  : [];
+                if (fulfillments.length === 0) return false;
+                const hasAnyPO = fulfillments.some(
+                  (f) => !!f?.purchase_item?.purchase_order?.id
+                );
+                if (!hasAnyPO) return false;
+                const assignedSum = fulfillments.reduce(
+                  (sum: number, f) =>
+                    sum + Number(f?.purchase_item?.quantity || 0),
+                  0
+                );
+                return assignedSum >= requiredQty;
+              });
+            })();
             return (
               <List.Item
                 style={{
@@ -674,9 +820,23 @@ const AssignSuppliersPage = () => {
                     width: "100%",
                   }}
                 >
-                  <Typography.Text strong>
-                    {o.order_code || "Sin código"}
-                  </Typography.Text>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <Typography.Text strong>
+                      {o.order_code || "Sin código"}
+                    </Typography.Text>
+                    {isSaleOrderCompletelyAsignned && (
+                      <CheckCircleFilled
+                        style={{ fontSize: "16px", color: token.colorSuccess }}
+                      />
+                    )}
+                  </div>
                   <Typography.Text type="secondary" ellipsis>
                     {o.user?.name || "—"}
                   </Typography.Text>
@@ -726,40 +886,28 @@ const AssignSuppliersPage = () => {
                               title: "Proveedor",
                               dataIndex: ["supplier", "name"],
                               key: "supplier_name",
-                            },
-                            {
-                              title: "Código de órden de compra",
-                              dataIndex: "purchase_code",
-                              key: "purchase_code",
-                            },
-                            {
-                              title: "Total",
-                              key: "po_total",
-                              render: (_: unknown, record: any) => {
-                                const items = record.purchase_item || [];
-                                const total = items.reduce(
-                                  (sum: number, it: any) =>
-                                    sum +
-                                    Number(it.quantity || 0) *
-                                      Number(
-                                        it.actual_price ??
-                                          it.estimated_price ??
-                                          0
-                                      ),
-                                  0
-                                );
-                                return formatPriceAccounting(total);
-                              },
+                              render: (_: string, record: DataType) => (
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    width: "100%",
+                                  }}
+                                >
+                                  <Typography.Text strong>
+                                    {record.supplier.name || "—"}
+                                  </Typography.Text>
+                                  <Typography.Text type="secondary" ellipsis>
+                                    {record.purchase_code || "Sin código"}
+                                  </Typography.Text>
+                                </div>
+                              ),
                             },
                             {
                               title: "Vínculos",
                               key: "po_links",
                               render: (_: unknown, record: any) => {
-                                const items = Array.isArray(
-                                  record.purchase_item
-                                )
-                                  ? record.purchase_item
-                                  : [];
+                                const items = record.purchase_item || [];
                                 const links = items.flatMap((it: any) =>
                                   Array.isArray(it.fulfillment)
                                     ? it.fulfillment.map((f: any) => ({
@@ -776,113 +924,82 @@ const AssignSuppliersPage = () => {
                                   );
                                 return (
                                   <Space wrap size={4}>
-                                    {links.map(({ f }: any) => {
-                                      const qty = Number(f?.quantity || 0);
-                                      const unit =
-                                        f?.sale_item?.product?.unit ?? "";
-                                      const productName =
-                                        f?.sale_item?.product?.name ?? "";
-                                      const customerName =
-                                        f?.sale_item?.sale_order?.customer
-                                          ?.name ?? "";
-                                      const label = [
-                                        productName,
-                                        `${qty} ${unit}`,
-                                        customerName,
-                                      ]
-                                        .filter(Boolean)
-                                        .join(" · ");
-                                      return <Tag>{label}</Tag>;
-                                    })}
+                                    {items.map(
+                                      (i: {
+                                        id: string;
+                                        offer: {
+                                          id: string;
+                                          price: number;
+                                          product: {
+                                            id: string;
+                                            name: string;
+                                            unit: string;
+                                          };
+                                        };
+                                        quantity: number;
+                                        fulfillment: [
+                                          {
+                                            id: string;
+                                            sale_item: {
+                                              id: string;
+                                              sale_order: {
+                                                id: string;
+                                                customer: {
+                                                  name: string;
+                                                };
+                                                order_code: string;
+                                              };
+                                            };
+                                          }
+                                        ];
+                                      }) => {
+                                        const qty = Number(i.quantity || 0);
+                                        const unit = i.offer.product.unit ?? "";
+                                        const productName =
+                                          i.offer.product.name ?? "";
+                                        const unitPrice = Number(
+                                          i.offer.price ?? 0
+                                        );
+                                        const customerName =
+                                          i.fulfillment?.[0]?.sale_item
+                                            ?.sale_order?.customer?.name ?? "";
+                                        const label = [
+                                          productName,
+                                          `${qty} ${unit}`,
+                                          `${formatPriceAccounting(
+                                            unitPrice
+                                          )} c/u`,
+                                          customerName,
+                                        ]
+                                          .filter(Boolean)
+                                          .join(" · ");
+                                        const labels = [
+                                          productName,
+                                          `${qty} ${unit}`,
+                                          `${formatPriceAccounting(
+                                            unitPrice
+                                          )} c/u`,
+                                          customerName,
+                                        ];
+                                        return (
+                                          <Tag id={i.fulfillment?.[0]?.id}>
+                                            <Space wrap split="·">
+                                              {labels.map((e) => (
+                                                <Typography.Text>
+                                                  {e}
+                                                </Typography.Text>
+                                              ))}
+                                            </Space>
+                                          </Tag>
+                                        );
+                                      }
+                                    )}
                                   </Space>
                                 );
                               },
                             },
                           ] as any
                         }
-                        expandable={{
-                          expandedRowRender: (po: any) => (
-                            <Table
-                              dataSource={po.purchase_item || []}
-                              rowKey="id"
-                              pagination={false}
-                              size="small"
-                              columns={
-                                [
-                                  {
-                                    title: "Producto",
-                                    dataIndex: ["product", "name"],
-                                    key: "product_name",
-                                  },
-                                  {
-                                    title: "Cant./Unidad",
-                                    key: "quantity_unit",
-                                    render: (_: unknown, it: any) =>
-                                      `${Number(it.quantity || 0)} ${
-                                        it.product?.unit ?? ""
-                                      }`,
-                                  },
-                                  {
-                                    title: "Precio",
-                                    key: "price",
-                                    render: (_: unknown, it: any) =>
-                                      formatPriceAccounting(
-                                        Number(
-                                          it.actual_price ??
-                                            it.estimated_price ??
-                                            0
-                                        )
-                                      ),
-                                  },
-                                  {
-                                    title: "Vínculos",
-                                    key: "pi_links",
-                                    render: (_: unknown, it: any) => {
-                                      const links = Array.isArray(
-                                        it.fulfillment
-                                      )
-                                        ? it.fulfillment
-                                        : [];
-                                      if (links.length === 0)
-                                        return (
-                                          <Typography.Text type="secondary">
-                                            —
-                                          </Typography.Text>
-                                        );
-                                      return (
-                                        <Space wrap size={4}>
-                                          {links.map((f: any) => {
-                                            const soCode =
-                                              f?.sale_item?.sale_order
-                                                ?.order_code ?? "";
-                                            const qty = Number(
-                                              f?.quantity || 0
-                                            );
-                                            const unit =
-                                              f?.sale_item?.product?.unit ?? "";
-                                            const customerName =
-                                              f?.sale_item?.sale_order?.customer
-                                                ?.name ?? "";
-                                            const label = [
-                                              soCode ? ` ${soCode}` : "",
-                                              `${qty} ${unit}`,
-                                              customerName,
-                                            ]
-                                              .filter(Boolean)
-                                              .join(" · ");
-                                            return (
-                                              <Tag color="blue">{label}</Tag>
-                                            );
-                                          })}
-                                        </Space>
-                                      );
-                                    },
-                                  },
-                                ] as any
-                              }
-                            />
-                          ),
-                        }}
                       />
                     )}
                     <Descriptions
@@ -951,17 +1068,16 @@ const AssignSuppliersPage = () => {
                       const assigned = Array.isArray(it.fulfillment)
                         ? it.fulfillment.reduce(
                             (sum: number, f: any) =>
-                              sum + Number(f?.quantity || 0),
+                              sum + Number(f?.purchase_item?.quantity || 0),
                             0
                           )
                         : 0;
                       const percent =
                         totalQty > 0
-                          ? Math.min(
-                              100,
-                              Math.round((assigned / totalQty) * 100)
-                            )
+                          ? Math.round((assigned / totalQty) * 100)
                           : 0;
+                      const overAssigned = percent > 100;
+                      const displayPercent = Math.min(percent, 100);
                       return (
                         <div
                           style={{
@@ -970,7 +1086,13 @@ const AssignSuppliersPage = () => {
                             gap: 8,
                           }}
                         >
-                          <Progress percent={percent} style={{ width: 140 }} />
+                          <Progress
+                            percent={displayPercent}
+                            strokeColor={
+                              overAssigned ? token.colorWarning : undefined
+                            }
+                            style={{ width: 140 }}
+                          />
                           <Typography.Text type="secondary">
                             {`${assigned} / ${totalQty} ${
                               it.product?.unit ?? ""
@@ -997,12 +1119,25 @@ const AssignSuppliersPage = () => {
                             const supplier =
                               f?.purchase_item?.purchase_order?.supplier
                                 ?.name ?? "";
-                            const qty = Number(f?.quantity || 0);
+                            const qty = Number(f?.purchase_item?.quantity || 0);
                             const unit = it?.product?.unit ?? "";
-                            const label = [supplier, `${qty} ${unit}`]
-                              .filter(Boolean)
-                              .join(" · ");
-                            return <Tag>{label}</Tag>;
+                            const offerPrice = Number(
+                              f?.purchase_item?.offer?.price || 0
+                            );
+                            const label = [
+                              supplier,
+                              `${qty} ${unit}`,
+                              `$${offerPrice} c/u`,
+                            ];
+                            return (
+                              <Tag id={f?.id}>
+                                <Space wrap split="·">
+                                  {label.map((e) => (
+                                    <Typography.Text>{e}</Typography.Text>
+                                  ))}
+                                </Space>
+                              </Tag>
+                            );
                           })}
                         </Space>
                       );

@@ -53,7 +53,7 @@ erDiagram
         string description
         enum unit
         string main_photo
-        float reference_price
+        decimal reference_price
         datetime created_at
     }
 
@@ -61,7 +61,7 @@ erDiagram
         uuid id PK
         uuid product_id FK
         uuid supplier_id FK
-        float price
+        decimal price
         boolean available
     }
 
@@ -73,7 +73,8 @@ erDiagram
         float service_fee
         float delivery_fee
         string notes
-        uuid created_by FK
+        uuid created_by_admin_id FK
+        uuid created_by_customer_id FK
         datetime created_at
         int order_seq
         string order_code
@@ -83,8 +84,8 @@ erDiagram
         uuid id PK
         uuid sale_order_id FK
         uuid product_id FK
-        float required_quantity
-        float delivered_quantity
+        decimal required_quantity
+        decimal delivered_quantity
         datetime delivered_at
         uuid delivered_by
         datetime created_at
@@ -94,7 +95,7 @@ erDiagram
         uuid id PK
         uuid customer_id FK
         uuid product_id FK
-        float quantity
+        decimal quantity
         datetime created_at
         datetime updated_at
     }
@@ -129,9 +130,9 @@ erDiagram
         uuid id PK
         uuid purchase_order_id FK
         uuid offer_id FK
-        float quantity
-        float actual_price
-        float received_quantity
+        decimal quantity
+        decimal actual_price
+        decimal received_quantity
         uuid received_by FK
         datetime received_at
         datetime created_at
@@ -155,7 +156,8 @@ erDiagram
 
     sale_order }o--|| customer : customer
     sale_order }o--|| distribution_plan : plan
-    sale_order }o--|| auth : created_by
+    sale_order }o--|| admin : created_by_admin
+    sale_order }o--|| customer : created_by_customer
 
     sale_item }o--|| sale_order : order
     sale_item }o--|| product : product
