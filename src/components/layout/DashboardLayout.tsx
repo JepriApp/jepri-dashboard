@@ -200,6 +200,7 @@ function DashboardLayout({
                 backgroundColor: "transparent",
                 height: "auto",
                 lineHeight: "36px",
+                paddingLeft: 0
               }}
             >
               <div
@@ -210,6 +211,7 @@ function DashboardLayout({
                   flexWrap: "wrap",
                   alignItems: "flex-start",
                   width: "100%",
+                  marginBottom: '16px'
                 }}
               >
                 {/* <AutoBreadcrumb breadcrumItemTree={breadcrumItemTree} /> */}
@@ -217,7 +219,7 @@ function DashboardLayout({
                 <AutoTitle titles={titles} subtitles={subtitles} />
               </div>
             </Header>
-            <Content style={{ margin: "24px 16px 0" }}>{children}</Content>
+            <Content>{children}</Content>
             {footer}
           </>
         )}

@@ -30,7 +30,14 @@ import {
 } from "@/services/supabase.service";
 import { formatPriceAccounting } from "@/utils/formatPrice";
 import { useAuthStore } from "@/store/auth.store";
-import { CheckCircleFilled } from "@ant-design/icons";
+import {
+  CheckCircleFilled,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+} from "@ant-design/icons";
+import { Header } from "antd/es/layout/layout";
+import { AutoTitle } from "@/components/pure/AutoTitle";
+import { subtitles, titles } from "@/constants/titles";
 const { Content, Sider } = Layout;
 type PlanOrder = Pick<
   SaleOrder,
@@ -240,7 +247,7 @@ const AssignSuppliersPage = () => {
   const orders = data?.orders || [];
   const { data: relatedPOs = [], isLoading: posLoading } =
     usePurchaseOrdersForPlan(planId);
-
+  const [collapsed, setCollapsed] = useState(false);
   const itemsFlat = useMemo(() => {
     const all: SaleItem[] = [];
     orders.forEach((o) => (o.items || []).forEach((si) => all.push(si)));
@@ -310,6 +317,10 @@ const AssignSuppliersPage = () => {
   const [assignmentInputs, setAssignmentInputs] = useState<
     Record<string, number>
   >({});
+  // Nuevo estado: resaltar un fulfillment seleccionado entre ambas tablas
+  const [highlightFulfillmentId, setHighlightFulfillmentId] = useState<
+    string | null
+  >(null);
 
   const getAssignedQtyMapForItem = (saleItemId: string) => {
     const map = new Map<string, number>();
@@ -576,18 +587,6 @@ const AssignSuppliersPage = () => {
         content: "Guardando asignaciones...",
         key: MSG_SAVE_KEY,
       });
-
-      //como datos iniciales se que oferta se escogió, que cantidad y el sale item al que se va asignar
-      //cuando la cantidad es mayor que 0 entonces
-      //consulta si existe una purchase_order para este supplier en este plan, y guarda el id. si no existe, crealo
-      //consulta si existe un purchse_item para ese purchase_order que acabas de consultar, y para la oferta que se escogió.
-      //si no existe, crealo con la cantidad deseada y un fullfilment que lo enlace a el sale_item actual.
-      //si si existe, actualiza la cantidad y verifica que el fullfilment exista, si no existe crealo.
-      //cuando la cantidad es 0, entonces
-      //consulta si existe una purchase_order para este supplier en este plan,
-      //si existe, consulta si existe un purchase_item para ese purchase_order que acabas de consultar, y para la oferta que se escogió.
-      //si existe elimina ese purchase item y su fullfilment asociado.
-      //luego consulta si ese purchase_order tiene mas purchase_item asociados, si no tiene mas eliminalo.
     },
     onSuccess: async () => {
       message.success({
@@ -657,510 +656,543 @@ const AssignSuppliersPage = () => {
   }
   return (
     <Layout hasSider>
-      <Sider
-        collapsible
-        theme="light"
-        style={{
-          overflow: "initial",
-          height: "100vh",
-          position: "sticky",
-          insetInlineStart: 0,
-          top: 0,
-          bottom: 0,
-          scrollbarWidth: "thin",
-          scrollbarGutter: "stable",
-          marginLeft: 1,
-          padding: 0,
-        }}
-      >
-        <div style={{ padding: 4 }}>
-          <Typography.Title level={4}>Pedidos</Typography.Title>
-        </div>
-        <List
-          dataSource={orders as any}
-          rowKey={(o) =>
-            o.id ? String(o.id) : o.order_code || String(Math.random())
-          }
-          renderItem={(o: {
-            id: string;
-            order_code: string;
-            order_date: string;
-            delivery_date: string;
-            status: "pending";
-            total: number;
-            subtotal: number;
-            service_fee: number;
-            delivery_charge: number;
-            notes: null;
-            user: {
-              name: string;
-              email: string;
-            };
-            items: [
-              {
-                id: string;
-                product: {
+      <Sider collapsible collapsed={collapsed} theme="light" trigger={null}>
+        <Card
+          title="Pedidos"
+          size="small"
+          styles={{ body: { padding: 0 } }}
+          extra={[
+            <Button
+              type="text"
+              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              onClick={() => setCollapsed(!collapsed)}
+              style={{
+                fontSize: "16px",
+              }}
+            />,
+          ]}
+        >
+          <List
+            dataSource={orders as any}
+            rowKey={(o) =>
+              o.id ? String(o.id) : o.order_code || String(Math.random())
+            }
+            renderItem={(o: {
+              id: string;
+              order_code: string;
+              order_date: string;
+              delivery_date: string;
+              status: "pending";
+              total: number;
+              subtotal: number;
+              service_fee: number;
+              delivery_charge: number;
+              notes: null;
+              user: {
+                name: string;
+                email: string;
+              };
+              items: [
+                {
                   id: string;
-                  name: string;
-                  unit: string;
-                  main_photo: string;
-                  description: string;
-                  reference_price: number;
-                };
-                product_id: string;
-                fulfillment: [
-                  {
+                  product: {
                     id: string;
-                    purchase_item: {
+                    name: string;
+                    unit: string;
+                    main_photo: string;
+                    description: string;
+                    reference_price: number;
+                  };
+                  product_id: string;
+                  fulfillment: [
+                    {
                       id: string;
-                      offer: {
+                      purchase_item: {
                         id: string;
-                        price: number;
-                        product: {
+                        offer: {
                           id: string;
-                          name: string;
-                          unit: string;
+                          price: number;
+                          product: {
+                            id: string;
+                            name: string;
+                            unit: string;
+                          };
+                          supplier: {
+                            id: string;
+                            name: string;
+                          };
                         };
-                        supplier: {
+                        quantity: number;
+                        actual_price: number;
+                        purchase_order: {
                           id: string;
-                          name: string;
+                          supplier: {
+                            id: string;
+                            name: string;
+                          };
+                          purchase_code: string;
                         };
                       };
-                      quantity: number;
-                      actual_price: number;
-                      purchase_order: {
-                        id: string;
-                        supplier: {
-                          id: string;
-                          name: string;
-                        };
-                        purchase_code: string;
-                      };
-                    };
-                  },
-                  {
-                    id: string;
-                    purchase_item: {
+                    },
+                    {
                       id: string;
-                      offer: {
+                      purchase_item: {
                         id: string;
-                        price: number;
-                        product: {
+                        offer: {
                           id: string;
-                          name: string;
-                          unit: string;
+                          price: number;
+                          product: {
+                            id: string;
+                            name: string;
+                            unit: string;
+                          };
+                          supplier: {
+                            id: string;
+                            name: string;
+                          };
                         };
-                        supplier: {
+                        quantity: number;
+                        actual_price: number;
+                        purchase_order: {
                           id: string;
-                          name: string;
+                          supplier: {
+                            id: string;
+                            name: string;
+                          };
+                          purchase_code: string;
                         };
                       };
-                      quantity: number;
-                      actual_price: number;
-                      purchase_order: {
-                        id: string;
-                        supplier: {
-                          id: string;
-                          name: string;
-                        };
-                        purchase_code: string;
-                      };
-                    };
-                  }
-                ];
-                required_quantity: number;
-                delivered_quantity: number;
-                quantity: number;
-                unit_price: number;
-              }
-            ];
-          }) => {
-            const isSelected = o.id === selectedOrderId;
-            const isSaleOrderCompletelyAsignned = (() => {
-              const sale_items = Array.isArray(o.items) ? o.items : [];
-              return sale_items.every((sale_item) => {
-                const requiredQty = Number(sale_item.quantity || 0);
-                if (requiredQty <= 0) return true;
-                const fulfillments = Array.isArray(sale_item.fulfillment)
-                  ? sale_item.fulfillment
-                  : [];
-                if (fulfillments.length === 0) return false;
-                const hasAnyPO = fulfillments.some(
-                  (f) => !!f?.purchase_item?.purchase_order?.id
-                );
-                if (!hasAnyPO) return false;
-                const assignedSum = fulfillments.reduce(
-                  (sum: number, f) =>
-                    sum + Number(f?.purchase_item?.quantity || 0),
-                  0
-                );
-                return assignedSum >= requiredQty;
-              });
-            })();
-            return (
-              <List.Item
-                style={{
-                  padding: "8px 12px",
-                  cursor: "pointer",
-                  background: isSelected ? token.colorFillTertiary : undefined,
-                  borderLeft: `3px solid ${
-                    isSelected ? token.colorPrimary : "transparent"
-                  }`,
-                }}
-                onClick={() =>
-                  setSelectedOrderId((prev) =>
-                    prev === o.id ? undefined : o.id
-                  )
+                    }
+                  ];
+                  required_quantity: number;
+                  delivered_quantity: number;
+                  quantity: number;
+                  unit_price: number;
                 }
-              >
-                <div
+              ];
+            }) => {
+              const isSelected = o.id === selectedOrderId;
+              const isSaleOrderCompletelyAsignned = (() => {
+                const sale_items = Array.isArray(o.items) ? o.items : [];
+                return sale_items.every((sale_item) => {
+                  const requiredQty = Number(sale_item.quantity || 0);
+                  if (requiredQty <= 0) return true;
+                  const fulfillments = Array.isArray(sale_item.fulfillment)
+                    ? sale_item.fulfillment
+                    : [];
+                  if (fulfillments.length === 0) return false;
+                  const hasAnyPO = fulfillments.some(
+                    (f) => !!f?.purchase_item?.purchase_order?.id
+                  );
+                  if (!hasAnyPO) return false;
+                  const assignedSum = fulfillments.reduce(
+                    (sum: number, f) =>
+                      sum + Number(f?.purchase_item?.quantity || 0),
+                    0
+                  );
+                  return assignedSum >= requiredQty;
+                });
+              })();
+              return (
+                <List.Item
                   style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    width: "100%",
+                    padding: "8px 12px",
+                    cursor: "pointer",
+                    background: isSelected
+                      ? token.colorFillTertiary
+                      : undefined,
+                    borderLeft: `3px solid ${
+                      isSelected ? token.colorPrimary : "transparent"
+                    }`,
                   }}
+                  onClick={() =>
+                    setSelectedOrderId((prev) =>
+                      prev === o.id ? undefined : o.id
+                    )
+                  }
                 >
                   <div
                     style={{
                       display: "flex",
-                      alignItems: "center",
-                      gap: 4,
-                      justifyContent: "space-between",
+                      flexDirection: "column",
+                      width: "100%",
                     }}
                   >
-                    <Typography.Text strong>
-                      {o.order_code || "Sin código"}
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <Typography.Text strong>
+                        {o.order_code || "Sin código"}
+                      </Typography.Text>
+                      {isSaleOrderCompletelyAsignned && (
+                        <CheckCircleFilled
+                          style={{
+                            fontSize: "16px",
+                            color: token.colorSuccess,
+                          }}
+                        />
+                      )}
+                    </div>
+                    <Typography.Text type="secondary" ellipsis>
+                      {o.user?.name || "—"}
                     </Typography.Text>
-                    {isSaleOrderCompletelyAsignned && (
-                      <CheckCircleFilled
-                        style={{ fontSize: "16px", color: token.colorSuccess }}
-                      />
-                    )}
+                    <Typography.Text type="secondary">
+                      Items: {o.items?.length ?? 0}
+                    </Typography.Text>
                   </div>
-                  <Typography.Text type="secondary" ellipsis>
-                    {o.user?.name || "—"}
-                  </Typography.Text>
-                  <Typography.Text type="secondary">
-                    Items: {o.items?.length ?? 0}
-                  </Typography.Text>
-                </div>
-              </List.Item>
-            );
-          }}
-        />
+                </List.Item>
+              );
+            }}
+          />
+        </Card>
       </Sider>
       <Layout
         style={{
-          overflow: "auto",
-          height: "100vh",
-          position: "sticky",
-          padding: 4,
+          marginLeft: '16px'
         }}
       >
-        <Content>
-          <Collapse
-            defaultActiveKey={["resumenProveedores"]}
-            items={[
-              {
-                key: "resumenProveedores",
-                label: "Resumen proveedores",
-                children: (
-                  <>
-                    {posLoading ? (
-                      <Typography.Text type="secondary">
-                        Cargando órdenes de compra…
-                      </Typography.Text>
-                    ) : relatedPOs.length === 0 ? (
-                      <Typography.Text type="secondary">
-                        No hay órdenes de compra para este plan
-                      </Typography.Text>
-                    ) : (
-                      <Table
-                        dataSource={relatedPOs}
-                        rowKey={(r) => r.id}
-                        pagination={false}
-                        size="small"
-                        columns={
-                          [
-                            {
-                              title: "Proveedor",
-                              dataIndex: ["supplier", "name"],
-                              key: "supplier_name",
-                              render: (_: string, record: DataType) => (
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    width: "100%",
-                                  }}
-                                >
-                                  <Typography.Text strong>
-                                    {record.supplier.name || "—"}
-                                  </Typography.Text>
-                                  <Typography.Text type="secondary" ellipsis>
-                                    {record.purchase_code || "Sin código"}
-                                  </Typography.Text>
-                                </div>
-                              ),
-                            },
-                            {
-                              title: "Vínculos",
-                              key: "po_links",
-                              render: (_: unknown, record: any) => {
-                                const items = record.purchase_item || [];
-                                const links = items.flatMap((it: any) =>
-                                  Array.isArray(it.fulfillment)
-                                    ? it.fulfillment.map((f: any) => ({
-                                        f,
-                                        it,
-                                      }))
-                                    : []
-                                );
-                                if (links.length === 0)
-                                  return (
-                                    <Typography.Text type="secondary">
-                                      —
-                                    </Typography.Text>
-                                  );
-                                return (
-                                  <Space wrap size={4}>
-                                    {items.map(
-                                      (i: {
-                                        id: string;
-                                        offer: {
-                                          id: string;
-                                          price: number;
-                                          product: {
-                                            id: string;
-                                            name: string;
-                                            unit: string;
-                                          };
-                                        };
-                                        quantity: number;
-                                        fulfillment: [
-                                          {
-                                            id: string;
-                                            sale_item: {
-                                              id: string;
-                                              sale_order: {
-                                                id: string;
-                                                customer: {
-                                                  name: string;
-                                                };
-                                                order_code: string;
-                                              };
-                                            };
-                                          }
-                                        ];
-                                      }) => {
-                                        const qty = Number(i.quantity || 0);
-                                        const unit = i.offer.product.unit ?? "";
-                                        const productName =
-                                          i.offer.product.name ?? "";
-                                        const unitPrice = Number(
-                                          i.offer.price ?? 0
-                                        );
-                                        const customerName =
-                                          i.fulfillment?.[0]?.sale_item
-                                            ?.sale_order?.customer?.name ?? "";
-                                        const label = [
-                                          productName,
-                                          `${qty} ${unit}`,
-                                          `${formatPriceAccounting(
-                                            unitPrice
-                                          )} c/u`,
-                                          customerName,
-                                        ]
-                                          .filter(Boolean)
-                                          .join(" · ");
-                                        const labels = [
-                                          productName,
-                                          `${qty} ${unit}`,
-                                          `${formatPriceAccounting(
-                                            unitPrice
-                                          )} c/u`,
-                                          customerName,
-                                        ];
-                                        return (
-                                          <Tag id={i.fulfillment?.[0]?.id}>
-                                            <Space wrap split="·">
-                                              {labels.map((e) => (
-                                                <Typography.Text>
-                                                  {e}
-                                                </Typography.Text>
-                                              ))}
-                                            </Space>
-                                          </Tag>
-                                        );
-                                      }
-                                    )}
-                                  </Space>
-                                );
-                              },
-                            },
-                          ] as any
-                        }
-                      />
-                    )}
-                    <Descriptions
-                      size="small"
-                      column={1}
-                      style={{ marginTop: 12 }}
-                    >
-                      <Descriptions.Item label="Productos únicos">
-                        {uniqueProductsCount}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="Estimado ventas">
-                        {formatPriceAccounting(Number(totalSalesEstimate || 0))}
-                      </Descriptions.Item>
-                    </Descriptions>
-                  </>
-                ),
-              },
-            ]}
-          />
-          <Card
-            title="Ítems del pedido"
-            size="small"
-            extra={
+        <Card
+          title="Resumen proveedores"
+          styles={{
+            body: {
+              padding: 0,
+              overflow: "auto",
+            },
+          }}
+          size="small"
+          style={{marginBottom: '16px'}}
+        >
+          <>
+            {posLoading ? (
               <Typography.Text type="secondary">
-                {selectedOrder
-                  ? `Orden ${selectedOrder.order_code} — ${
-                      selectedOrder.user?.name ?? "—"
-                    } (${selectedOrder.items?.length ?? 0} ítems)`
-                  : "Mostrando todos"}
+                Cargando órdenes de compra…
               </Typography.Text>
-            }
-          >
-            <Table
-              dataSource={itemsToShow}
-              rowKey="id"
-              pagination={false}
-              size="small"
-              columns={
-                [
-                  {
-                    title: "Cliente",
-                    key: "customer",
-                    render: (_: unknown, it: any) => {
-                      const c = itemCustomerById.get(String(it?.id ?? ""));
-                      return (
-                        <Typography.Text>{c?.name || "—"}</Typography.Text>
-                      );
-                    },
-                  },
-                  {
-                    title: "Producto",
-                    dataIndex: ["product", "name"],
-                    key: "product_name",
-                  },
-                  {
-                    title: "Cant./Unidad",
-                    key: "quantity_unit",
-                    render: (_: unknown, it: any) =>
-                      `${Number(it.quantity || 0)} ${it.product?.unit ?? ""}`,
-                  },
-                  {
-                    title: "Cumplimiento",
-                    key: "fulfillment_progress",
-                    render: (_: unknown, it: any) => {
-                      const totalQty = Number(it.quantity || 0);
-                      const assigned = Array.isArray(it.fulfillment)
-                        ? it.fulfillment.reduce(
-                            (sum: number, f: any) =>
-                              sum + Number(f?.purchase_item?.quantity || 0),
-                            0
-                          )
-                        : 0;
-                      const percent =
-                        totalQty > 0
-                          ? Math.round((assigned / totalQty) * 100)
-                          : 0;
-                      const overAssigned = percent > 100;
-                      const displayPercent = Math.min(percent, 100);
-                      return (
+            ) : relatedPOs.length === 0 ? (
+              <Typography.Text type="secondary">
+                No hay órdenes de compra para este plan
+              </Typography.Text>
+            ) : (
+              <Table
+                dataSource={relatedPOs}
+                rowKey={(r) => r.id}
+                pagination={false}
+                size="small"
+                columns={
+                  [
+                    {
+                      title: "Proveedor",
+                      dataIndex: ["supplier", "name"],
+                      key: "supplier_name",
+                      render: (_: string, record: DataType) => (
                         <div
                           style={{
                             display: "flex",
-                            alignItems: "center",
-                            gap: 8,
+                            flexDirection: "column",
+                            width: "100%",
                           }}
                         >
-                          <Progress
-                            percent={displayPercent}
-                            strokeColor={
-                              overAssigned ? token.colorWarning : undefined
-                            }
-                            style={{ width: 140 }}
-                          />
-                          <Typography.Text type="secondary">
-                            {`${assigned} / ${totalQty} ${
-                              it.product?.unit ?? ""
-                            }`}
+                          <Typography.Text strong>
+                            {record.supplier.name || "—"}
+                          </Typography.Text>
+                          <Typography.Text type="secondary" ellipsis>
+                            {record.purchase_code || "Sin código"}
                           </Typography.Text>
                         </div>
-                      );
+                      ),
                     },
-                  },
-                  {
-                    title: "Proveedores",
-                    key: "item_links",
-                    render: (_: unknown, it: any) => {
-                      const links = Array.isArray(it.fulfillment)
-                        ? it.fulfillment
-                        : [];
-                      if (links.length === 0)
-                        return (
-                          <Typography.Text type="secondary">—</Typography.Text>
+                    {
+                      title: "Vínculos",
+                      key: "po_links",
+                      render: (_: unknown, record: any) => {
+                        const items = record.purchase_item || [];
+                        const links = items.flatMap((it: any) =>
+                          Array.isArray(it.fulfillment)
+                            ? it.fulfillment.map((f: any) => ({
+                                f,
+                                it,
+                              }))
+                            : []
                         );
-                      return (
-                        <Space wrap size={4}>
-                          {links.map((f: any) => {
-                            const supplier =
-                              f?.purchase_item?.purchase_order?.supplier
-                                ?.name ?? "";
-                            const qty = Number(f?.purchase_item?.quantity || 0);
-                            const unit = it?.product?.unit ?? "";
-                            const offerPrice = Number(
-                              f?.purchase_item?.offer?.price || 0
-                            );
-                            const label = [
-                              supplier,
-                              `${qty} ${unit}`,
-                              `$${offerPrice} c/u`,
-                            ];
-                            return (
-                              <Tag id={f?.id}>
-                                <Space wrap split="·">
-                                  {label.map((e) => (
-                                    <Typography.Text>{e}</Typography.Text>
-                                  ))}
-                                </Space>
-                              </Tag>
-                            );
-                          })}
-                        </Space>
-                      );
+                        if (links.length === 0)
+                          return (
+                            <Typography.Text type="secondary">
+                              —
+                            </Typography.Text>
+                          );
+                        return (
+                          <Space wrap size={4}>
+                            {items.map(
+                              (i: {
+                                id: string;
+                                offer: {
+                                  id: string;
+                                  price: number;
+                                  product: {
+                                    id: string;
+                                    name: string;
+                                    unit: string;
+                                  };
+                                };
+                                quantity: number;
+                                fulfillment: [
+                                  {
+                                    id: string;
+                                    sale_item: {
+                                      id: string;
+                                      sale_order: {
+                                        id: string;
+                                        customer: {
+                                          name: string;
+                                        };
+                                        order_code: string;
+                                      };
+                                    };
+                                  }
+                                ];
+                              }) => {
+                                const qty = Number(i.quantity || 0);
+                                const unit = i.offer.product.unit ?? "";
+                                const productName = i.offer.product.name ?? "";
+                                const unitPrice = Number(i.offer.price ?? 0);
+                                const customerName =
+                                  i.fulfillment?.[0]?.sale_item?.sale_order
+                                    ?.customer?.name ?? "";
+                                const label = [
+                                  productName,
+                                  `${qty} ${unit}`,
+                                  `${formatPriceAccounting(unitPrice)} c/u`,
+                                  customerName,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ");
+                                const labels = [
+                                  productName,
+                                  `${qty} ${unit}`,
+                                  `${formatPriceAccounting(unitPrice)} c/u`,
+                                  customerName,
+                                ];
+                                return (
+                                  <Tag
+                                    id={
+                                      "fullfilmentId_from_purchase_order/" +
+                                      i.fulfillment?.[0]?.id
+                                    }
+                                    onClick={() => {
+                                      const fid = i.fulfillment?.[0]?.id;
+                                      if (!fid) return;
+                                      setHighlightFulfillmentId(
+                                        highlightFulfillmentId === String(fid)
+                                          ? null
+                                          : String(fid)
+                                      );
+                                    }}
+                                    style={{
+                                      cursor: i.fulfillment?.[0]?.id
+                                        ? "pointer"
+                                        : "default",
+                                      borderColor:
+                                        highlightFulfillmentId ===
+                                        String(i.fulfillment?.[0]?.id)
+                                          ? token.colorPrimary
+                                          : undefined,
+                                      backgroundColor:
+                                        highlightFulfillmentId ===
+                                        String(i.fulfillment?.[0]?.id)
+                                          ? token.colorPrimaryBg
+                                          : undefined,
+                                    }}
+                                  >
+                                    <Space wrap split="·">
+                                      {labels.map((e) => (
+                                        <Typography.Text>{e}</Typography.Text>
+                                      ))}
+                                    </Space>
+                                  </Tag>
+                                );
+                              }
+                            )}
+                          </Space>
+                        );
+                      },
                     },
+                  ] as any
+                }
+              />
+            )}
+          </>
+        </Card>
+        <Card
+          title="Ítems del pedido"
+          size="small"
+          styles={{
+            body: {
+              padding: 0,
+              overflow: "auto",
+            },
+          }}
+          extra={
+            <Typography.Text type="secondary">
+              {selectedOrder
+                ? `Orden ${selectedOrder.order_code} — ${
+                    selectedOrder?.user?.name ?? "—"
+                  } (${selectedOrder.items?.length ?? 0} ítems)`
+                : "Mostrando todos"}
+            </Typography.Text>
+          }
+        >
+          <Table
+            dataSource={itemsToShow}
+            rowKey="id"
+            pagination={false}
+            size="small"
+            columns={
+              [
+                {
+                  title: "Cliente",
+                  key: "customer",
+                  render: (_: unknown, it: any) => {
+                    const c = itemCustomerById.get(String(it?.id ?? ""));
+                    return <Typography.Text>{c?.name || "—"}</Typography.Text>;
                   },
-                  {
-                    title: "Accion",
-                    key: "assign_suppliers",
-                    render: (_: unknown, it: any) => (
-                      <Button
-                        size="small"
-                        type="primary"
-                        onClick={() => openAssignDrawer(it)}
+                },
+                {
+                  title: "Producto",
+                  dataIndex: ["product", "name"],
+                  key: "product_name",
+                },
+                {
+                  title: "Cant./Unidad",
+                  key: "quantity_unit",
+                  render: (_: unknown, it: any) =>
+                    `${Number(it.quantity || 0)} ${it.product?.unit ?? ""}`,
+                },
+                {
+                  title: "Cumplimiento",
+                  key: "fulfillment_progress",
+                  render: (_: unknown, it: any) => {
+                    const totalQty = Number(it.quantity || 0);
+                    const assigned = Array.isArray(it.fulfillment)
+                      ? it.fulfillment.reduce(
+                          (sum: number, f: any) =>
+                            sum + Number(f?.purchase_item?.quantity || 0),
+                          0
+                        )
+                      : 0;
+                    const percent =
+                      totalQty > 0
+                        ? Math.round((assigned / totalQty) * 100)
+                        : 0;
+                    const overAssigned = percent > 100;
+                    const displayPercent = Math.min(percent, 100);
+                    return (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                        }}
                       >
-                        Asignar
-                      </Button>
-                    ),
+                        <Progress
+                          percent={displayPercent}
+                          strokeColor={
+                            overAssigned ? token.colorWarning : undefined
+                          }
+                          style={{ width: 140 }}
+                        />
+                        <Typography.Text type="secondary">
+                          {`${assigned} / ${totalQty} ${
+                            it.product?.unit ?? ""
+                          }`}
+                        </Typography.Text>
+                      </div>
+                    );
                   },
-                ] as any
-              }
-            />
-          </Card>
-        </Content>
+                },
+                {
+                  title: "Proveedores",
+                  key: "item_links",
+                  render: (_: unknown, it: any) => {
+                    const links = Array.isArray(it.fulfillment)
+                      ? it.fulfillment
+                      : [];
+                    if (links.length === 0)
+                      return (
+                        <Typography.Text type="secondary">—</Typography.Text>
+                      );
+                    return (
+                      <Space wrap size={4}>
+                        {links.map((f: any) => {
+                          const supplier =
+                            f?.purchase_item?.purchase_order?.supplier?.name ??
+                            "";
+                          const qty = Number(f?.purchase_item?.quantity || 0);
+                          const unit = it?.product?.unit ?? "";
+                          const offerPrice = Number(
+                            f?.purchase_item?.offer?.price || 0
+                          );
+                          const label = [
+                            supplier,
+                            `${qty} ${unit}`,
+                            `$${offerPrice} c/u`,
+                          ];
+                          return (
+                            <Tag
+                              id={`fullfilmentId_from_sale_order/${f?.id}`}
+                              onClick={() => {
+                                const fid = f?.id;
+                                if (!fid) return;
+                                setHighlightFulfillmentId(
+                                  highlightFulfillmentId === String(fid)
+                                    ? null
+                                    : String(fid)
+                                );
+                              }}
+                              style={{
+                                cursor: f?.id ? "pointer" : "default",
+                                borderColor:
+                                  highlightFulfillmentId === String(f?.id)
+                                    ? token.colorPrimary
+                                    : undefined,
+                                backgroundColor:
+                                  highlightFulfillmentId === String(f?.id)
+                                    ? token.colorPrimaryBg
+                                    : undefined,
+                              }}
+                            >
+                              <Space wrap split="·">
+                                {label.map((e) => (
+                                  <Typography.Text>{e}</Typography.Text>
+                                ))}
+                              </Space>
+                            </Tag>
+                          );
+                        })}
+                      </Space>
+                    );
+                  },
+                },
+                {
+                  title: "Acción",
+                  key: "assign_suppliers",
+                  render: (_: unknown, it: any) => (
+                    <Button
+                      size="small"
+                      type="primary"
+                      onClick={() => openAssignDrawer(it)}
+                    >
+                      Asignar
+                    </Button>
+                  ),
+                },
+              ] as any
+            }
+          />
+        </Card>
       </Layout>
       <Drawer
         placement="right"
@@ -1321,5 +1353,5 @@ const AssignSuppliersPage = () => {
 export default AssignSuppliersPage;
 
 AssignSuppliersPage.getLayout = function getLayout(page: ReactElement) {
-  return <DashboardLayout noStyle>{page}</DashboardLayout>;
+  return <DashboardLayout>{page}</DashboardLayout>;
 };

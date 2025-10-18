@@ -71,7 +71,7 @@ const DistributionPlansPage = () => {
     <>
       <Space style={{ marginBottom: 16 }}>
         <Button href="/a/distribution-plans/calendar">
-          Programar planes futuros
+          Calendario
         </Button>
       </Space>
       <Table
