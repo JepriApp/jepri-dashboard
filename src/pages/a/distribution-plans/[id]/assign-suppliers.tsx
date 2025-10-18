@@ -291,12 +291,16 @@ const AssignSuppliersPage = () => {
     [selectedOrderId, selectedOrder, itemsFlat]
   );
   const itemCustomerById = useMemo(() => {
-    const map = new Map<string, { name: string; email?: string }>();
+    const map = new Map<
+      string,
+      { name: string; email?: string; sale_order: string }
+    >();
     orders.forEach((o) => {
       const name = o.user?.name ?? "";
       const email = o.user?.email ?? "";
+      const sale_order = o.order_code || "";
       (o.items || []).forEach((it: any) => {
-        if (it?.id) map.set(String(it.id), { name, email });
+        if (it?.id) map.set(String(it.id), { name, email, sale_order });
       });
     });
     return map;
@@ -853,7 +857,7 @@ const AssignSuppliersPage = () => {
       </Sider>
       <Layout
         style={{
-          marginLeft: '16px'
+          marginLeft: "16px",
         }}
       >
         <Card
@@ -865,7 +869,7 @@ const AssignSuppliersPage = () => {
             },
           }}
           size="small"
-          style={{marginBottom: '16px'}}
+          style={{ marginBottom: "16px" }}
         >
           <>
             {posLoading ? (
@@ -896,7 +900,7 @@ const AssignSuppliersPage = () => {
                             width: "100%",
                           }}
                         >
-                          <Typography.Text strong>
+                          <Typography.Text>
                             {record.supplier.name || "—"}
                           </Typography.Text>
                           <Typography.Text type="secondary" ellipsis>
@@ -1050,51 +1054,56 @@ const AssignSuppliersPage = () => {
             rowKey="id"
             pagination={false}
             size="small"
-            columns={
-              [
-                {
-                  title: "Cliente",
-                  key: "customer",
-                  render: (_: unknown, it: any) => {
-                    const c = itemCustomerById.get(String(it?.id ?? ""));
-                    return <Typography.Text>{c?.name || "—"}</Typography.Text>;
-                  },
+            columns={[
+              {
+                title: "Cliente",
+                key: "customer",
+                render: (_: unknown, it: any) => {
+                  const c = itemCustomerById.get(String(it?.id ?? ""));
+                  return (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        width: "100%",
+                      }}
+                    >
+                      <Typography.Text>{c?.name || "—"}</Typography.Text>
+                      <Typography.Text type="secondary" ellipsis>
+                        {c?.sale_order || "Sin código"}
+                      </Typography.Text>
+                    </div>
+                  );
                 },
-                {
-                  title: "Producto",
-                  dataIndex: ["product", "name"],
-                  key: "product_name",
-                },
-                {
-                  title: "Cant./Unidad",
-                  key: "quantity_unit",
-                  render: (_: unknown, it: any) =>
-                    `${Number(it.quantity || 0)} ${it.product?.unit ?? ""}`,
-                },
-                {
-                  title: "Cumplimiento",
-                  key: "fulfillment_progress",
-                  render: (_: unknown, it: any) => {
-                    const totalQty = Number(it.quantity || 0);
-                    const assigned = Array.isArray(it.fulfillment)
-                      ? it.fulfillment.reduce(
-                          (sum: number, f: any) =>
-                            sum + Number(f?.purchase_item?.quantity || 0),
-                          0
-                        )
-                      : 0;
-                    const percent =
-                      totalQty > 0
-                        ? Math.round((assigned / totalQty) * 100)
-                        : 0;
-                    const overAssigned = percent > 100;
-                    const displayPercent = Math.min(percent, 100);
-                    return (
+              },
+              {
+                title: "Cumplimiento",
+                key: "fulfillment_progress",
+                render: (_: unknown, it: any) => {
+                  const totalQty = Number(it.quantity || 0);
+                  const assigned = Array.isArray(it.fulfillment)
+                    ? it.fulfillment.reduce(
+                        (sum: number, f: any) =>
+                          sum + Number(f?.purchase_item?.quantity || 0),
+                        0
+                      )
+                    : 0;
+                  const percent =
+                    totalQty > 0 ? Math.round((assigned / totalQty) * 100) : 0;
+                  const overAssigned = percent > 100;
+                  const displayPercent = Math.min(percent, 100);
+                  return (
+                    <div>
+                      <Typography.Text>
+                        {" "}
+                        {it.product.name}{" "}
+                      </Typography.Text>
                       <div
                         style={{
                           display: "flex",
                           alignItems: "center",
-                          gap: 8,
+                          flexWrap: "wrap",
+                          justifyContent: "flex-start",
                         }}
                       >
                         <Progress
@@ -1102,95 +1111,93 @@ const AssignSuppliersPage = () => {
                           strokeColor={
                             overAssigned ? token.colorWarning : undefined
                           }
-                          style={{ width: 140 }}
+                          style={{ width: 120, marginRight: 4 }}
                         />
                         <Typography.Text type="secondary">
-                          {`${assigned} / ${totalQty} ${
-                            it.product?.unit ?? ""
-                          }`}
+                          {`${assigned}/${totalQty} ${it.product?.unit ?? ""}`}
                         </Typography.Text>
                       </div>
-                    );
-                  },
+                    </div>
+                  );
                 },
-                {
-                  title: "Proveedores",
-                  key: "item_links",
-                  render: (_: unknown, it: any) => {
-                    const links = Array.isArray(it.fulfillment)
-                      ? it.fulfillment
-                      : [];
-                    if (links.length === 0)
-                      return (
-                        <Typography.Text type="secondary">—</Typography.Text>
-                      );
+              },
+              {
+                title: "Proveedores",
+                key: "item_links",
+                render: (_: unknown, it: any) => {
+                  const links = Array.isArray(it.fulfillment)
+                    ? it.fulfillment
+                    : [];
+                  if (links.length === 0)
                     return (
-                      <Space wrap size={4}>
-                        {links.map((f: any) => {
-                          const supplier =
-                            f?.purchase_item?.purchase_order?.supplier?.name ??
-                            "";
-                          const qty = Number(f?.purchase_item?.quantity || 0);
-                          const unit = it?.product?.unit ?? "";
-                          const offerPrice = Number(
-                            f?.purchase_item?.offer?.price || 0
-                          );
-                          const label = [
-                            supplier,
-                            `${qty} ${unit}`,
-                            `$${offerPrice} c/u`,
-                          ];
-                          return (
-                            <Tag
-                              id={`fullfilmentId_from_sale_order/${f?.id}`}
-                              onClick={() => {
-                                const fid = f?.id;
-                                if (!fid) return;
-                                setHighlightFulfillmentId(
-                                  highlightFulfillmentId === String(fid)
-                                    ? null
-                                    : String(fid)
-                                );
-                              }}
-                              style={{
-                                cursor: f?.id ? "pointer" : "default",
-                                borderColor:
-                                  highlightFulfillmentId === String(f?.id)
-                                    ? token.colorPrimary
-                                    : undefined,
-                                backgroundColor:
-                                  highlightFulfillmentId === String(f?.id)
-                                    ? token.colorPrimaryBg
-                                    : undefined,
-                              }}
-                            >
-                              <Space wrap split="·">
-                                {label.map((e) => (
-                                  <Typography.Text>{e}</Typography.Text>
-                                ))}
-                              </Space>
-                            </Tag>
-                          );
-                        })}
-                      </Space>
+                      <Typography.Text type="secondary">—</Typography.Text>
                     );
-                  },
+                  return (
+                    <Space wrap size={4}>
+                      {links.map((f: any) => {
+                        const supplier =
+                          f?.purchase_item?.purchase_order?.supplier?.name ??
+                          "";
+                        const qty = Number(f?.purchase_item?.quantity || 0);
+                        const unit = it?.product?.unit ?? "";
+                        const offerPrice = Number(
+                          f?.purchase_item?.offer?.price || 0
+                        );
+                        const label = [
+                          supplier,
+                          `${qty} ${unit}`,
+                          `$${offerPrice} c/u`,
+                        ];
+                        return (
+                          <Tag
+                            id={`fullfilmentId_from_sale_order/${f?.id}`}
+                            onClick={() => {
+                              const fid = f?.id;
+                              if (!fid) return;
+                              setHighlightFulfillmentId(
+                                highlightFulfillmentId === String(fid)
+                                  ? null
+                                  : String(fid)
+                              );
+                            }}
+                            style={{
+                              cursor: f?.id ? "pointer" : "default",
+                              borderColor:
+                                highlightFulfillmentId === String(f?.id)
+                                  ? token.colorPrimary
+                                  : undefined,
+                              backgroundColor:
+                                highlightFulfillmentId === String(f?.id)
+                                  ? token.colorPrimaryBg
+                                  : undefined,
+                            }}
+                          >
+                            <Space wrap split="·">
+                              {label.map((e) => (
+                                <Typography.Text>{e}</Typography.Text>
+                              ))}
+                            </Space>
+                          </Tag>
+                        );
+                      })}
+                    </Space>
+                  );
                 },
-                {
-                  title: "Acción",
-                  key: "assign_suppliers",
-                  render: (_: unknown, it: any) => (
-                    <Button
-                      size="small"
-                      type="primary"
-                      onClick={() => openAssignDrawer(it)}
-                    >
-                      Asignar
-                    </Button>
-                  ),
-                },
-              ] as any
-            }
+              },
+              {
+                title: "Acción",
+                key: "assign_suppliers",
+                render: (_: unknown, it: any) => (
+                  <Button
+                    size="small"
+                    type="primary"
+                    onClick={() => openAssignDrawer(it)}
+                  >
+                    Asignar
+                  </Button>
+                ),
+              },
+            ]}
           />
         </Card>
       </Layout>
@@ -1244,7 +1251,7 @@ const AssignSuppliersPage = () => {
                 <Typography.Text>
                   Cantidad requerida:{" "}
                   <strong>
-                    {remainingQty} {assignContext?.productUnit || ""}
+                    {assignContext?.saleItemQty ?? 0} {assignContext?.productUnit || ""}
                   </strong>
                 </Typography.Text>
                 <br />
