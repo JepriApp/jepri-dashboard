@@ -1,12 +1,13 @@
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import DistributionPlanLayout from "@/components/layout/DistributionPlanLayout";
 import React, { ReactElement } from "react";
-import { Button, Card, Space, Table, Tag, Typography } from "antd";
-import { useQuery } from "@tanstack/react-query";
+import { Button, Card, Space, Table, Tag, Typography, InputNumber, message } from "antd";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/services/supabase.client";
 import dayjs from "dayjs";
 import { useRouter } from "next/router";
 import { formatPriceAccounting } from "@/utils/formatPrice";
+import { useAuthStore } from "@/store/auth.store";
 
 const { Text, Title } = Typography;
 
@@ -32,6 +33,27 @@ type PurchaseOrderGroup = {
 const SuppliersRecepction = () => {
   const router = useRouter();
   const { id } = router.query as { id?: string };
+  const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const [pendingActualPrice, setPendingActualPrice] = React.useState<Record<string, number | undefined>>({});
+  const [savingById, setSavingById] = React.useState<Record<string, boolean>>({});
+
+  const getCurrentAuthId = async (): Promise<string | null> => {
+    if (user?.id) return user.id;
+    if (user?.email) {
+      const { data, error } = await supabase
+        .from("auth")
+        .select("id")
+        .eq("email", user.email)
+        .single();
+      if (error) {
+        console.error("Error obteniendo id de auth por email:", error);
+        return null;
+      }
+      return data?.id ?? null;
+    }
+    return null;
+  };
 
   const { data: groups = [], isLoading } = useQuery<PurchaseOrderGroup[]>({
     queryKey: ["distributionPlanPurchaseOrdersWithItems", id],
@@ -94,6 +116,49 @@ const SuppliersRecepction = () => {
     },
   });
 
+  const updateActualPriceMutation = useMutation<
+    { rowId: string; newPrice: number | null }, // TData
+    any, // TError
+    { rowId: string; newPrice: number | null }, // TVariables
+    unknown // TContext
+  >({
+    mutationFn: async ({ rowId, newPrice }) => {
+      const authId = await getCurrentAuthId();
+      const payload: any = {
+        actual_price: newPrice ?? null,
+        received_at: new Date().toISOString(),
+      };
+      if (authId) payload.received_by = authId;
+      const { error } = await supabase
+        .from("purchase_item")
+        .update(payload)
+        .eq("id", rowId);
+      if (error) throw error;
+      return { rowId, newPrice };
+    },
+    onMutate: ({ rowId }) => {
+      setSavingById((prev) => ({ ...prev, [rowId]: true }));
+    },
+    onSuccess: (_data, variables) => {
+      message.success("Precio actualizado");
+      setPendingActualPrice((prev) => {
+        const { [variables.rowId]: _, ...rest } = prev;
+        return rest;
+      });
+      const key = id ? ["distributionPlanPurchaseOrdersWithItems", id] : ["distributionPlanPurchaseOrdersWithItems"];
+      queryClient.invalidateQueries({ queryKey: key });
+    },
+    onError: (err: any) => {
+      console.error("Error al actualizar precio real:", err);
+      message.error("No se pudo guardar el precio real");
+    },
+    onSettled: (_data, _error, variables) => {
+      if (variables?.rowId) {
+        setSavingById((prev) => ({ ...prev, [variables.rowId]: false }));
+      }
+    },
+  });
+
   const columns = [
     {
       title: "Producto",
@@ -114,8 +179,39 @@ const SuppliersRecepction = () => {
           title: "Real",
           dataIndex: "actual_price",
           key: "actual_price",
-          render: (v: number | null) =>
-            v != null ? formatPriceAccounting(v) : "—",
+          render: (v: number | null, row: any) => (
+            <InputNumber
+              value={
+                pendingActualPrice[row.id] !== undefined
+                  ? pendingActualPrice[row.id]
+                  : v ?? undefined
+              }
+              min={0}
+              step={0.01}
+              style={{ width: 120 }}
+              disabled={!!savingById[row.id]}
+              controls={false}
+              onChange={(val) => {
+                setPendingActualPrice((prev) => ({
+                  ...prev,
+                  [row.id]: typeof val === "number" ? val : undefined,
+                }));
+              }}
+              onBlur={() => {
+                const val = pendingActualPrice[row.id];
+                const newPrice = (val !== undefined ? val : v) ?? null;
+                updateActualPriceMutation.mutate({ rowId: row.id, newPrice });
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  const val = pendingActualPrice[row.id];
+                  const newPrice = (val !== undefined ? val : v) ?? null;
+                  updateActualPriceMutation.mutate({ rowId: row.id, newPrice });
+                }
+              }}
+              placeholder="Precio real"
+            />
+          ),
         },
       ],
     },

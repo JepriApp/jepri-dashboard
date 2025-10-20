@@ -122,11 +122,11 @@ CREATE TABLE sale_order (
     created_by_customer_id UUID REFERENCES customer(id) ON DELETE RESTRICT,
     CONSTRAINT sale_order_exactly_one_creator CHECK (
         (created_by_admin_id IS NOT NULL) <> (created_by_customer_id IS NOT NULL)
-    )
+    ),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     -- Identificador humano: número secuencial global (ej: 000123)
     order_seq INTEGER,
-    order_code TEXT UNIQUE,
+    order_code TEXT UNIQUE
 );
 
 -- Tabla de items de venta
@@ -232,3 +232,44 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_set_distribution_plan_code
 BEFORE INSERT ON distribution_plan
 FOR EACH ROW EXECUTE FUNCTION set_distribution_plan_code();
+
+-- Cleanup orphan purchase_items and empty purchase_orders (status 'created') after fulfillment deletions
+CREATE OR REPLACE FUNCTION cleanup_purchase_items_on_fulfillment_delete() RETURNS TRIGGER AS $$
+DECLARE
+    po_id UUID;
+BEGIN
+    -- Get the purchase_order of the affected purchase_item
+    SELECT purchase_order_id INTO po_id
+    FROM purchase_item
+    WHERE id = OLD.purchase_item_id;
+
+    -- If no fulfillments remain for this purchase_item, delete it
+    IF NOT EXISTS (
+        SELECT 1 FROM fulfillment WHERE purchase_item_id = OLD.purchase_item_id
+    ) THEN
+        DELETE FROM purchase_item WHERE id = OLD.purchase_item_id;
+    END IF;
+
+    -- If the purchase_order has no items left and is 'created', delete it
+    IF po_id IS NOT NULL THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM purchase_item WHERE purchase_order_id = po_id
+        ) THEN
+            IF EXISTS (
+                SELECT 1 FROM purchase_order WHERE id = po_id AND status = 'created'
+            ) THEN
+                DELETE FROM purchase_order WHERE id = po_id;
+            END IF;
+        END IF;
+    END IF;
+
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_cleanup_purchase_items_on_fulfillment_delete ON fulfillment;
+
+CREATE TRIGGER trg_cleanup_purchase_items_on_fulfillment_delete
+AFTER DELETE ON fulfillment
+FOR EACH ROW
+EXECUTE FUNCTION cleanup_purchase_items_on_fulfillment_delete();

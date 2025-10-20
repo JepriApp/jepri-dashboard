@@ -56,6 +56,37 @@ const lateralMenuItems: Record<string, MenuProps["items"]> = {
       label: <Link href="/a/distribution-plans">Operación</Link>,
       children: undefined,
     },
+    {
+      key: `/a/user`,
+      icon: React.createElement(SettingOutlined),
+      label: "Usuarios",
+      children: [
+        {
+          key: `/a/users/customers`,
+          icon: React.createElement(ShoppingOutlined),
+          label: <Link href="/a/users/customers">Clientes</Link>,
+          children: undefined,
+        },
+        {
+          key: `/a/users/suppliers`,
+          icon: React.createElement(ShoppingOutlined),
+          label: <Link href="/a/users/suppliers">Proveedores</Link>,
+          children: undefined,
+        },
+        {
+          key: `/a/users/operators`,
+          icon: React.createElement(ShoppingOutlined),
+          label: <Link href="/a/users/operators">Operadores</Link>,
+          children: undefined,
+        },
+        {
+          key: `/a/users/admins`,
+          icon: React.createElement(ShoppingOutlined),
+          label: <Link href="/a/users/admins">Administradores</Link>,
+          children: undefined,
+        },
+      ],
+    },
   ],
 };
 
@@ -92,14 +123,6 @@ function DashboardLayout({
 
   const dropdownMenu = {
     items: [
-      {
-        key: "profile",
-        label: "Perfil de usuario",
-        icon: <SettingOutlined />,
-        onClick: () => {
-          router.push(`/${router.pathname.split("/")[1]}/profile`);
-        },
-      },
       {
         key: "logout",
         label: "Cerrar sesión",

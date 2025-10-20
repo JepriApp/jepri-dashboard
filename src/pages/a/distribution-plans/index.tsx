@@ -61,7 +61,11 @@ const DistributionPlansPage = () => {
       key: "actions",
       render: (_: unknown, record: DistributionPlanRow) => (
         <Space>
-          <Link href={`/a/distribution-plans/${record.id}`}>Abrir editor</Link>
+          <Link
+            href={`/a/distribution-plans/${record.id}?plan_date=${record.plan_date}&plan_code=${record.plan_code}`}
+          >
+            Abrir editor
+          </Link>
         </Space>
       ),
     },
@@ -70,9 +74,7 @@ const DistributionPlansPage = () => {
   return (
     <>
       <Space style={{ marginBottom: 16 }}>
-        <Button href="/a/distribution-plans/calendar">
-          Calendario
-        </Button>
+        <Button href="/a/distribution-plans/calendar">Calendario</Button>
       </Space>
       <Table
         loading={isLoading}

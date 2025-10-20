@@ -13,6 +13,14 @@ INSERT INTO auth (email, password_hash, role) VALUES
 ('cliente1@ejemplo.com', '$2a$10$rJJEZpxNK5DnM/I23KnOp.I7D0QeFmB9wVdgvFNwvErgZGl7pNIHe', 'customer'),
 ('cliente2@ejemplo.com', '$2a$10$rJJEZpxNK5DnM/I23KnOp.I7D0QeFmB9wVdgvFNwvErgZGl7pNIHe', 'customer');
 
+-- Admins con user_id obligatorio
+INSERT INTO admin (name, phone, user_id) VALUES
+('Administrador Principal', '3001234567', (SELECT id FROM auth WHERE email = 'admin@jepri.com'));
+
+-- Operador con user_id obligatorio
+INSERT INTO operator (name, phone, user_id) VALUES
+('Operador Principal', '3001234567', (SELECT id FROM auth WHERE email = 'operador@jepri.com'));
+
 -- Proveedores (supplier) con user_id obligatorio
 INSERT INTO supplier (name, contact, phone, user_id) VALUES
 ('Frutas y Verduras El Campesino', 'Carlos Martínez', '3001234567', (SELECT id FROM auth WHERE email = 'proveedor1@ejemplo.com')),

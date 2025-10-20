@@ -165,7 +165,7 @@ const Index = () => {
     setEditableItems(
       (order.items || []).map((it: any) => ({
         id: it.id,
-        sale_order_id: order.id as number,
+        sale_order_id: Number(order.id),
         product_id: it.product_id,
         quantity: it.quantity,
         unit_price: it.unit_price,
@@ -183,7 +183,7 @@ const Index = () => {
       ...prev,
       {
         tempId: Math.random().toString(36).slice(2),
-        sale_order_id: selectedOrder.id as number,
+        sale_order_id: Number(selectedOrder.id),
         product_id: undefined,
         quantity: 1,
         unit_price: 0,
@@ -281,7 +281,9 @@ const Index = () => {
       const inserts = editableItems.filter((it) => !it.id && it.product_id);
       const deletes = toDeleteIds;
 
-      // Eliminar primero para evitar conflictos de unicidad
+      // Limpieza de Purchase Items trasladada a triggers en BD (ver scripts/supabase_sql.sql)
+
+      // Eliminar primero los sale_item para evitar conflictos de unicidad
       if (deletes.length > 0) {
         const { error } = await supabase
           .from("sale_item")
@@ -289,6 +291,8 @@ const Index = () => {
           .in("id", deletes);
         if (error) throw error;
       }
+
+      // Limpieza de purchase_item huérfanos y purchase_order vacíos ahora manejada por triggers en BD (ver scripts/supabase_sql.sql)
 
       // Actualizar cantidades
       for (const it of updates) {
