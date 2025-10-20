@@ -133,8 +133,11 @@ function usePlanData(planId?: string) {
       const orders: PlanOrder[] = (rows || []).map((r: any) => {
         const rawItems = r.sale_item ?? [];
         const saleItems = rawItems.map((it: any) => {
-          const assigned_quantity = (Array.isArray(it.fulfillment) ? it.fulfillment : []).reduce(
-            (sum: number, f: any) => sum + Number(f?.purchase_item?.quantity ?? 0),
+          const assigned_quantity = (
+            Array.isArray(it.fulfillment) ? it.fulfillment : []
+          ).reduce(
+            (sum: number, f: any) =>
+              sum + Number(f?.purchase_item?.quantity ?? 0),
             0
           );
           return {
@@ -215,7 +218,7 @@ function usePurchaseOrdersForPlan(distributionPlanId?: string) {
               sale_item:sale_item_id (
                 id,
                 required_quantity,
-                sale_order:sale_order_id ( id, order_code ),
+                sale_order:sale_order_id ( id, order_code, customer:customer_id ( id, name ) ),
                 product:product_id ( id, name, unit )
               )
             )
@@ -240,6 +243,47 @@ const PlanEditorPage = () => {
 
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [linking, setLinking] = useState(false);
+
+  // Estado del modal para editar status del plan
+  const [statusModalOpen, setStatusModalOpen] = useState(false);
+  const [nextStatus, setNextStatus] = useState<string>(plan?.status ?? "planned");
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
+  const PLAN_STATUSES = [
+    { label: "Planificado", value: "planned" },
+    { label: "Preparando", value: "preparing" },
+    { label: "En progreso", value: "in_progress" },
+    { label: "Completado", value: "completed" },
+    { label: "Cancelado", value: "cancelled" },
+  ];
+
+  const openStatusModal = () => {
+    setNextStatus(plan?.status ?? "planned");
+    setStatusModalOpen(true);
+  };
+
+  const handleUpdatePlanStatus = async () => {
+    if (!planId) {
+      message.error("Plan no identificado");
+      return;
+    }
+    try {
+      setIsUpdatingStatus(true);
+      const { error } = await supabase
+        .from("distribution_plan")
+        .update({ status: nextStatus })
+        .eq("id", String(planId));
+      if (error) throw error;
+      message.success("Estado del plan actualizado");
+      setStatusModalOpen(false);
+      await refetch();
+    } catch (e) {
+      console.error(e);
+      message.error("No se pudo actualizar el estado");
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
 
   const [assignments, setAssignments] = useState<Record<string, Assignment[]>>(
     {}
@@ -715,6 +759,7 @@ const PlanEditorPage = () => {
           </Descriptions.Item>
           <Descriptions.Item label="Estado">
             <Tag color="blue">{plan?.status}</Tag>
+            <Button onClick={openStatusModal}>Editar</Button>
           </Descriptions.Item>
           <Descriptions.Item label="Coordinador">
             {plan?.operator?.name ?? "-"}
@@ -729,6 +774,21 @@ const PlanEditorPage = () => {
           </Descriptions.Item>
         </Descriptions>
       </Card>
+
+      <Modal
+        open={statusModalOpen}
+        title="Editar estado del plan"
+        onCancel={() => setStatusModalOpen(false)}
+        onOk={handleUpdatePlanStatus}
+        confirmLoading={isUpdatingStatus}
+      >
+        <Select
+          value={nextStatus}
+          onChange={setNextStatus}
+          options={PLAN_STATUSES}
+          style={{ width: "100%" }}
+        />
+      </Modal>
       <Space size="large" wrap>
         <Card variant="outlined">
           <Statistic title="Órdenes en plan" value={orders.length} />
@@ -784,13 +844,15 @@ const PlanEditorPage = () => {
                         title: "Producto",
                         dataIndex: ["product", "name"],
                         key: "product_name",
+                        render: (_: unknown, it: any) =>
+                          it?.offer?.product?.name ?? it?.product?.name ?? "-",
                       },
                       {
                         title: "Cant./Unidad",
                         key: "quantity_unit",
                         render: (_: unknown, it: any) =>
                           `${Number(it.quantity || 0)} ${
-                            it.product?.unit ?? ""
+                            it?.offer?.product?.unit ?? it?.product?.unit ?? ""
                           }`,
                       },
                       {
@@ -819,21 +881,32 @@ const PlanEditorPage = () => {
                             : [];
                           if (links.length === 0)
                             return (
-                              <Typography.Text type="secondary">—</Typography.Text>
+                              <Typography.Text type="secondary">
+                                —
+                              </Typography.Text>
                             );
                           const unit = it?.product?.unit ?? "";
                           // Agrupar por proveedor y sumar cantidad del purchase_item
-                          const agg = new Map<string, { name: string; qty: number; poCodes: string[] }>();
+                          const agg = new Map<
+                            string,
+                            { name: string; qty: number; poCodes: string[] }
+                          >();
                           links.forEach((f: any) => {
-                            const supplierId = f?.purchase_item?.purchase_order?.supplier?.id;
-                            const supplierName = f?.purchase_item?.purchase_order?.supplier?.name ?? "";
-                            const poCode = f?.purchase_item?.purchase_order?.purchase_code ?? "";
+                            const supplierId =
+                              f?.purchase_item?.purchase_order?.supplier?.id;
+                            const supplierName =
+                              f?.purchase_item?.purchase_order?.supplier
+                                ?.name ?? "";
+                            const poCode =
+                              f?.purchase_item?.purchase_order?.purchase_code ??
+                              "";
                             const qty = Number(f?.purchase_item?.quantity ?? 0);
                             if (!supplierId) return;
                             const prev = agg.get(String(supplierId));
                             if (prev) {
                               prev.qty += qty;
-                              if (poCode && !prev.poCodes.includes(poCode)) prev.poCodes.push(poCode);
+                              if (poCode && !prev.poCodes.includes(poCode))
+                                prev.poCodes.push(poCode);
                               agg.set(String(supplierId), prev);
                             } else {
                               agg.set(String(supplierId), {
@@ -843,16 +916,28 @@ const PlanEditorPage = () => {
                               });
                             }
                           });
-                          const tags = Array.from(agg.entries()).map(([sid, info]) => {
-                            const label = `${info.name} · ${info.qty} ${unit}`;
-                            const tooltip = info.poCodes.length > 0 ? `POs: ${info.poCodes.join(", ")}` : undefined;
-                            return (
-                              <Tooltip key={`${it.id}-${sid}`} title={tooltip}>
-                                <Tag>{label}</Tag>
-                              </Tooltip>
-                            );
-                          });
-                          return <Space wrap size={4}>{tags}</Space>;
+                          const tags = Array.from(agg.entries()).map(
+                            ([sid, info]) => {
+                              const label = `${info.name} · ${info.qty} ${unit}`;
+                              const tooltip =
+                                info.poCodes.length > 0
+                                  ? `POs: ${info.poCodes.join(", ")}`
+                                  : undefined;
+                              return (
+                                <Tooltip
+                                  key={`${it.id}-${sid}`}
+                                  title={tooltip}
+                                >
+                                  <Tag>{label}</Tag>
+                                </Tooltip>
+                              );
+                            }
+                          );
+                          return (
+                            <Space wrap size={4}>
+                              {tags}
+                            </Space>
+                          );
                         },
                       },
                     ] as any
@@ -884,15 +969,16 @@ const PlanEditorPage = () => {
                       [
                         {
                           title: "Producto",
-                          dataIndex: ["product", "name"],
                           key: "product_name",
+                          render: (_: unknown, it: any) =>
+                            it?.offer?.product?.name ?? it?.product?.name ?? "-",
                         },
                         {
                           title: "Cant./Unidad",
                           key: "quantity_unit",
                           render: (_: unknown, it: any) =>
                             `${Number(it.quantity || 0)} ${
-                              it.product?.unit ?? ""
+                              it?.offer?.product?.unit ?? it?.product?.unit ?? ""
                             }`,
                         },
                         {
@@ -904,6 +990,15 @@ const PlanEditorPage = () => {
                             ),
                         },
                         {
+                          title: "Importe",
+                          key: "line_total",
+                          render: (_: unknown, it: any) =>
+                            formatPriceAccounting(
+                              Number(it.quantity || 0) *
+                                Number(it.actual_price ?? it.offer?.price ?? 0)
+                            ),
+                        },
+                        {
                           title: "Vínculos",
                           key: "pi_links",
                           render: (_: unknown, it: any) => {
@@ -912,24 +1007,34 @@ const PlanEditorPage = () => {
                               : [];
                             if (links.length === 0)
                               return (
-                                <Typography.Text type="secondary">—</Typography.Text>
+                                <Typography.Text type="secondary">
+                                  —
+                                </Typography.Text>
                               );
                             const qtyPi = Number(it?.quantity ?? 0);
                             return (
                               <Space wrap size={4}>
                                 {links.map((f: any) => {
-                                  const soCode = f?.sale_item?.sale_order?.order_code ?? "";
-                                  const unit = f?.sale_item?.product?.unit ?? "";
+                                  const soCode =
+                                    f?.sale_item?.sale_order?.order_code ?? "";
+                                  const customerName =
+                                    f?.sale_item?.sale_order?.customer?.name ?? "";
+                                  const labelName = customerName || soCode;
+                                  const unit =
+                                    f?.sale_item?.product?.unit ?? "";
+                                  const requiredQty = Number(
+                                    f?.sale_item?.required_quantity ?? 0
+                                  );
                                   const label = [
-                                    soCode ? ` ${soCode}` : "",
+                                    labelName ? ` ${labelName}` : "",
                                     `${qtyPi} ${unit}`,
                                   ]
                                     .filter(Boolean)
                                     .join(" · ");
                                   return (
                                     <Tooltip
-                                      key={`${it.id}-${soCode}-${qtyPi}`}
-                                      title={`Cumple pedido: ${qtyPi} ${unit}`}
+                                      key={`${it.id}-${labelName}-${qtyPi}`}
+                                      title={`Cumple pedido: ${qtyPi} ${unit} · Requerido: ${requiredQty} ${unit}`}
                                     >
                                       <Tag color="blue">{label}</Tag>
                                     </Tooltip>
