@@ -4,8 +4,6 @@ import {
   Table,
   Typography,
   Card,
-  Descriptions,
-  Collapse,
   Layout,
   List,
   theme,
@@ -25,7 +23,6 @@ import { supabase } from "@/services/supabase.client";
 import type { SaleOrder, SaleItem } from "@/services/supabase.service";
 import {
   getOrCreatePurchaseOrderForSupplier,
-  createPurchaseItem,
   upsertFulfillment,
 } from "@/services/supabase.service";
 import { formatPriceAccounting } from "@/utils/formatPrice";
@@ -35,9 +32,7 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
 } from "@ant-design/icons";
-import { Header } from "antd/es/layout/layout";
-import { AutoTitle } from "@/components/pure/AutoTitle";
-import { subtitles, titles } from "@/constants/titles";
+import DistributionPlanLayout from "@/components/layout/DistributionPlanLayout";
 const { Content, Sider } = Layout;
 type PlanOrder = Pick<
   SaleOrder,
@@ -659,7 +654,7 @@ const AssignSuppliersPage = () => {
     }[];
   }
   return (
-    <Layout hasSider>
+    <Layout hasSider style={{ backgroundColor: "transparent" }}>
       <Sider collapsible collapsed={collapsed} theme="light" trigger={null}>
         <Card
           title="Pedidos"
@@ -858,6 +853,7 @@ const AssignSuppliersPage = () => {
       <Layout
         style={{
           marginLeft: "16px",
+          backgroundColor: "transparent",
         }}
       >
         <Card
@@ -1094,10 +1090,7 @@ const AssignSuppliersPage = () => {
                   const displayPercent = Math.min(percent, 100);
                   return (
                     <div>
-                      <Typography.Text>
-                        {" "}
-                        {it.product.name}{" "}
-                      </Typography.Text>
+                      <Typography.Text> {it.product.name} </Typography.Text>
                       <div
                         style={{
                           display: "flex",
@@ -1251,7 +1244,8 @@ const AssignSuppliersPage = () => {
                 <Typography.Text>
                   Cantidad requerida:{" "}
                   <strong>
-                    {assignContext?.saleItemQty ?? 0} {assignContext?.productUnit || ""}
+                    {assignContext?.saleItemQty ?? 0}{" "}
+                    {assignContext?.productUnit || ""}
                   </strong>
                 </Typography.Text>
                 <br />
@@ -1360,5 +1354,9 @@ const AssignSuppliersPage = () => {
 export default AssignSuppliersPage;
 
 AssignSuppliersPage.getLayout = function getLayout(page: ReactElement) {
-  return <DashboardLayout>{page}</DashboardLayout>;
+  return (
+    <DashboardLayout noStyle>
+      <DistributionPlanLayout> {page}</DistributionPlanLayout>
+    </DashboardLayout>
+  );
 };

@@ -16,6 +16,7 @@ import {
   Descriptions,
   Statistic,
   Tooltip,
+  theme,
 } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
@@ -25,6 +26,8 @@ import type { SaleOrder, SaleItem } from "@/services/supabase.service";
 import { getPendingOrdersForAdmin } from "@/services/supabase.service";
 import { formatPriceAccounting } from "@/utils/formatPrice";
 import { useAuthStore } from "@/store/auth.store";
+import DistributionPlanLayout from "@/components/layout/DistributionPlanLayout";
+import { ArrowDownOutlined, PlusOutlined } from "@ant-design/icons";
 
 type OfferOption = {
   id: string;
@@ -246,9 +249,21 @@ const PlanEditorPage = () => {
 
   // Estado del modal para editar status del plan
   const [statusModalOpen, setStatusModalOpen] = useState(false);
-  const [nextStatus, setNextStatus] = useState<string>(plan?.status ?? "planned");
+  const [nextStatus, setNextStatus] = useState<string>(
+    plan?.status ?? "planned"
+  );
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
+  // Estado de resaltado de vínculos (por id de orden de venta)
+  const [highlightSaleOrderId, setHighlightSaleOrderId] = useState<
+    string | null
+  >(null);
+  // Estado de resaltado de vínculos (por id de fulfillment)
+  const [highlightFulfillmentId, setHighlightFulfillmentId] = useState<
+    string | null
+  >(null);
+  // Tokens de tema para estilos de Tag (consistentes con assign-suppliers)
+  const { token } = theme.useToken();
   const PLAN_STATUSES = [
     { label: "Planificado", value: "planned" },
     { label: "Preparando", value: "preparing" },
@@ -576,20 +591,22 @@ const PlanEditorPage = () => {
 
   const orderColumns = [
     {
-      title: "Código",
-      dataIndex: "order_code",
-      key: "order_code",
-    },
-    {
-      title: "Fecha",
-      dataIndex: "order_date",
-      key: "order_date",
-      render: (val: string) => dayjs(val).format("YYYY-MM-DD HH:mm"),
-    },
-    {
       title: "Cliente",
       dataIndex: ["user", "name"],
       key: "user_name",
+      render: (name: string | undefined, record: PlanOrder) => (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <Typography.Text>{name || "—"}</Typography.Text>
+          <Typography.Text type="secondary" ellipsis>
+            {record.order_code || "Sin código"}
+          </Typography.Text>
+        </div>
+      ),
     },
     {
       title: "Email",
@@ -635,22 +652,22 @@ const PlanEditorPage = () => {
 
   const poColumns = [
     {
-      title: "Código",
-      dataIndex: "purchase_code",
-      key: "purchase_code",
-    },
-    {
-      title: "Entrega esperada (plan)",
-      key: "expected_delivery_date_plan",
-      render: () =>
-        plan?.plan_date
-          ? dayjs(plan.plan_date).startOf("day").format("YYYY-MM-DD")
-          : "-",
-    },
-    {
       title: "Proveedor",
       dataIndex: ["supplier", "name"],
       key: "supplier_name",
+      render: (name: string | undefined, record: any) => (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <Typography.Text>{name || "—"}</Typography.Text>
+          <Typography.Text type="secondary" ellipsis>
+            {record.purchase_code || "Sin código"}
+          </Typography.Text>
+        </div>
+      ),
     },
     {
       title: "Estado",
@@ -680,115 +697,44 @@ const PlanEditorPage = () => {
     },
   ];
 
-  const pendingOrderColumns = [
-    {
-      title: "Código",
-      dataIndex: "order_code",
-      key: "order_code",
-    },
-    {
-      title: "Fecha",
-      dataIndex: "order_date",
-      key: "order_date",
-      render: (val: string) => dayjs(val).format("YYYY-MM-DD HH:mm"),
-    },
-    {
-      title: "Cliente",
-      dataIndex: ["user", "name"],
-      key: "user_name",
-    },
-    {
-      title: "Email",
-      dataIndex: ["user", "email"],
-      key: "user_email",
-    },
-    {
-      title: "Total",
-      dataIndex: "total",
-      key: "total",
-      render: (t: number | undefined) => formatPriceAccounting(Number(t ?? 0)),
-    },
-    {
-      title: "Items",
-      key: "items_count",
-      render: (_: unknown, record: SaleOrder) => record.items?.length ?? 0,
-    },
-  ];
-
   return (
     <>
-      <Card
-        title="Reporte del plan"
-        style={{ marginBottom: 16 }}
-        actions={[
-          <Space>
-            <Button
-              type="primary"
-              onClick={handleGeneratePurchaseOrders}
-              disabled={!allowAssignments || itemsFlat.length === 0}
-            >
-              Generar órdenes de compra
-            </Button>
-            <Button onClick={() => refetch()}>Refrescar</Button>
-            <Button
-              onClick={() =>
-                router.push(`/a/sale-orders/create?planId=${planId}`)
-              }
-            >
-              Agregar nueva orden de venta
-            </Button>
-            <Button
-              onClick={() =>
-                router.push(`/a/distribution-plans/${planId}/assign-suppliers`)
-              }
-            >
-              Asignar proveedores
-            </Button>
-          </Space>,
-        ]}
+      <Descriptions
+        bordered
+        column={{ xs: 1, sm: 2, md: 2, lg: 3, xl: 4, xxl: 4 }}
+        style={{ marginBottom: "16px" }}
       >
-        <Descriptions
-          size="small"
-          column={{ xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 4 }}
-        >
-          <Descriptions.Item label="Código">
-            {plan?.plan_code ?? "-"}
-          </Descriptions.Item>
-          <Descriptions.Item label="Fecha del plan">
-            {plan ? dayjs(plan.plan_date).format("YYYY-MM-DD") : "-"}
-          </Descriptions.Item>
-          <Descriptions.Item label="Estado">
-            <Tag color="blue">{plan?.status}</Tag>
-            <Button onClick={openStatusModal}>Editar</Button>
-          </Descriptions.Item>
-          <Descriptions.Item label="Coordinador">
-            {plan?.operator?.name ?? "-"}
-          </Descriptions.Item>
-          <Descriptions.Item label="Corte">
-            {plan?.cutoff_at
-              ? dayjs(plan.cutoff_at).format("YYYY-MM-DD HH:mm")
-              : "-"}
-          </Descriptions.Item>
-          <Descriptions.Item label="Notas">
-            {plan?.notes ?? "-"}
-          </Descriptions.Item>
-        </Descriptions>
-      </Card>
+        <Descriptions.Item label="Código">
+          {plan?.plan_code ?? "-"}
+        </Descriptions.Item>
+        <Descriptions.Item label="Fecha del plan">
+          {plan ? dayjs(plan.plan_date).format("YYYY-MM-DD") : "-"}
+        </Descriptions.Item>
+        <Descriptions.Item label="Estado">
+          <Tag color="blue">{plan?.status}</Tag>
+        </Descriptions.Item>
+        <Descriptions.Item label="Coordinador">
+          {plan?.operator?.name ?? "-"}
+        </Descriptions.Item>
+        <Descriptions.Item label="Corte">
+          {plan?.cutoff_at
+            ? dayjs(plan.cutoff_at).format("YYYY-MM-DD HH:mm")
+            : "-"}
+        </Descriptions.Item>
+        <Descriptions.Item label="Notas">
+          {plan?.notes ?? "-"}
+        </Descriptions.Item>
+      </Descriptions>
 
-      <Modal
-        open={statusModalOpen}
-        title="Editar estado del plan"
-        onCancel={() => setStatusModalOpen(false)}
-        onOk={handleUpdatePlanStatus}
-        confirmLoading={isUpdatingStatus}
+      <Space
+        style={{
+          marginBottom: 16,
+          display: "flex",
+          flexDirection: "row-reverse",
+        }}
       >
-        <Select
-          value={nextStatus}
-          onChange={setNextStatus}
-          options={PLAN_STATUSES}
-          style={{ width: "100%" }}
-        />
-      </Modal>
+        <Button onClick={openStatusModal}>Editar estado del plan</Button>
+      </Space>
       <Space size="large" wrap>
         <Card variant="outlined">
           <Statistic title="Órdenes en plan" value={orders.length} />
@@ -827,8 +773,25 @@ const PlanEditorPage = () => {
       ) : (
         <>
           <Divider orientation="left">Pedidos</Divider>
+          <Space
+            style={{
+              marginBottom: 16,
+              display: "flex",
+              flexDirection: "row-reverse",
+            }}
+          >
+            <Button
+              onClick={() =>
+                router.push(`/a/sale-orders/create?planId=${planId}`)
+              }
+              icon={<PlusOutlined />}
+            >
+              Agregar pedido
+            </Button>
+          </Space>
           <Table
             dataSource={orders}
+            style={{ overflow: "auto" }}
             columns={orderColumns as any}
             rowKey="id"
             expandable={{
@@ -886,56 +849,62 @@ const PlanEditorPage = () => {
                               </Typography.Text>
                             );
                           const unit = it?.product?.unit ?? "";
-                          // Agrupar por proveedor y sumar cantidad del purchase_item
-                          const agg = new Map<
-                            string,
-                            { name: string; qty: number; poCodes: string[] }
-                          >();
-                          links.forEach((f: any) => {
-                            const supplierId =
-                              f?.purchase_item?.purchase_order?.supplier?.id;
-                            const supplierName =
-                              f?.purchase_item?.purchase_order?.supplier
-                                ?.name ?? "";
-                            const poCode =
-                              f?.purchase_item?.purchase_order?.purchase_code ??
-                              "";
-                            const qty = Number(f?.purchase_item?.quantity ?? 0);
-                            if (!supplierId) return;
-                            const prev = agg.get(String(supplierId));
-                            if (prev) {
-                              prev.qty += qty;
-                              if (poCode && !prev.poCodes.includes(poCode))
-                                prev.poCodes.push(poCode);
-                              agg.set(String(supplierId), prev);
-                            } else {
-                              agg.set(String(supplierId), {
-                                name: supplierName,
-                                qty,
-                                poCodes: poCode ? [poCode] : [],
-                              });
-                            }
-                          });
-                          const tags = Array.from(agg.entries()).map(
-                            ([sid, info]) => {
-                              const label = `${info.name} · ${info.qty} ${unit}`;
-                              const tooltip =
-                                info.poCodes.length > 0
-                                  ? `POs: ${info.poCodes.join(", ")}`
-                                  : undefined;
-                              return (
-                                <Tooltip
-                                  key={`${it.id}-${sid}`}
-                                  title={tooltip}
-                                >
-                                  <Tag>{label}</Tag>
-                                </Tooltip>
-                              );
-                            }
-                          );
                           return (
                             <Space wrap size={4}>
-                              {tags}
+                              {links.map((f: any) => {
+                                const supName =
+                                  f?.purchase_item?.purchase_order?.supplier
+                                    ?.name ?? "";
+                                const poCode =
+                                  f?.purchase_item?.purchase_order
+                                    ?.purchase_code ?? "";
+                                const qtyPi = Number(
+                                  f?.purchase_item?.quantity ?? 0
+                                );
+                                const price = Number(
+                                  f?.purchase_item?.actual_price ??
+                                    f?.purchase_item?.offer?.price ??
+                                    0
+                                );
+                                const fid = f?.id;
+                                const isHighlighted =
+                                  !!fid && highlightFulfillmentId === fid;
+                                const segments = [
+                                  supName || poCode || "",
+                                  `${qtyPi} ${unit}`,
+                                  price
+                                    ? `${formatPriceAccounting(price)} c/u`
+                                    : undefined,
+                                ].filter(Boolean);
+                                return (
+                                  <Tag
+                                    id={`fullfilmentId_from_sale_order/${fid}`}
+                                    onClick={() => {
+                                      if (!fid) return;
+                                      setHighlightFulfillmentId((prev) =>
+                                        prev === fid ? null : fid
+                                      );
+                                    }}
+                                    style={{
+                                      cursor: fid ? "pointer" : "default",
+                                      borderColor: isHighlighted
+                                        ? token.colorPrimary
+                                        : undefined,
+                                      backgroundColor: isHighlighted
+                                        ? token.colorPrimaryBg
+                                        : undefined,
+                                    }}
+                                  >
+                                    <Space wrap split="·">
+                                      {segments.map((e, idx) => (
+                                        <Typography.Text key={idx}>
+                                          {e as any}
+                                        </Typography.Text>
+                                      ))}
+                                    </Space>
+                                  </Tag>
+                                );
+                              })}
                             </Space>
                           );
                         },
@@ -951,6 +920,23 @@ const PlanEditorPage = () => {
       {showPurchaseSection && (
         <>
           <Divider orientation="left">Órdenes de compra</Divider>
+
+          <Space
+            style={{
+              marginBottom: 16,
+              display: "flex",
+              flexDirection: "row-reverse",
+            }}
+          >
+            <Button
+              onClick={() =>
+                router.push(`/a/distribution-plans/${planId}/assign-suppliers`)
+              }
+              icon={<ArrowDownOutlined />}
+            >
+              Asignar proveedores
+            </Button>
+          </Space>
           {posLoading ? (
             <Skeleton active />
           ) : (
@@ -958,6 +944,7 @@ const PlanEditorPage = () => {
               dataSource={relatedPOs}
               columns={poColumns as any}
               rowKey="id"
+              style={{ overflow: "auto" }}
               expandable={{
                 expandedRowRender: (po: any) => (
                   <Table
@@ -971,14 +958,18 @@ const PlanEditorPage = () => {
                           title: "Producto",
                           key: "product_name",
                           render: (_: unknown, it: any) =>
-                            it?.offer?.product?.name ?? it?.product?.name ?? "-",
+                            it?.offer?.product?.name ??
+                            it?.product?.name ??
+                            "-",
                         },
                         {
                           title: "Cant./Unidad",
                           key: "quantity_unit",
                           render: (_: unknown, it: any) =>
                             `${Number(it.quantity || 0)} ${
-                              it?.offer?.product?.unit ?? it?.product?.unit ?? ""
+                              it?.offer?.product?.unit ??
+                              it?.product?.unit ??
+                              ""
                             }`,
                         },
                         {
@@ -1018,25 +1009,55 @@ const PlanEditorPage = () => {
                                   const soCode =
                                     f?.sale_item?.sale_order?.order_code ?? "";
                                   const customerName =
-                                    f?.sale_item?.sale_order?.customer?.name ?? "";
-                                  const labelName = customerName || soCode;
+                                    f?.sale_item?.sale_order?.customer?.name ??
+                                    "";
                                   const unit =
                                     f?.sale_item?.product?.unit ?? "";
                                   const requiredQty = Number(
                                     f?.sale_item?.required_quantity ?? 0
                                   );
-                                  const label = [
-                                    labelName ? ` ${labelName}` : "",
+                                  const fid = f?.id;
+                                  const isHighlighted =
+                                    !!fid && highlightFulfillmentId === fid;
+                                  const labelName =
+                                    customerName || soCode || "";
+                                  const segments = [
+                                    labelName,
                                     `${qtyPi} ${unit}`,
-                                  ]
-                                    .filter(Boolean)
-                                    .join(" · ");
+                                  ].filter(Boolean);
                                   return (
                                     <Tooltip
-                                      key={`${it.id}-${labelName}-${qtyPi}`}
+                                      key={`${it.id}-${
+                                        fid || labelName
+                                      }-${qtyPi}`}
                                       title={`Cumple pedido: ${qtyPi} ${unit} · Requerido: ${requiredQty} ${unit}`}
                                     >
-                                      <Tag color="blue">{label}</Tag>
+                                      <Tag
+                                        id={`fullfilmentId_from_purchase_item/${fid}`}
+                                        onClick={() => {
+                                          if (!fid) return;
+                                          setHighlightFulfillmentId((prev) =>
+                                            prev === fid ? null : fid
+                                          );
+                                        }}
+                                        style={{
+                                          cursor: fid ? "pointer" : "default",
+                                          borderColor: isHighlighted
+                                            ? token.colorPrimary
+                                            : undefined,
+                                          backgroundColor: isHighlighted
+                                            ? token.colorPrimaryBg
+                                            : undefined,
+                                        }}
+                                      >
+                                        <Space wrap split="·">
+                                          {segments.map((e, idx) => (
+                                            <Typography.Text key={idx}>
+                                              {e as any}
+                                            </Typography.Text>
+                                          ))}
+                                        </Space>
+                                      </Tag>
                                     </Tooltip>
                                   );
                                 })}
@@ -1053,6 +1074,20 @@ const PlanEditorPage = () => {
           )}
         </>
       )}
+      <Modal
+        open={statusModalOpen}
+        title="Editar estado del plan"
+        onCancel={() => setStatusModalOpen(false)}
+        onOk={handleUpdatePlanStatus}
+        confirmLoading={isUpdatingStatus}
+      >
+        <Select
+          value={nextStatus}
+          onChange={setNextStatus}
+          options={PLAN_STATUSES}
+          style={{ width: "100%" }}
+        />
+      </Modal>
     </>
   );
 };
@@ -1060,5 +1095,9 @@ const PlanEditorPage = () => {
 export default PlanEditorPage;
 
 PlanEditorPage.getLayout = function getLayout(page: ReactElement) {
-  return <DashboardLayout> {page}</DashboardLayout>;
+  return (
+    <DashboardLayout noStyle>
+      <DistributionPlanLayout> {page}</DistributionPlanLayout>
+    </DashboardLayout>
+  );
 };

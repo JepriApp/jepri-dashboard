@@ -188,7 +188,7 @@ function DashboardLayout({
           marginLeft: sideMenuCollapsed
             ? SIDER_WIDTH["COLLAPSED"]
             : SIDER_WIDTH["EXPANDED"],
-          width: "100%",
+          overflow: 'initial'
         }}
       >
         {noStyle ? (
@@ -200,7 +200,7 @@ function DashboardLayout({
                 backgroundColor: "transparent",
                 height: "auto",
                 lineHeight: "36px",
-                paddingLeft: 0
+                paddingLeft: 0,
               }}
             >
               <div
@@ -211,7 +211,7 @@ function DashboardLayout({
                   flexWrap: "wrap",
                   alignItems: "flex-start",
                   width: "100%",
-                  marginBottom: '16px'
+                  marginBottom: "16px",
                 }}
               >
                 {/* <AutoBreadcrumb breadcrumItemTree={breadcrumItemTree} /> */}
@@ -289,11 +289,17 @@ function DashboardLayout({
           }}
         />
       </Header>
-      <Content style={{ padding: "0 4px" }}>
-        {/* <AutoBreadcrumb breadcrumItemTree={breadcrumItemTree} /> */}
-        {backButton && <GoBackButton />}
-        <AutoTitle titles={titles} subtitles={subtitles} />
-        {children}
+      <Content style={noStyle ? {} : { padding: "0 4px" }}>
+        {noStyle ? (
+          children
+        ) : (
+          <>
+            {backButton && <GoBackButton />}
+            {/* <AutoBreadcrumb breadcrumItemTree={breadcrumItemTree} /> */}
+            <AutoTitle titles={titles} subtitles={subtitles} />
+            {children}
+          </>
+        )}
       </Content>
       {footer}
     </Layout>

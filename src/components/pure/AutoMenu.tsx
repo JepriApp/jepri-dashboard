@@ -7,6 +7,7 @@ export const AutoMenu = (props: MenuProps) => {
     <Menu
       mode="inline"
       selectedKeys={[router.asPath.split("?")[0].split("#")[0]]}
+      style={{border: "1px solid transparent"}}
       {...props}
     />
   );

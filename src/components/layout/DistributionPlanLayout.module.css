@@ -1,0 +1,29 @@
+.sider {
+  text-align: -webkit-center;
+  height: 100vh;
+}
+.header {
+  position: "fixed";
+  top: 0;
+  width: "100%";
+  z-index: 10;
+  display: "flex";
+  align-items: "center";
+  justify-content: "space-between";
+}
+.logo {
+  width: "auto";
+  object-fit: "cover";
+  display: "flex";
+}
+.user-button {
+  display: "flex";
+  align-items: "center";
+}
+.user-options {
+  display: "flex";
+  align-items: "center";
+  justify-content: "space-between";
+  padding: "0 16px";
+  width: "100%";
+}
