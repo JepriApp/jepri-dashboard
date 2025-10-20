@@ -1,5 +1,5 @@
 -- Seed de prueba ajustado al esquema actual
--- Mantiene usuarios, productos y ofertas. NO crea planes ni órdenes.
+-- Mantiene usuarios, productos y catálogos. NO crea planes ni órdenes.
 
 -- Usuarios (auth)
 INSERT INTO auth (email, password_hash, role) VALUES
@@ -47,7 +47,7 @@ INSERT INTO product (name, description, unit, reference_price, main_photo) VALUE
 ('Ajo', 'Ajo importado', 'kg', 12000, 'https://images.unsplash.com/photo-1615477550927-6ec8445fcf2d?w=300&auto=format&fit=crop'),
 ('Pimentón', 'Pimentón rojo', 'kg', 4200, 'https://images.unsplash.com/photo-1563565375-f3fdfdbefa83?w=300&auto=format&fit=crop');
 
--- Ofertas (producto-proveedor)
+-- catálogos (producto-proveedor)
 INSERT INTO offer (product_id, supplier_id, price, available) VALUES
 ((SELECT id FROM product WHERE name = 'Tomate'), (SELECT id FROM supplier WHERE name = 'Frutas y Verduras El Campesino'), 4200, true),
 ((SELECT id FROM product WHERE name = 'Cebolla'), (SELECT id FROM supplier WHERE name = 'Frutas y Verduras El Campesino'), 3500, true),

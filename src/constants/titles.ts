@@ -12,6 +12,8 @@ export const titles: Record<string, string> = {
   "distribution-plans/[id]/finance": "Finanzas del plan",
   "distribution-plans/[id]/sale-orders-delivery": "Despacho de pedidos",
   "distribution-plans/[id]/suppliers-reception": "Recepción de proveedores",
+  // Productos
+  "products": "Productos",
   // Usuarios
   "users/customers": "Clientes",
   "users/suppliers": "Proveedores",
@@ -32,6 +34,8 @@ export const subtitles: Record<string, string> = {
   "distribution-plans/[id]/finance": "Costos, ingresos y márgenes del plan",
   "distribution-plans/[id]/sale-orders-delivery": "Preparación y entrega de pedidos a clientes",
   "distribution-plans/[id]/suppliers-reception": "Recepción de mercadería y precios reales",
+  // Productos
+  "products": "Listado y gestión de productos",
   // Usuarios
   "users/customers": "Información básica de clientes",
   "users/suppliers": "Información básica de proveedores",

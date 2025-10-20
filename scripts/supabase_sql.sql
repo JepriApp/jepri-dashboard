@@ -65,7 +65,7 @@ CREATE TABLE product (
 );
 
 
--- Tabla de ofertas de proveedores
+-- Tabla de catálogos de proveedores
 CREATE TABLE offer (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     product_id UUID NOT NULL REFERENCES product(id) ON DELETE RESTRICT,

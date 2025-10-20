@@ -57,6 +57,12 @@ const lateralMenuItems: Record<string, MenuProps["items"]> = {
       children: undefined,
     },
     {
+      key: `/a/products`,
+      icon: React.createElement(ShopOutlined),
+      label: <Link href="/a/products">Productos</Link>,
+      children: undefined,
+    },
+    {
       key: `/a/user`,
       icon: React.createElement(SettingOutlined),
       label: "Usuarios",

@@ -303,7 +303,7 @@ const PlanEditorPage = () => {
   const [assignments, setAssignments] = useState<Record<string, Assignment[]>>(
     {}
   );
-  // Precargar ofertas de todos los productos involucrados
+  // Precargar catálogos de todos los productos involucrados
   type OfferWithProductId = OfferOption & { product_id: string };
   const itemsFlat = useMemo(() => {
     const all: SaleItem[] = [];
@@ -379,7 +379,7 @@ const PlanEditorPage = () => {
     !!statusNow && ["in_progress", "completed"].includes(statusNow);
   const allowAssignments = statusNow === "preparing";
 
-  // Eliminado: carga manual de ofertas. Ahora están precargadas con React Query.
+  // Eliminado: carga manual de catálogos. Ahora están precargadas con React Query.
 
   function upsertAssignment(
     saleItemId: string,

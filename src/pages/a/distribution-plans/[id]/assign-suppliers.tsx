@@ -512,7 +512,7 @@ const AssignSuppliersPage = () => {
         return found;
       };
 
-      // Iterar las ofertas del producto actual y aplicar cambios donde difiera de lo ya asignado
+      // Iterar las catálogos del producto actual y aplicar cambios donde difiera de lo ya asignado
       for (const offer of offersForCurrentProduct) {
         const supplierId = offer.supplier_id;
         const desiredQty = Number(assignmentInputs[supplierId] || 0);
@@ -591,7 +591,7 @@ const AssignSuppliersPage = () => {
           })) as any;
         }
 
-        // Asegurar/actualizar purchase item para la oferta
+        // Asegurar/actualizar purchase item para la catálogo
         let piId = existingPI;
         if (piId) {
           const { error: updErr } = await supabase
