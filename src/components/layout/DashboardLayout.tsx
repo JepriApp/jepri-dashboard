@@ -45,23 +45,10 @@ const lateralMenuItems: Record<string, MenuProps["items"]> = {
       children: undefined,
     },
     {
-      key: `sale-orders`,
+      key: `/a/sale-orders`,
       icon: React.createElement(ShoppingOutlined),
-      label: "Pedidos",
-      children: [
-        {
-          key: `/a/sale-orders/pending`,
-          icon: React.createElement(ShoppingOutlined),
-          label: <Link href="/a/sale-orders/pending">Pendientes</Link>,
-          children: undefined,
-        },
-        {
-          key: `/a/sale-orders/history`,
-          icon: React.createElement(ShoppingOutlined),
-          label: <Link href="/a/sale-orders/history">Historial</Link>,
-          children: undefined,
-        },
-      ],
+      label: <Link href="/a/sale-orders">Pendientes</Link>,
+      children: undefined,
     },
     {
       key: `/a/distribution-plans`,
@@ -188,7 +175,7 @@ function DashboardLayout({
           marginLeft: sideMenuCollapsed
             ? SIDER_WIDTH["COLLAPSED"]
             : SIDER_WIDTH["EXPANDED"],
-          overflow: 'initial'
+          overflow: "initial",
         }}
       >
         {noStyle ? (

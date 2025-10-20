@@ -25,6 +25,7 @@ export interface SaleOrder {
   status: "pending" | "processing" | "out_for_delivery" | "delivered" | "cancelled";
   service_fee: number;
   delivery_charge: number;
+  distribution_plan_code?: string;
   notes: string | null;
   order_code?: string;
   order_seq?: number;
@@ -528,7 +529,6 @@ export async function getPendingOrdersForAdmin(): Promise<SaleOrder[]> {
         )
       `
       )
-      .eq("status", "pending")
       .eq("distribution_plan_id", null)
       .order("created_at", { ascending: false });
 
