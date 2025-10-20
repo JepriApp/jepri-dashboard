@@ -16,6 +16,7 @@ import {
   Progress,
   App,
   Tag,
+  Tooltip,
 } from "antd";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/router";
@@ -31,6 +32,7 @@ import {
   CheckCircleFilled,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  WarningFilled,
 } from "@ant-design/icons";
 import DistributionPlanLayout from "@/components/layout/DistributionPlanLayout";
 const { Content, Sider } = Layout;
@@ -596,7 +598,6 @@ const AssignSuppliersPage = () => {
             .from("purchase_item")
             .update({
               quantity: desiredQty,
-              actual_price: offer.price ?? null,
             })
             .eq("id", piId);
           if (updErr) throw updErr;
@@ -607,7 +608,6 @@ const AssignSuppliersPage = () => {
               purchase_order_id: po!.id,
               offer_id: offer.id,
               quantity: desiredQty,
-              actual_price: offer.price ?? null,
             })
             .select("id")
             .single();
@@ -700,7 +700,7 @@ const AssignSuppliersPage = () => {
     <Layout style={{ backgroundColor: "transparent" }}>
       <Space style={{ marginBottom: "16px", flexDirection: "row-reverse" }}>
         <Button onClick={() => setShowSuppliersPanel(!showSuppliersPanel)}>
-          Mostrar proveedores
+          {showSuppliersPanel ? "Ocultar proveedores" : "Mostrar proveedores"}
         </Button>
       </Space>
 
@@ -878,14 +878,25 @@ const AssignSuppliersPage = () => {
                         <Typography.Text strong>
                           {o.order_code || "Sin código"}
                         </Typography.Text>
-                        {isSaleOrderCompletelyAsignned && (
-                          <CheckCircleFilled
-                            style={{
-                              fontSize: "16px",
-                              color: token.colorSuccess,
-                            }}
-                          />
+                        {o.items?.length <= 0 && (
+                          <Tooltip title="El pedido no tiene productos">
+                            <WarningFilled
+                              style={{
+                                fontSize: "16px",
+                                color: token.colorWarning,
+                              }}
+                            />
+                          </Tooltip>
                         )}
+                        {isSaleOrderCompletelyAsignned &&
+                          o.items?.length > 0 && (
+                            <CheckCircleFilled
+                              style={{
+                                fontSize: "16px",
+                                color: token.colorSuccess,
+                              }}
+                            />
+                          )}
                       </div>
                       <Typography.Text type="secondary" ellipsis>
                         {o.user?.name || "—"}
@@ -1311,11 +1322,17 @@ const AssignSuppliersPage = () => {
                   </Typography.Text>
                   <br />
                   <Typography.Text type="secondary">
-                    Restante por asignar: {Math.max(0, remainingQty - plannedAssignSum)}{" "}
+                    Restante por asignar:{" "}
+                    {Math.max(0, remainingQty - plannedAssignSum)}{" "}
                   </Typography.Text>{" "}
                   <br />
                   <Typography.Text type="secondary">
-                    Total: {offersForCurrentProduct.reduce((acc, cur) => acc + Number(assignmentInputs[cur.supplier_id] || 0), 0)}
+                    Total:{" "}
+                    {offersForCurrentProduct.reduce(
+                      (acc, cur) =>
+                        acc + Number(assignmentInputs[cur.supplier_id] || 0),
+                      0
+                    )}
                   </Typography.Text>
                 </div>
                 <List

@@ -47,13 +47,13 @@ const lateralMenuItems: Record<string, MenuProps["items"]> = {
     {
       key: `/a/sale-orders`,
       icon: React.createElement(ShoppingOutlined),
-      label: <Link href="/a/sale-orders">Pendientes</Link>,
+      label: <Link href="/a/sale-orders">Pedidos</Link>,
       children: undefined,
     },
     {
       key: `/a/distribution-plans`,
       icon: React.createElement(ShoppingOutlined),
-      label: <Link href="/a/distribution-plans">Planificador</Link>,
+      label: <Link href="/a/distribution-plans">Operación</Link>,
       children: undefined,
     },
   ],
