@@ -4,7 +4,7 @@ Resumen directo del flujo, desde catálogo hasta entrega planificada.
 
 ## 1. Catálogo y precios
 - Productos: `product` (nombre, unidad, foto, precio de referencia).
-- Ofertas: `offer` (precio del proveedor por producto, `available` indica si está activa).
+- catálogos: `offer` (precio del proveedor por producto, `available` indica si está activa).
 - Consulta de catálogo: se leen `product` y `offer` para mostrar precios vigentes.
 
 ## 2. Carrito del cliente

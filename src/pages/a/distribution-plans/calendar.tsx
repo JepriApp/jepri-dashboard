@@ -10,12 +10,14 @@ import {
   Tag,
   CalendarProps,
   App,
+  Alert,
 } from "antd";
 import { CheckOutlined, LeftOutlined, RightOutlined } from "@ant-design/icons";
 import type { Dayjs } from "dayjs";
 import dayjs from "dayjs";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/services/supabase.client";
+import { useRouter } from "next/router";
 
 type DistributionPlanMinimal = {
   id: string;
@@ -30,7 +32,10 @@ const AVOID_DUPLICATES = true;
 
 const CalendarCreateMultiplePlansPage = () => {
   const { message } = App.useApp();
+  const router = useRouter();
   const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set());
+  const [selectionMode, setSelectionMode] = useState<boolean>(false);
+  const [hoveredDate, setHoveredDate] = useState<string | null>(null);
   // Evitar duplicados está fijado por configuración
 
   // Cargar todas las fechas de planes existentes (simple y suficiente para MVP)
@@ -52,7 +57,7 @@ const CalendarCreateMultiplePlansPage = () => {
   });
 
   const existingByDate = useMemo(() => {
-    return new Map(existingPlans.map((p) => [p.plan_date, p.plan_code]));
+    return new Map(existingPlans.map((p) => [p.plan_date, p]));
   }, [existingPlans]);
 
   const handleSelect = (date: Dayjs) => {
@@ -60,7 +65,9 @@ const CalendarCreateMultiplePlansPage = () => {
     if (!date.isAfter(today)) return;
     const iso = date.format("YYYY-MM-DD");
     if (AVOID_DUPLICATES && existingByDate.has(iso)) {
-      message.warning("No se permiten duplicados: ya existe un plan para esa fecha");
+      message.warning(
+        "No se permiten duplicados: ya existe un plan para esa fecha"
+      );
       return;
     }
     setSelectedDates((prev) => {
@@ -136,11 +143,31 @@ const CalendarCreateMultiplePlansPage = () => {
     const iso = value.format("YYYY-MM-DD");
     const isSelected = selectedDates.has(iso);
     const exists = existingByDate.has(iso);
-    const code = existingByDate.get(iso);
+    const plan = existingByDate.get(iso);
     return (
       <>
-        {exists && <Tag color="blue">{`Plan${code ? ` ${code}` : ""}`}</Tag>}
-        {isSelected && <Tag color="gold" icon={<CheckOutlined />}></Tag>}
+        {exists && (
+          <Tag
+            color="blue"
+            style={{
+              cursor: "pointer",
+              ...(hoveredDate === iso
+                ? { borderColor: "#1677ff", backgroundColor: "#e6f4ff" }
+                : {}),
+            }}
+            onMouseEnter={() => setHoveredDate(iso)}
+            onMouseLeave={() => setHoveredDate(null)}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (plan?.id) router.push(`/a/distribution-plans/${plan.id}`);
+            }}
+          >
+            {`Plan${plan?.plan_code ? ` ${plan.plan_code}` : ""}`}
+          </Tag>
+        )}
+        {isSelected && selectionMode && (
+          <Tag color="gold" icon={<CheckOutlined />} />
+        )}
       </>
     );
   };
@@ -156,50 +183,69 @@ const CalendarCreateMultiplePlansPage = () => {
       size="large"
       direction={"vertical"}
     >
-      <Card
-        style={{ width: 380 }}
-        title="Resumen y acciones"
-        actions={[
-          <Button onClick={() => setSelectedDates(new Set())}>
-            Limpiar selección
-          </Button>,
-          <Button type="primary" disabled={loadingPlans} onClick={handleCreate}>
-            Crear {newToCreateCount} plan
-            {newToCreateCount === 1 ? "" : "es"}
-          </Button>,
-        ]}
+      <Button
+        onClick={() => setSelectionMode((prev) => !prev)}
+        type={selectionMode ? "primary" : "default"}
       >
-        <Text>
-          Nuevas a crear: <b>{newToCreateCount}</b>
-        </Text>
-        <div>
-          <Text strong>Fechas seleccionadas</Text>
-          <div
-            style={{
-              marginTop: 8,
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 8,
-            }}
+        {selectionMode ? "Terminar selección" : "Crear planes"}
+      </Button>
+      {selectionMode && (
+        <>
+          <Alert
+            message="Has clic en los dias del calendario que quieras crear planes para operaciones."
+            type="info"
+            showIcon
+          />
+          <Card
+            style={{ width: 380 }}
+            title="Resumen y acciones"
+            actions={[
+              <Button onClick={() => setSelectedDates(new Set())}>
+                Limpiar selección
+              </Button>,
+              <Button
+                type="primary"
+                disabled={loadingPlans || newToCreateCount === 0}
+                onClick={handleCreate}
+              >
+                Crear {newToCreateCount} plan
+                {newToCreateCount === 1 ? "" : "es"}
+              </Button>,
+            ]}
           >
-            {Array.from(selectedDates)
-              .sort()
-              .map((iso) => (
-                <Tag
-                  key={iso}
-                  closable
-                  onClose={() => removeSelected(iso)}
-                  color={existingByDate.has(iso) ? "geekblue" : "blue"}
-                >
-                  {iso}
-                  {existingByDate.has(iso) && existingByDate.get(iso)
-                    ? ` (${existingByDate.get(iso) as string})`
-                    : ""}
-                </Tag>
-              ))}
-          </div>
-        </div>
-      </Card>
+            <Text>
+              Nuevas a crear: <b>{newToCreateCount}</b>
+            </Text>
+            <div>
+              <Text strong>Fechas seleccionadas</Text>
+              <div
+                style={{
+                  marginTop: 8,
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 8,
+                }}
+              >
+                {Array.from(selectedDates)
+                  .sort()
+                  .map((iso) => (
+                    <Tag
+                      key={iso}
+                      closable
+                      onClose={() => removeSelected(iso)}
+                      color={existingByDate.has(iso) ? "geekblue" : "blue"}
+                    >
+                      {iso}
+                      {existingByDate.has(iso) && existingByDate.get(iso)?.plan_code
+                        ? ` (${existingByDate.get(iso)?.plan_code as string})`
+                        : ""}
+                    </Tag>
+                  ))}
+              </div>
+            </div>
+          </Card>
+        </>
+      )}
       <Card style={{ flex: 1 }} title="Calendario">
         <Calendar
           fullscreen
@@ -227,6 +273,7 @@ const CalendarCreateMultiplePlansPage = () => {
           }}
           disabledDate={(d) => !d.isAfter(dayjs().startOf("day"))}
           onSelect={(value, info) => {
+            if (!selectionMode) return;
             if (info && (info as any).source !== "date") return;
             handleSelect(value);
           }}

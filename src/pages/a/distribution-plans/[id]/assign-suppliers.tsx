@@ -4,10 +4,6 @@ import {
   Table,
   Typography,
   Card,
-  Descriptions,
-  Collapse,
-  Row,
-  Col,
   Layout,
   List,
   theme,
@@ -18,21 +14,70 @@ import {
   Space,
   Alert,
   Progress,
-  message,
+  App,
   Tag,
   Tooltip,
 } from "antd";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/router";
 import { supabase } from "@/services/supabase.client";
 import type { SaleOrder, SaleItem } from "@/services/supabase.service";
 import {
   getOrCreatePurchaseOrderForSupplier,
-  createPurchaseItem,
   upsertFulfillment,
 } from "@/services/supabase.service";
 import { formatPriceAccounting } from "@/utils/formatPrice";
-const { Header, Content, Footer, Sider } = Layout;
+import { useAuthStore } from "@/store/auth.store";
+import {
+  CheckCircleFilled,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+  WarningFilled,
+} from "@ant-design/icons";
+import DistributionPlanLayout from "@/components/layout/DistributionPlanLayout";
+const { Content, Sider } = Layout;
+
+// Simple slide-in/out wrapper for the suppliers panel
+const SlideInRight: React.FC<{
+  visible: boolean;
+  children: React.ReactNode;
+  duration?: number;
+  width?: number | string;
+  style?: React.CSSProperties;
+}> = ({ visible, children, duration = 300, width = 440, style }) => {
+  const [shouldRender, setShouldRender] = useState(visible);
+  const [phase, setPhase] = useState<"entering" | "entered" | "exiting">(
+    visible ? "entered" : "exiting"
+  );
+  React.useEffect(() => {
+    if (visible) {
+      setShouldRender(true);
+      setPhase("entering");
+      const t = setTimeout(() => setPhase("entered"), 30);
+      return () => clearTimeout(t);
+    } else {
+      setPhase("exiting");
+      const t = setTimeout(() => setShouldRender(false), duration);
+      return () => clearTimeout(t);
+    }
+  }, [visible, duration]);
+  if (!shouldRender) return null;
+  const wrapWidth = typeof width === "number" ? `${width}px` : width;
+  return (
+    <div
+      style={{
+        flex: `0 0 ${wrapWidth}`,
+        maxWidth: wrapWidth,
+        transition: `transform ${duration}ms ease`,
+        transform: phase === "entered" ? "translateX(0)" : "translateX(100%)",
+        willChange: "transform",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+};
 type PlanOrder = Pick<
   SaleOrder,
   | "id"
@@ -69,54 +114,56 @@ function usePlanData(planId?: string) {
       const { data: plan, error: planErr } = await supabase
         .from("distribution_plan")
         .select(
-          "id, plan_date, status, notes, plan_code, cutoff_at, created_at, updated_at, coordinator:coordinator_id ( id, name )"
+          "id, plan_date, status, notes, plan_code, cutoff_at, created_at, updated_at, operator:operator_id ( id, name )"
         )
         .eq("id", planId)
         .single();
       if (planErr) throw planErr;
 
-      const { data: rows, error: dpoErr } = await supabase
-        .from("distribution_plan_order")
+      const { data: rows, error: soErr } = await supabase
+        .from("sale_order")
         .select(
           `
-          id, sequence, status,
-          sale_order:sale_order_id (
+          id,
+          created_at,
+          status,
+          notes,
+          order_code,
+          service_fee,
+          delivery_fee,
+          customer:customer_id (
+            name,
+            auth:user_id ( email )
+          ),
+          sale_item:sale_item (
             id,
-            order_date,
-            delivery_date,
-            status,
-            notes,
-            order_code,
-            service_fee,
-            delivery_charge,
-            customer:customer_id (
-              name,
-              app_user:user_id ( email )
-            ),
-            sale_item:sale_item (
+            product_id,
+            required_quantity,
+            delivered_quantity,
+            product:product_id (
               id,
-              product_id,
-              quantity,
-              unit_price,
-              product:product_id (
-                id,
-                name,
-                unit,
-                description,
-                reference_price,
-                main_photo
-              ),
-              fulfillment:fulfillment (
+              name,
+              unit,
+              description,
+              reference_price,
+              main_photo
+            ),
+            fulfillment:fulfillment (
+              id,
+              purchase_item:purchase_item_id (
                 id,
                 quantity,
-                purchase_item:purchase_item_id (
+                actual_price,
+                purchase_order:purchase_order_id (
                   id,
-                  quantity,
-                  purchase_order:purchase_order_id (
-                    id,
-                    purchase_code,
-                    supplier:supplier_id ( id, name )
-                  )
+                  purchase_code,
+                  supplier:supplier_id ( id, name )
+                ),
+                offer:offer_id (
+                  id,
+                  price,
+                  product:product_id ( id, name, unit ),
+                  supplier:supplier_id ( id, name )
                 )
               )
             )
@@ -124,36 +171,38 @@ function usePlanData(planId?: string) {
         `
         )
         .eq("distribution_plan_id", planId)
-        .order("sequence", { ascending: true });
-      if (dpoErr) throw dpoErr;
+        .order("created_at", { ascending: true });
+      if (soErr) throw soErr;
 
       const orders: PlanOrder[] = (rows || []).map((r: any) => {
-        const saleItems = r.sale_order?.sale_item ?? [];
-        const service_fee = r.sale_order?.service_fee ?? 0;
-        const delivery_charge = r.sale_order?.delivery_charge ?? 0;
+        const rawItems = r.sale_item ?? [];
+        const saleItems = rawItems.map((it: any) => ({
+          ...it,
+          quantity: Number(it.required_quantity || 0),
+          unit_price: Number(it?.product?.reference_price ?? 0),
+        }));
+        const service_fee = r?.service_fee ?? 0;
+        const delivery_charge = r?.delivery_fee ?? 0;
         const subtotal = saleItems.reduce(
           (acc: number, it: any) =>
             acc + Number(it.quantity) * Number(it.unit_price || 0),
           0
         );
-        const total =
-          typeof r.sale_order?.total === "number"
-            ? r.sale_order.total
-            : subtotal + service_fee + delivery_charge;
+        const total = subtotal + service_fee + delivery_charge;
         return {
-          id: r.sale_order?.id,
-          order_code: r.sale_order?.order_code,
-          order_date: r.sale_order?.order_date,
-          delivery_date: r.sale_order?.delivery_date,
-          status: r.sale_order?.status,
+          id: r.id,
+          order_code: r.order_code,
+          order_date: r.created_at,
+          delivery_date: plan?.plan_date,
+          status: r.status,
           total,
           subtotal,
           service_fee,
           delivery_charge,
-          notes: r.sale_order?.notes,
+          notes: r.notes,
           user: {
-            name: r.sale_order?.customer?.name ?? "",
-            email: r.sale_order?.customer?.app_user?.email ?? "",
+            name: r.customer?.name ?? "",
+            email: r.customer?.auth?.email ?? "",
           },
           items: saleItems,
         } as PlanOrder;
@@ -173,8 +222,7 @@ function useOffersForProducts(productIds: string[]) {
       const { data, error } = await supabase
         .from("offer")
         .select(`id, price, product_id, supplier:supplier_id ( id, name )`)
-        .in("product_id", productIds)
-        .eq("available", true);
+        .in("product_id", productIds);
       if (error) throw error;
       return (data || []).map((o: any) => ({
         id: o.id,
@@ -198,36 +246,32 @@ function usePurchaseOrdersForPlan(distributionPlanId?: string) {
         .select(
           `
           id,
-          status,
-          created_at,
           purchase_code,
           supplier:supplier_id ( id, name ),
           purchase_item:purchase_item (
             id,
-            product_id,
             quantity,
-            estimated_price,
-            actual_price,
-            product:product_id (
+            offer:offer_id (
               id,
-              name,
-              unit
+              price,
+              product:product_id (
+                id,
+                name,
+                unit
+              )
             ),
             fulfillment:fulfillment (
               id,
-              quantity,
               sale_item:sale_item_id (
                 id,
-                quantity,
-                sale_order:sale_order_id ( id, order_code, customer:customer_id ( name ) ),
-                product:product_id ( id, name, unit )
+                sale_order:sale_order_id ( id, order_code, customer:customer_id ( name ) )
               )
             )
           )
         `
         )
         .eq("distribution_plan_id", distributionPlanId)
-        .order("created_at", { ascending: true });
+        .order("purchase_seq", { ascending: true });
       if (error) throw error;
       return data || [];
     },
@@ -236,12 +280,14 @@ function usePurchaseOrdersForPlan(distributionPlanId?: string) {
 const AssignSuppliersPage = () => {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { message } = App.useApp();
   const planId = router.query.id as string | undefined;
-  const { data, isLoading } = usePlanData(planId);
+  const { data } = usePlanData(planId);
   const orders = data?.orders || [];
   const { data: relatedPOs = [], isLoading: posLoading } =
     usePurchaseOrdersForPlan(planId);
-
+  const [collapsed, setCollapsed] = useState(false);
+  const [showSuppliersPanel, setShowSuppliersPanel] = useState<boolean>(false);
   const itemsFlat = useMemo(() => {
     const all: SaleItem[] = [];
     orders.forEach((o) => (o.items || []).forEach((si) => all.push(si)));
@@ -273,47 +319,6 @@ const AssignSuppliersPage = () => {
     [itemsFlat]
   );
 
-  const assignedBySupplier: Array<{
-    name: string;
-    totalQty: number;
-    orders: string[];
-    totalCost: number;
-  }> = useMemo(() => {
-    const map = new Map<
-      string,
-      { totalQty: number; orders: Set<string>; totalCost: number }
-    >();
-    orders.forEach((o) => {
-      (o.items || []).forEach((it: any) => {
-        const links = Array.isArray(it.fulfillment) ? it.fulfillment : [];
-        links.forEach((f: any) => {
-          const supplierName =
-            f?.purchase_item?.purchase_order?.supplier?.name ?? "";
-          const poCode = f?.purchase_item?.purchase_order?.purchase_code ?? "";
-          const qty = Number(f?.quantity || 0);
-          const unitPrice = Number(it?.unit_price || 0);
-          if (!supplierName) return;
-          if (!map.has(supplierName))
-            map.set(supplierName, {
-              totalQty: 0,
-              orders: new Set<string>(),
-              totalCost: 0,
-            });
-          const acc = map.get(supplierName)!;
-          acc.totalQty += qty;
-          if (poCode) acc.orders.add(poCode);
-          acc.totalCost += qty * unitPrice;
-        });
-      });
-    });
-    return Array.from(map.entries()).map(([name, v]) => ({
-      name,
-      totalQty: v.totalQty,
-      orders: Array.from(v.orders),
-      totalCost: v.totalCost,
-    }));
-  }, [orders]);
-
   const [selectedOrderId, setSelectedOrderId] = useState<
     string | number | undefined
   >();
@@ -325,6 +330,21 @@ const AssignSuppliersPage = () => {
     () => (selectedOrderId ? selectedOrder?.items || [] : itemsFlat),
     [selectedOrderId, selectedOrder, itemsFlat]
   );
+  const itemCustomerById = useMemo(() => {
+    const map = new Map<
+      string,
+      { name: string; email?: string; sale_order: string }
+    >();
+    orders.forEach((o) => {
+      const name = o.user?.name ?? "";
+      const email = o.user?.email ?? "";
+      const sale_order = o.order_code || "";
+      (o.items || []).forEach((it: any) => {
+        if (it?.id) map.set(String(it.id), { name, email, sale_order });
+      });
+    });
+    return map;
+  }, [orders]);
   const { token } = theme.useToken();
 
   const [assignDrawerOpen, setAssignDrawerOpen] = useState(false);
@@ -341,6 +361,10 @@ const AssignSuppliersPage = () => {
   const [assignmentInputs, setAssignmentInputs] = useState<
     Record<string, number>
   >({});
+  // Nuevo estado: resaltar un fulfillment seleccionado entre ambas tablas
+  const [highlightFulfillmentId, setHighlightFulfillmentId] = useState<
+    string | null
+  >(null);
 
   const getAssignedQtyMapForItem = (saleItemId: string) => {
     const map = new Map<string, number>();
@@ -350,7 +374,7 @@ const AssignSuppliersPage = () => {
         const links = Array.isArray(it.fulfillment) ? it.fulfillment : [];
         links.forEach((f: any) => {
           const supplierId = f?.purchase_item?.purchase_order?.supplier?.id;
-          const qty = Number(f?.quantity || 0);
+          const qty = Number(f?.purchase_item?.quantity || 0);
           if (!supplierId) return;
           map.set(supplierId, (map.get(supplierId) || 0) + qty);
         });
@@ -366,7 +390,7 @@ const AssignSuppliersPage = () => {
         if (String(it.id) !== String(saleItemId)) return;
         const links = Array.isArray(it.fulfillment) ? it.fulfillment : [];
         links.forEach((f: any) => {
-          total += Number(f?.quantity || 0);
+          total += Number(f?.purchase_item?.quantity || 0);
         });
       });
     });
@@ -448,446 +472,469 @@ const AssignSuppliersPage = () => {
     assignedQtyMap,
   ]);
 
-  const handleSaveAssignments = async () => {
-    if (!assignContext) return;
-    try {
-      const notes = data?.plan?.plan_code
-        ? `Compra para plan ${data.plan.plan_code}`
-        : `Compra para plan ${String(planId || "")}`;
+  const MSG_SAVE_KEY = "assign-save";
+  const saveAssignmentsMutation = useMutation({
+    mutationKey: ["saveAssignments", planId],
+    mutationFn: async () => {
+      const { user } = useAuthStore.getState();
+      if (!assignContext) return;
+      if (!planId) throw new Error("Plan no identificado");
+      if (!user?.id)
+        throw new Error(
+          "Usuario no autenticado: no se puede crear/actualizar órdenes de compra"
+        );
 
-      // Preparar mapa de cantidades actuales por proveedor para el ítem
-      const alreadyMap = getAssignedQtyMapForItem(assignContext.saleItemId);
-      const supplierIds = Array.from(
-        new Set([
-          ...(offersForCurrentProduct || []).map((o: any) => o.supplier_id),
-          ...Array.from(alreadyMap.keys()),
-        ])
-      );
+      const saleItemId = assignContext.saleItemId;
 
-      // Para cada proveedor involucrado, ajustar al valor deseado (puede subir o bajar)
-      await Promise.all(
-        supplierIds.map(async (supplierId) => {
-          const desired = Number(assignmentInputs[supplierId] || 0);
-          const already = Number(alreadyMap.get(supplierId) || 0);
-          const delta = desired - already; // puede ser positivo, cero o negativo
+      // Helper: localizar PI/PO existentes para este sale item y proveedor
+      const findExistingForSupplier = (supplierId: string) => {
+        let found: {
+          purchaseItemId?: string;
+          purchaseOrderId?: string;
+          fulfillmentId?: string;
+        } = {};
+        orders.forEach((o) => {
+          (o.items || []).forEach((it: any) => {
+            if (String(it.id) !== String(saleItemId)) return;
+            const links = Array.isArray(it.fulfillment) ? it.fulfillment : [];
+            links.forEach((f: any) => {
+              const supId = f?.purchase_item?.purchase_order?.supplier?.id;
+              if (String(supId) === String(supplierId)) {
+                found = {
+                  purchaseItemId: f?.purchase_item?.id,
+                  purchaseOrderId: f?.purchase_item?.purchase_order?.id,
+                  fulfillmentId: f?.id,
+                };
+              }
+            });
+          });
+        });
+        return found;
+      };
 
-          // 1) Intentar reutilizar el PI que ya está vinculado (fulfillment) para este sale_item
-          let piExisting: any | null = null;
-          let po: any | null = null;
-          const { data: existingFulLinks, error: findFulErr } = await supabase
-            .from("fulfillment")
-            .select(
-              "id, quantity, purchase_item:purchase_item(id, purchase_order_id, supplier_id, product_id)"
-            )
-            .eq("sale_item_id", String(assignContext.saleItemId))
-            .eq("purchase_item.product_id", String(assignContext.productId))
-            .eq("purchase_item.supplier_id", String(supplierId))
-            .order("id", { ascending: false })
-            .limit(1);
-          if (findFulErr) throw findFulErr;
-          if (existingFulLinks && existingFulLinks.length > 0) {
-            const link = existingFulLinks[0];
-            piExisting = link.purchase_item;
-            po = { id: piExisting?.purchase_order_id };
-          }
+      // Iterar las catálogos del producto actual y aplicar cambios donde difiera de lo ya asignado
+      for (const offer of offersForCurrentProduct) {
+        const supplierId = offer.supplier_id;
+        const desiredQty = Number(assignmentInputs[supplierId] || 0);
+        const alreadyQty = Number(assignedQtyMap.get(supplierId) || 0);
 
-          // 2) Si no hay vínculo existente, buscar PO del proveedor para el plan; si no, crear
-          if (!po) {
-            const { data: existingPOs, error: findPoErr } = await supabase
-              .from("purchase_order")
-              .select("id, status")
-              .eq("supplier_id", supplierId)
-              .eq("distribution_plan_id", String(planId || ""))
-              .order("created_at", { ascending: false })
-              .limit(1);
-            if (findPoErr) throw findPoErr;
-            if (existingPOs && existingPOs.length > 0) {
-              po = existingPOs[0];
-            } else {
-              po = await getOrCreatePurchaseOrderForSupplier({
-                supplierId,
-                distributionPlanId: String(planId || ""),
-                notes,
-              });
-            }
-          }
+        // Saltar si no hay cambios
+        if (desiredQty === alreadyQty) continue;
 
-          // 3) Si no había PI vinculado, buscar/crear el PI de ese producto en la PO
-          if (!piExisting) {
-            const { data: piExistingList, error: findPiErr } = await supabase
-              .from("purchase_item")
-              .select("id, quantity")
-              .eq("purchase_order_id", String(po.id))
-              .eq("supplier_id", String(supplierId))
-              .eq("product_id", String(assignContext.productId))
-              .order("id", { ascending: false })
-              .limit(1);
-            if (findPiErr) throw findPiErr;
-            piExisting =
-              piExistingList && piExistingList.length > 0
-                ? piExistingList[0]
-                : null;
-          }
+        const {
+          purchaseItemId: existingPI,
+          purchaseOrderId: existingPO,
+          fulfillmentId,
+        } = findExistingForSupplier(supplierId);
 
-          // 3) Actualizar fulfillment del sale_item hacia ese PI (crear/actualizar/eliminar)
-          if (piExisting) {
-            // Fulfillment: si desired > 0, upsert; si 0, eliminar
-            if (desired > 0) {
-              await upsertFulfillment({
-                saleItemId: String(assignContext.saleItemId),
-                purchaseItemId: String(piExisting.id),
-                quantity: Number(desired),
-              });
-            } else {
-              // Eliminar vínculo si se reduce a cero
+        if (desiredQty <= 0) {
+          // Eliminar asignación: borrar fulfillment, purchase_item y quizá la PO si queda vacía
+          if (existingPI) {
+            // Borrar el fulfillment específico (por id si está disponible)
+            if (fulfillmentId) {
               const { error: delFulErr } = await supabase
                 .from("fulfillment")
                 .delete()
-                .eq("sale_item_id", String(assignContext.saleItemId))
-                .eq("purchase_item_id", String(piExisting.id));
+                .eq("id", fulfillmentId);
+              if (delFulErr) throw delFulErr;
+            } else {
+              const { error: delFulErr } = await supabase
+                .from("fulfillment")
+                .delete()
+                .eq("sale_item_id", saleItemId)
+                .eq("purchase_item_id", existingPI);
               if (delFulErr) throw delFulErr;
             }
 
-            // 4) Ajustar cantidad del purchase_item sumando el delta
-            const nextPiQty = Math.max(
-              0,
-              Number(piExisting.quantity || 0) + Number(delta || 0)
-            );
-            const { error: updPiErr } = await supabase
-              .from("purchase_item")
-              .update({ quantity: nextPiQty })
-              .eq("id", String(piExisting.id));
-            if (updPiErr) throw updPiErr;
-          } else {
-            // No existe PI: crear sólo si se desea cantidad positiva
-            if (desired > 0) {
-              const estimatedPrice = (offers || []).find(
-                (o) =>
-                  String(o.product_id) === String(assignContext.productId) &&
-                  String(o.supplier_id) === String(supplierId)
-              )?.price;
-              const pi = await createPurchaseItem({
-                purchaseOrderId: String(po.id),
-                productId: String(assignContext.productId),
-                supplierId: String(supplierId),
-                quantity: Number(desired),
-                estimatedPrice: estimatedPrice ?? null,
-              });
-              await upsertFulfillment({
-                saleItemId: String(assignContext.saleItemId),
-                purchaseItemId: String(pi.id),
-                quantity: Number(desired),
-              });
+            // Eliminar el purchase_item (si ya no tiene más vínculos)
+            const { data: refs, error: refErr } = await supabase
+              .from("fulfillment")
+              .select("id")
+              .eq("purchase_item_id", existingPI)
+              .limit(1);
+            if (refErr) throw refErr;
+            if (!refs || refs.length === 0) {
+              const { error: delPIErr } = await supabase
+                .from("purchase_item")
+                .delete()
+                .eq("id", existingPI);
+              if (delPIErr) throw delPIErr;
+            }
+
+            if (existingPO) {
+              const { data: remaining, error: remErr } = await supabase
+                .from("purchase_item")
+                .select("id")
+                .eq("purchase_order_id", existingPO)
+                .limit(1);
+              if (remErr) throw remErr;
+              if (!remaining || remaining.length === 0) {
+                const { error: delPOErr } = await supabase
+                  .from("purchase_order")
+                  .delete()
+                  .eq("id", existingPO);
+                if (delPOErr) throw delPOErr;
+              }
             }
           }
-        })
-      );
+          continue;
+        }
 
-      message.success(
-        "Asignaciones guardadas y órdenes de compra actualizadas."
-      );
+        // Asegurar purchase order para el proveedor en el plan
+        let po = existingPO ? { id: existingPO } : null;
+        if (!po) {
+          po = (await getOrCreatePurchaseOrderForSupplier({
+            supplierId,
+            distributionPlanId: String(planId),
+            notes: null,
+            createdBy: user?.id ?? null,
+          })) as any;
+        }
+
+        // Asegurar/actualizar purchase item para la catálogo
+        let piId = existingPI;
+        if (piId) {
+          const { error: updErr } = await supabase
+            .from("purchase_item")
+            .update({
+              quantity: desiredQty,
+            })
+            .eq("id", piId);
+          if (updErr) throw updErr;
+        } else {
+          const { data: createdPI, error: createPIErr } = await supabase
+            .from("purchase_item")
+            .insert({
+              purchase_order_id: po!.id,
+              offer_id: offer.id,
+              quantity: desiredQty,
+            })
+            .select("id")
+            .single();
+          if (createPIErr) throw createPIErr;
+          piId = createdPI?.id;
+        }
+
+        // Asegurar fulfillment entre sale item y purchase item
+        if (piId) {
+          await upsertFulfillment({
+            saleItemId,
+            purchaseItemId: piId,
+          });
+        }
+      }
+    },
+    onMutate: async () => {
+      message.loading({
+        content: "Guardando asignaciones...",
+        key: MSG_SAVE_KEY,
+      });
+    },
+    onSuccess: async () => {
+      message.success({
+        content: "Asignaciones guardadas y órdenes de compra actualizadas.",
+        key: MSG_SAVE_KEY,
+        duration: 2,
+      });
       setAssignDrawerOpen(false);
-      queryClient.invalidateQueries({
+      await queryClient.invalidateQueries({
         queryKey: ["assignSuppliersPlan", planId],
       });
-      queryClient.invalidateQueries({
+      await queryClient.invalidateQueries({
         queryKey: ["poForPlanAssign", planId],
       });
-    } catch (err) {
+    },
+    onError: (err) => {
       console.error("Error guardando asignaciones", err);
-      message.error("Error al guardar asignaciones.");
+      message.error({
+        content: "Error al guardar asignaciones.",
+        key: MSG_SAVE_KEY,
+      });
+    },
+  });
+
+  const handleSaveAssignments = () => {
+    if (!assignContext) {
+      message.warning("Selecciona un ítem para guardar asignaciones.");
+      return;
     }
+    saveAssignmentsMutation.mutate();
   };
+  interface DataType {
+    id: string;
+    purchase_code: string;
+    supplier: {
+      id: string;
+      name: string;
+    };
+    purchase_item: {
+      id: string;
+      offer: {
+        id: string;
+        price: number;
+        product: {
+          id: string;
+          name: string;
+          unit: string;
+        };
+      };
+      quantity: number;
+      fulfillment: [
+        {
+          id: string;
+          sale_item: {
+            id: string;
+            sale_order: {
+              id: string;
+              customer: {
+                name: string;
+              };
+              order_code: string;
+            };
+          };
+        }
+      ];
+    }[];
+  }
   return (
-    <Layout hasSider>
-      <Sider
-        collapsible
-        theme="light"
-        style={{
-          overflow: "initial",
-          height: "100vh",
-          position: "sticky",
-          insetInlineStart: 0,
-          top: 0,
-          bottom: 0,
-          scrollbarWidth: "thin",
-          scrollbarGutter: "stable",
-          marginLeft: 1,
-          padding: 0,
-        }}
-      >
-        <div style={{ padding: 4 }}>
-          <Typography.Title level={4}>Pedidos</Typography.Title>
-        </div>
-        <List
-          dataSource={orders}
-          rowKey={(o) =>
-            o.id ? String(o.id) : o.order_code || String(Math.random())
-          }
-          renderItem={(o) => {
-            const isSelected = o.id === selectedOrderId;
-            return (
-              <List.Item
+    <Layout style={{ backgroundColor: "transparent" }}>
+      <Space style={{ marginBottom: "16px", flexDirection: "row-reverse" }}>
+        <Button onClick={() => setShowSuppliersPanel(!showSuppliersPanel)}>
+          {showSuppliersPanel ? "Ocultar proveedores" : "Mostrar proveedores"}
+        </Button>
+      </Space>
+
+      <Layout hasSider style={{ backgroundColor: "transparent" }}>
+        <Sider collapsible collapsed={collapsed} theme="light" trigger={null}>
+          <Card
+            title="Pedidos"
+            size="small"
+            styles={{ body: { padding: 0 } }}
+            extra={[
+              <Button
+                type="text"
+                icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                onClick={() => setCollapsed(!collapsed)}
                 style={{
-                  padding: "8px 12px",
-                  cursor: "pointer",
-                  background: isSelected ? token.colorFillTertiary : undefined,
-                  borderLeft: `3px solid ${
-                    isSelected ? token.colorPrimary : "transparent"
-                  }`,
+                  fontSize: "16px",
                 }}
-                onClick={() =>
-                  setSelectedOrderId((prev) =>
-                    prev === o.id ? undefined : o.id
-                  )
-                }
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    width: "100%",
-                  }}
-                >
-                  <Typography.Text strong>
-                    {o.order_code || "Sin código"}
-                  </Typography.Text>
-                  <Typography.Text type="secondary" ellipsis>
-                    {o.user?.name || "—"}
-                  </Typography.Text>
-                  <Typography.Text type="secondary">
-                    Items: {o.items?.length ?? 0}
-                  </Typography.Text>
-                </div>
-              </List.Item>
-            );
-          }}
-        />
-      </Sider>
-      <Layout
-        style={{
-          overflow: "auto",
-          height: "100vh",
-          position: "sticky",
-          padding: 4,
-        }}
-      >
-        <Content>
-          <Collapse
-            defaultActiveKey={["resumenProveedores"]}
-            items={[
-              {
-                key: "resumenProveedores",
-                label: "Resumen proveedores",
-                children: (
-                  <>
-                    {posLoading ? (
-                      <Typography.Text type="secondary">
-                        Cargando órdenes de compra…
-                      </Typography.Text>
-                    ) : relatedPOs.length === 0 ? (
-                      <Typography.Text type="secondary">
-                        No hay órdenes de compra para este plan
-                      </Typography.Text>
-                    ) : (
-                      <Table
-                        dataSource={relatedPOs}
-                        rowKey={(r) => r.id}
-                        pagination={false}
-                        size="small"
-                        columns={
-                          [
-                            {
-                              title: "Código de órden de compra",
-                              dataIndex: "purchase_code",
-                              key: "purchase_code",
-                            },
-                            {
-                              title: "Proveedor",
-                              dataIndex: ["supplier", "name"],
-                              key: "supplier_name",
-                            },
-                            {
-                              title: "Total",
-                              key: "po_total",
-                              render: (_: unknown, record: any) => {
-                                const items = record.purchase_item || [];
-                                const total = items.reduce(
-                                  (sum: number, it: any) =>
-                                    sum +
-                                    Number(it.quantity || 0) *
-                                      Number(
-                                        it.actual_price ??
-                                          it.estimated_price ??
-                                          0
-                                      ),
-                                  0
-                                );
-                                return formatPriceAccounting(total);
-                              },
-                            },
-                            {
-                              title: "Vínculos",
-                              key: "po_links",
-                              render: (_: unknown, record: any) => {
-                                const items = Array.isArray(
-                                  record.purchase_item
-                                )
-                                  ? record.purchase_item
-                                  : [];
-                                const links = items.flatMap((it: any) =>
-                                  Array.isArray(it.fulfillment)
-                                    ? it.fulfillment.map((f: any) => ({
-                                        f,
-                                        it,
-                                      }))
-                                    : []
-                                );
-                                if (links.length === 0)
-                                  return (
-                                    <Typography.Text type="secondary">
-                                      —
-                                    </Typography.Text>
-                                  );
-                                return (
-                                  <Space wrap size={4}>
-                                    {links.map(({ f, it }: any) => {
-                                      const soCode =
-                                        f?.sale_item?.sale_order?.order_code ??
-                                        "";
-                                      const qty = Number(f?.quantity || 0);
-                                      const unit =
-                                        f?.sale_item?.product?.unit ?? "";
-                                      const productName =
-                                        f?.sale_item?.product?.name ?? "";
-                                      const customerName =
-                                        f?.sale_item?.sale_order?.customer
-                                          ?.name ?? "";
-                                      const label = [
-                                        productName,
-                                        `${qty} ${unit}`,
-                                        customerName,
-                                      ]
-                                        .filter(Boolean)
-                                        .join(" · ");
-                                      return <Tag>{label}</Tag>;
-                                    })}
-                                  </Space>
-                                );
-                              },
-                            },
-                          ] as any
-                        }
-                        expandable={{
-                          expandedRowRender: (po: any) => (
-                            <Table
-                              dataSource={po.purchase_item || []}
-                              rowKey="id"
-                              pagination={false}
-                              size="small"
-                              columns={
-                                [
-                                  {
-                                    title: "Producto",
-                                    dataIndex: ["product", "name"],
-                                    key: "product_name",
-                                  },
-                                  {
-                                    title: "Cant./Unidad",
-                                    key: "quantity_unit",
-                                    render: (_: unknown, it: any) =>
-                                      `${Number(it.quantity || 0)} ${
-                                        it.product?.unit ?? ""
-                                      }`,
-                                  },
-                                  {
-                                    title: "Precio",
-                                    key: "price",
-                                    render: (_: unknown, it: any) =>
-                                      formatPriceAccounting(
-                                        Number(
-                                          it.actual_price ??
-                                            it.estimated_price ??
-                                            0
-                                        )
-                                      ),
-                                  },
-                                  {
-                                    title: "Vínculos",
-                                    key: "pi_links",
-                                    render: (_: unknown, it: any) => {
-                                      const links = Array.isArray(
-                                        it.fulfillment
-                                      )
-                                        ? it.fulfillment
-                                        : [];
-                                      if (links.length === 0)
-                                        return (
-                                          <Typography.Text type="secondary">
-                                            —
-                                          </Typography.Text>
-                                        );
-                                      return (
-                                        <Space wrap size={4}>
-                                          {links.map((f: any) => {
-                                            const soCode =
-                                              f?.sale_item?.sale_order
-                                                ?.order_code ?? "";
-                                            const qty = Number(
-                                              f?.quantity || 0
-                                            );
-                                            const unit =
-                                              f?.sale_item?.product?.unit ?? "";
-                                            const customerName =
-                                              f?.sale_item?.sale_order?.customer
-                                                ?.name ?? "";
-                                            const label = [
-                                              soCode ? ` ${soCode}` : "",
-                                              `${qty} ${unit}`,
-                                              customerName,
-                                            ]
-                                              .filter(Boolean)
-                                              .join(" · ");
-                                            return (
-                                              <Tag color="blue">{label}</Tag>
-                                            );
-                                          })}
-                                        </Space>
-                                      );
-                                    },
-                                  },
-                                ] as any
-                              }
-                            />
-                          ),
-                        }}
-                      />
-                    )}
-                    <Descriptions
-                      size="small"
-                      column={1}
-                      style={{ marginTop: 12 }}
-                    >
-                      <Descriptions.Item label="Productos únicos">
-                        {uniqueProductsCount}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="Estimado ventas">
-                        {formatPriceAccounting(Number(totalSalesEstimate || 0))}
-                      </Descriptions.Item>
-                    </Descriptions>
-                  </>
-                ),
-              },
+              />,
             ]}
-          />
+          >
+            <List
+              dataSource={orders as any}
+              rowKey={(o) =>
+                o.id ? String(o.id) : o.order_code || String(Math.random())
+              }
+              renderItem={(o: {
+                id: string;
+                order_code: string;
+                order_date: string;
+                delivery_date: string;
+                status: "pending";
+                total: number;
+                subtotal: number;
+                service_fee: number;
+                delivery_charge: number;
+                notes: null;
+                user: {
+                  name: string;
+                  email: string;
+                };
+                items: [
+                  {
+                    id: string;
+                    product: {
+                      id: string;
+                      name: string;
+                      unit: string;
+                      main_photo: string;
+                      description: string;
+                      reference_price: number;
+                    };
+                    product_id: string;
+                    fulfillment: [
+                      {
+                        id: string;
+                        purchase_item: {
+                          id: string;
+                          offer: {
+                            id: string;
+                            price: number;
+                            product: {
+                              id: string;
+                              name: string;
+                              unit: string;
+                            };
+                            supplier: {
+                              id: string;
+                              name: string;
+                            };
+                          };
+                          quantity: number;
+                          actual_price: number;
+                          purchase_order: {
+                            id: string;
+                            supplier: {
+                              id: string;
+                              name: string;
+                            };
+                            purchase_code: string;
+                          };
+                        };
+                      },
+                      {
+                        id: string;
+                        purchase_item: {
+                          id: string;
+                          offer: {
+                            id: string;
+                            price: number;
+                            product: {
+                              id: string;
+                              name: string;
+                              unit: string;
+                            };
+                            supplier: {
+                              id: string;
+                              name: string;
+                            };
+                          };
+                          quantity: number;
+                          actual_price: number;
+                          purchase_order: {
+                            id: string;
+                            supplier: {
+                              id: string;
+                              name: string;
+                            };
+                            purchase_code: string;
+                          };
+                        };
+                      }
+                    ];
+                    required_quantity: number;
+                    delivered_quantity: number;
+                    quantity: number;
+                    unit_price: number;
+                  }
+                ];
+              }) => {
+                const isSelected = o.id === selectedOrderId;
+                const isSaleOrderCompletelyAsignned = (() => {
+                  const sale_items = Array.isArray(o.items) ? o.items : [];
+                  return sale_items.every((sale_item) => {
+                    const requiredQty = Number(sale_item.quantity || 0);
+                    if (requiredQty <= 0) return true;
+                    const fulfillments = Array.isArray(sale_item.fulfillment)
+                      ? sale_item.fulfillment
+                      : [];
+                    if (fulfillments.length === 0) return false;
+                    const hasAnyPO = fulfillments.some(
+                      (f) => !!f?.purchase_item?.purchase_order?.id
+                    );
+                    if (!hasAnyPO) return false;
+                    const assignedSum = fulfillments.reduce(
+                      (sum: number, f) =>
+                        sum + Number(f?.purchase_item?.quantity || 0),
+                      0
+                    );
+                    return assignedSum >= requiredQty;
+                  });
+                })();
+                return (
+                  <List.Item
+                    style={{
+                      padding: "8px 12px",
+                      cursor: "pointer",
+                      background: isSelected
+                        ? token.colorFillTertiary
+                        : undefined,
+                      borderLeft: `3px solid ${
+                        isSelected ? token.colorPrimary : "transparent"
+                      }`,
+                    }}
+                    onClick={() =>
+                      setSelectedOrderId((prev) =>
+                        prev === o.id ? undefined : o.id
+                      )
+                    }
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        width: "100%",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                          justifyContent: "space-between",
+                        }}
+                      >
+                        <Typography.Text strong>
+                          {o.order_code || "Sin código"}
+                        </Typography.Text>
+                        {o.items?.length <= 0 && (
+                          <Tooltip title="El pedido no tiene productos">
+                            <WarningFilled
+                              style={{
+                                fontSize: "16px",
+                                color: token.colorWarning,
+                              }}
+                            />
+                          </Tooltip>
+                        )}
+                        {isSaleOrderCompletelyAsignned &&
+                          o.items?.length > 0 && (
+                            <CheckCircleFilled
+                              style={{
+                                fontSize: "16px",
+                                color: token.colorSuccess,
+                              }}
+                            />
+                          )}
+                      </div>
+                      <Typography.Text type="secondary" ellipsis>
+                        {o.user?.name || "—"}
+                      </Typography.Text>
+                      <Typography.Text type="secondary">
+                        Items: {o.items?.length ?? 0}
+                      </Typography.Text>
+                    </div>
+                  </List.Item>
+                );
+              }}
+            />
+          </Card>
+        </Sider>
+        <Layout
+          style={{
+            marginLeft: "16px",
+            backgroundColor: "transparent",
+            display: "flex",
+            flexDirection: "row",
+            gap: "16px",
+          }}
+        >
           <Card
             title="Ítems del pedido"
+            style={{ marginBottom: "16px" }}
             size="small"
+            styles={{
+              body: {
+                padding: 0,
+                overflow: "auto",
+              },
+            }}
             extra={
               <Typography.Text type="secondary">
                 {selectedOrder
                   ? `Orden ${selectedOrder.order_code} — ${
-                      selectedOrder.user?.name ?? "—"
+                      selectedOrder?.user?.name ?? "—"
                     } (${selectedOrder.items?.length ?? 0} ítems)`
                   : "Mostrando todos"}
               </Typography.Text>
@@ -898,250 +945,490 @@ const AssignSuppliersPage = () => {
               rowKey="id"
               pagination={false}
               size="small"
-              columns={
-                [
-                  {
-                    title: "Producto",
-                    dataIndex: ["product", "name"],
-                    key: "product_name",
+              columns={[
+                {
+                  title: "Cliente",
+                  key: "customer",
+                  render: (_: unknown, it: any) => {
+                    const c = itemCustomerById.get(String(it?.id ?? ""));
+                    return (
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          width: "100%",
+                        }}
+                      >
+                        <Typography.Text>{c?.name || "—"}</Typography.Text>
+                        <Typography.Text type="secondary" ellipsis>
+                          {c?.sale_order || "Sin código"}
+                        </Typography.Text>
+                      </div>
+                    );
                   },
-                  {
-                    title: "Cant./Unidad",
-                    key: "quantity_unit",
-                    render: (_: unknown, it: any) =>
-                      `${Number(it.quantity || 0)} ${it.product?.unit ?? ""}`,
-                  },
-                  {
-                    title: "Cumplimiento",
-                    key: "fulfillment_progress",
-                    render: (_: unknown, it: any) => {
-                      const totalQty = Number(it.quantity || 0);
-                      const assigned = Array.isArray(it.fulfillment)
-                        ? it.fulfillment.reduce(
-                            (sum: number, f: any) =>
-                              sum + Number(f?.quantity || 0),
-                            0
-                          )
+                },
+                {
+                  title: "Cumplimiento",
+                  key: "fulfillment_progress",
+                  render: (_: unknown, it: any) => {
+                    const totalQty = Number(it.quantity || 0);
+                    const assigned = Array.isArray(it.fulfillment)
+                      ? it.fulfillment.reduce(
+                          (sum: number, f: any) =>
+                            sum + Number(f?.purchase_item?.quantity || 0),
+                          0
+                        )
+                      : 0;
+                    const percent =
+                      totalQty > 0
+                        ? Math.round((assigned / totalQty) * 100)
                         : 0;
-                      const percent =
-                        totalQty > 0
-                          ? Math.min(
-                              100,
-                              Math.round((assigned / totalQty) * 100)
-                            )
-                          : 0;
-                      return (
+                    const overAssigned = percent > 100;
+                    const displayPercent = Math.min(percent, 100);
+                    return (
+                      <div>
+                        <Typography.Text> {it.product.name} </Typography.Text>
                         <div
                           style={{
                             display: "flex",
                             alignItems: "center",
-                            gap: 8,
+                            flexWrap: "wrap",
+                            justifyContent: "flex-start",
                           }}
                         >
-                          <Progress percent={percent} style={{ width: 140 }} />
+                          <Progress
+                            percent={displayPercent}
+                            strokeColor={
+                              overAssigned ? token.colorWarning : undefined
+                            }
+                            style={{ width: 120, marginRight: 4 }}
+                          />
                           <Typography.Text type="secondary">
-                            {`${assigned} / ${totalQty} ${
+                            {`${assigned}/${totalQty} ${
                               it.product?.unit ?? ""
                             }`}
                           </Typography.Text>
                         </div>
-                      );
-                    },
+                      </div>
+                    );
                   },
-                  {
-                    title: "Proveedores",
-                    key: "item_links",
-                    render: (_: unknown, it: any) => {
-                      const links = Array.isArray(it.fulfillment)
-                        ? it.fulfillment
-                        : [];
-                      if (links.length === 0)
-                        return (
-                          <Typography.Text type="secondary">—</Typography.Text>
-                        );
-                      return (
+                },
+                {
+                  title: "Proveedores",
+                  key: "item_links",
+                  render: (_: unknown, it: any) => {
+                    const links = Array.isArray(it.fulfillment)
+                      ? it.fulfillment
+                      : [];
+                    return (
+                      <Space direction="vertical">
                         <Space wrap size={4}>
                           {links.map((f: any) => {
-                            const poCode =
-                              f?.purchase_item?.purchase_order?.purchase_code ??
-                              "";
                             const supplier =
                               f?.purchase_item?.purchase_order?.supplier
                                 ?.name ?? "";
-                            const qty = Number(f?.quantity || 0);
+                            const qty = Number(f?.purchase_item?.quantity || 0);
                             const unit = it?.product?.unit ?? "";
-                            const label = [supplier, `${qty} ${unit}`]
-                              .filter(Boolean)
-                              .join(" · ");
-                            return <Tag>{label}</Tag>;
+                            const offerPrice = Number(
+                              f?.purchase_item?.offer?.price || 0
+                            );
+                            const label = [
+                              supplier,
+                              `${qty} ${unit}`,
+                              `$${offerPrice} c/u`,
+                            ];
+                            return (
+                              <Tag
+                                id={`fullfilmentId_from_sale_order/${f?.id}`}
+                                onClick={() => {
+                                  const fid = f?.id;
+                                  if (!fid) return;
+                                  setHighlightFulfillmentId(
+                                    highlightFulfillmentId === String(fid)
+                                      ? null
+                                      : String(fid)
+                                  );
+                                }}
+                                style={{
+                                  cursor: f?.id ? "pointer" : "default",
+                                  borderColor:
+                                    highlightFulfillmentId === String(f?.id)
+                                      ? token.colorPrimary
+                                      : undefined,
+                                  backgroundColor:
+                                    highlightFulfillmentId === String(f?.id)
+                                      ? token.colorPrimaryBg
+                                      : undefined,
+                                }}
+                              >
+                                <Space wrap split="·">
+                                  {label.map((e) => (
+                                    <Typography.Text>{e}</Typography.Text>
+                                  ))}
+                                </Space>
+                              </Tag>
+                            );
                           })}
                         </Space>
-                      );
-                    },
+                        <Button
+                          onClick={() => openAssignDrawer(it)}
+                          type="dashed"
+                        >
+                          Asignar
+                        </Button>
+                      </Space>
+                    );
                   },
-                  {
-                    title: "Accion",
-                    key: "assign_suppliers",
-                    render: (_: unknown, it: any) => (
-                      <Button
-                        size="small"
-                        type="primary"
-                        onClick={() => openAssignDrawer(it)}
-                      >
-                        Asignar
-                      </Button>
-                    ),
-                  },
-                ] as any
-              }
+                },
+              ]}
             />
           </Card>
-        </Content>
-      </Layout>
-      <Drawer
-        placement="right"
-        width={440}
-        title={
-          assignContext
-            ? `Asignar proveedores — ${assignContext.productName}`
-            : "Asignar proveedores"
-        }
-        open={assignDrawerOpen}
-        onClose={() => setAssignDrawerOpen(false)}
-        styles={{ body: { padding: 0 } }}
-        extra={
-          <Space>
-            <Button onClick={() => setAssignDrawerOpen(false)}>Cancelar</Button>
-            <Button type="primary" onClick={handleSaveAssignments}>
-              Guardar
-            </Button>
-          </Space>
-        }
-      >
-        {!assignContext ? (
-          <Typography.Text type="secondary">
-            Selecciona un ítem del pedido para asignar proveedores.
-          </Typography.Text>
-        ) : offersLoading ? (
-          <Typography.Text type="secondary">
-            Cargando proveedores...
-          </Typography.Text>
-        ) : offersForCurrentProduct.length === 0 ? (
-          <Typography.Text type="secondary">
-            No hay proveedores disponibles para este producto.
-          </Typography.Text>
-        ) : (
-          <>
-            {plannedAssignSum > remainingQty && (
-              <Alert
-                message="Advertencia: la cantidad por asignar excede la disponible del ítem."
-                type="warning"
-                banner
-              />
-            )}
-            <div style={{ padding: 12 }}>
-              <div style={{ marginBottom: 12 }}>
-                <Typography.Text>
-                  Cantidad requerida:{" "}
-                  <strong>
-                    {remainingQty} {assignContext?.productUnit || ""}
-                  </strong>
-                </Typography.Text>
-                <br />
-                <Typography.Text type="secondary">
-                  Por asignar: {Math.max(0, remainingQty - plannedAssignSum)} —
-                  Restante: {plannedAssignSum}
-                </Typography.Text>
-              </div>
-              <List
-                dataSource={offersForCurrentProduct as any}
-                rowKey={(o: any) => o.id}
-                renderItem={(o: any) => {
-                  const assignedQty = assignedQtyMap.get(o.supplier_id) || 0;
-                  const checked = selectedSupplierIds.has(o.supplier_id);
-                  const value = Number(assignmentInputs[o.supplier_id] || 0);
-                  return (
-                    <List.Item>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "flex-start",
-                          gap: 8,
-                          width: "100%",
-                        }}
-                      >
-                        <Checkbox
-                          checked={checked || value > 0}
-                          onChange={(e) => {
-                            const isChecked = e.target.checked;
-                            toggleSupplierSelection(o.supplier_id, isChecked);
-                            if (!isChecked) {
-                              // Si se desmarca, resetea la cantidad a 0
+          <SlideInRight visible={showSuppliersPanel} width={350}>
+            <Card
+              title="Resumen proveedores"
+              styles={{
+                body: {
+                  overflow: "auto",
+                  padding: 0,
+                },
+              }}
+              style={{
+                marginRight: "16px",
+              }}
+              size="small"
+            >
+              <>
+                {posLoading ? (
+                  <Typography.Text type="secondary">
+                    Cargando órdenes de compra…
+                  </Typography.Text>
+                ) : relatedPOs.length === 0 ? (
+                  <Typography.Text type="secondary">
+                    No hay órdenes de compra para este plan
+                  </Typography.Text>
+                ) : (
+                  <Table
+                    dataSource={relatedPOs}
+                    rowKey={(r) => r.id}
+                    pagination={false}
+                    size="small"
+                    columns={
+                      [
+                        {
+                          title: "Proveedor",
+                          dataIndex: ["supplier", "name"],
+                          key: "supplier_name",
+                          render: (_: string, record: DataType) => (
+                            <div
+                              style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                width: "100%",
+                              }}
+                            >
+                              <Typography.Text>
+                                {record.supplier.name || "—"}
+                              </Typography.Text>
+                              <Typography.Text type="secondary" ellipsis>
+                                {record.purchase_code || "Sin código"}
+                              </Typography.Text>
+                            </div>
+                          ),
+                        },
+                        {
+                          title: "Vínculos",
+                          key: "po_links",
+                          render: (_: unknown, record: any) => {
+                            const items = record.purchase_item || [];
+                            const links = items.flatMap((it: any) =>
+                              Array.isArray(it.fulfillment)
+                                ? it.fulfillment.map((f: any) => ({
+                                    f,
+                                    it,
+                                  }))
+                                : []
+                            );
+                            if (links.length === 0)
+                              return (
+                                <Typography.Text type="secondary">
+                                  —
+                                </Typography.Text>
+                              );
+                            return (
+                              <Space wrap size={4}>
+                                {items.map(
+                                  (i: {
+                                    id: string;
+                                    offer: {
+                                      id: string;
+                                      price: number;
+                                      product: {
+                                        id: string;
+                                        name: string;
+                                        unit: string;
+                                      };
+                                    };
+                                    quantity: number;
+                                    fulfillment: [
+                                      {
+                                        id: string;
+                                        sale_item: {
+                                          id: string;
+                                          sale_order: {
+                                            id: string;
+                                            customer: {
+                                              name: string;
+                                            };
+                                            order_code: string;
+                                          };
+                                        };
+                                      }
+                                    ];
+                                  }) => {
+                                    const qty = Number(i.quantity || 0);
+                                    const unit = i.offer.product.unit ?? "";
+                                    const productName =
+                                      i.offer.product.name ?? "";
+                                    const unitPrice = Number(
+                                      i.offer.price ?? 0
+                                    );
+                                    const customerName =
+                                      i.fulfillment?.[0]?.sale_item?.sale_order
+                                        ?.customer?.name ?? "";
+                                    const label = [
+                                      productName,
+                                      `${qty} ${unit}`,
+                                      `${formatPriceAccounting(unitPrice)} c/u`,
+                                      customerName,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" · ");
+                                    const labels = [
+                                      productName,
+                                      `${qty} ${unit}`,
+                                      `${formatPriceAccounting(unitPrice)} c/u`,
+                                      customerName,
+                                    ];
+                                    return (
+                                      <Tag
+                                        id={
+                                          "fullfilmentId_from_purchase_order/" +
+                                          i.fulfillment?.[0]?.id
+                                        }
+                                        onClick={() => {
+                                          const fid = i.fulfillment?.[0]?.id;
+                                          if (!fid) return;
+                                          setHighlightFulfillmentId(
+                                            highlightFulfillmentId ===
+                                              String(fid)
+                                              ? null
+                                              : String(fid)
+                                          );
+                                        }}
+                                        style={{
+                                          cursor: i.fulfillment?.[0]?.id
+                                            ? "pointer"
+                                            : "default",
+                                          borderColor:
+                                            highlightFulfillmentId ===
+                                            String(i.fulfillment?.[0]?.id)
+                                              ? token.colorPrimary
+                                              : undefined,
+                                          backgroundColor:
+                                            highlightFulfillmentId ===
+                                            String(i.fulfillment?.[0]?.id)
+                                              ? token.colorPrimaryBg
+                                              : undefined,
+                                        }}
+                                      >
+                                        <Space wrap split="·">
+                                          {labels.map((e) => (
+                                            <Typography.Text>
+                                              {e}
+                                            </Typography.Text>
+                                          ))}
+                                        </Space>
+                                      </Tag>
+                                    );
+                                  }
+                                )}
+                              </Space>
+                            );
+                          },
+                        },
+                      ] as any
+                    }
+                  />
+                )}
+              </>
+            </Card>
+          </SlideInRight>
+        </Layout>
+        <Drawer
+          placement="right"
+          width={440}
+          title={
+            assignContext
+              ? `Asignar proveedores — ${assignContext.productName}`
+              : "Asignar proveedores"
+          }
+          open={assignDrawerOpen}
+          onClose={() => setAssignDrawerOpen(false)}
+          styles={{ body: { padding: 0 } }}
+          extra={
+            <Space>
+              <Button onClick={() => setAssignDrawerOpen(false)}>
+                Cancelar
+              </Button>
+              <Button
+                type="primary"
+                onClick={handleSaveAssignments}
+                loading={saveAssignmentsMutation.isPending}
+              >
+                Guardar
+              </Button>
+            </Space>
+          }
+        >
+          {!assignContext ? (
+            <Typography.Text type="secondary">
+              Selecciona un ítem del pedido para asignar proveedores.
+            </Typography.Text>
+          ) : offersLoading ? (
+            <Typography.Text type="secondary">
+              Cargando proveedores...
+            </Typography.Text>
+          ) : offersForCurrentProduct.length === 0 ? (
+            <Typography.Text type="secondary">
+              No hay proveedores disponibles para este producto.
+            </Typography.Text>
+          ) : (
+            <>
+              {plannedAssignSum > remainingQty && (
+                <Alert
+                  message="Advertencia: la cantidad por asignar excede la disponible del ítem."
+                  type="warning"
+                  banner
+                />
+              )}
+              <div style={{ padding: 12 }}>
+                <div style={{ marginBottom: 12 }}>
+                  <Typography.Text>
+                    Cantidad requerida:{" "}
+                    <strong>
+                      {assignContext?.saleItemQty ?? 0}{" "}
+                      {assignContext?.productUnit || ""}
+                    </strong>
+                  </Typography.Text>
+                  <br />
+                  <Typography.Text type="secondary">
+                    Restante por asignar:{" "}
+                    {Math.max(0, remainingQty - plannedAssignSum)}{" "}
+                  </Typography.Text>{" "}
+                  <br />
+                  <Typography.Text type="secondary">
+                    Total:{" "}
+                    {offersForCurrentProduct.reduce(
+                      (acc, cur) =>
+                        acc + Number(assignmentInputs[cur.supplier_id] || 0),
+                      0
+                    )}
+                  </Typography.Text>
+                </div>
+                <List
+                  dataSource={offersForCurrentProduct as any}
+                  rowKey={(o: any) => o.id}
+                  renderItem={(o: any) => {
+                    const assignedQty = assignedQtyMap.get(o.supplier_id) || 0;
+                    const checked = selectedSupplierIds.has(o.supplier_id);
+                    const value = Number(assignmentInputs[o.supplier_id] || 0);
+                    return (
+                      <List.Item>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: 8,
+                            width: "100%",
+                          }}
+                        >
+                          <Checkbox
+                            checked={checked || value > 0}
+                            onChange={(e) => {
+                              const isChecked = e.target.checked;
+                              toggleSupplierSelection(o.supplier_id, isChecked);
+                              if (!isChecked) {
+                                // Si se desmarca, resetea la cantidad a 0
+                                setAssignmentInputs((prev) => ({
+                                  ...prev,
+                                  [o.supplier_id]: 0,
+                                }));
+                              }
+                            }}
+                          />
+                          <div style={{ flex: 1 }}>
+                            <Typography.Text strong>
+                              {o.supplier_name}
+                            </Typography.Text>
+                            <div>
+                              <Typography.Text type="secondary">
+                                Precio estimado:{" "}
+                                {formatPriceAccounting(Number(o.price || 0))}
+                              </Typography.Text>
+                            </div>
+                            <div>
+                              <Typography.Text type="secondary">
+                                Ya asignado: {Number(assignedQty || 0)}
+                              </Typography.Text>
+                            </div>
+                          </div>
+                          <InputNumber
+                            min={0}
+                            value={value}
+                            onChange={(val) => {
+                              const num = Number(val || 0);
                               setAssignmentInputs((prev) => ({
                                 ...prev,
-                                [o.supplier_id]: 0,
+                                [o.supplier_id]: isNaN(num) ? 0 : num,
                               }));
-                            }
-                          }}
-                        />
-                        <div style={{ flex: 1 }}>
-                          <Typography.Text strong>
-                            {o.supplier_name}
-                          </Typography.Text>
-                          <div>
-                            <Typography.Text type="secondary">
-                              Precio estimado:{" "}
-                              {formatPriceAccounting(Number(o.price || 0))}
-                            </Typography.Text>
-                          </div>
-                          <div>
-                            <Typography.Text type="secondary">
-                              Ya asignado: {Number(assignedQty || 0)}
-                            </Typography.Text>
-                          </div>
+                              if (num > 0) {
+                                setSelectedSupplierIds((prev) =>
+                                  new Set(prev).add(o.supplier_id)
+                                );
+                              }
+                            }}
+                            size="small"
+                            style={{ width: 100, marginTop: 4 }}
+                          />
                         </div>
-                        <InputNumber
-                          min={0}
-                          value={value}
-                          onChange={(val) => {
-                            const num = Number(val || 0);
-                            setAssignmentInputs((prev) => ({
-                              ...prev,
-                              [o.supplier_id]: isNaN(num) ? 0 : num,
-                            }));
-                            if (num > 0) {
-                              setSelectedSupplierIds((prev) =>
-                                new Set(prev).add(o.supplier_id)
-                              );
-                            }
-                          }}
-                          size="small"
-                          style={{ width: 100, marginTop: 4 }}
-                        />
-                      </div>
-                    </List.Item>
-                  );
-                }}
-              />
-              <div
-                style={{
-                  marginTop: 16,
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  gap: 8,
-                }}
-              >
-                <Button onClick={() => setAssignDrawerOpen(false)}>
-                  Cancelar
-                </Button>
-                <Button type="primary" onClick={handleSaveAssignments}>
-                  Guardar
-                </Button>
+                      </List.Item>
+                    );
+                  }}
+                />
+                <div
+                  style={{
+                    marginTop: 16,
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    gap: 8,
+                  }}
+                >
+                  <Button onClick={() => setAssignDrawerOpen(false)}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="primary"
+                    onClick={handleSaveAssignments}
+                    loading={saveAssignmentsMutation.isPending}
+                  >
+                    Guardar
+                  </Button>
+                </div>
               </div>
-            </div>
-          </>
-        )}
-      </Drawer>
+            </>
+          )}
+        </Drawer>
+      </Layout>
     </Layout>
   );
 };
@@ -1149,5 +1436,9 @@ const AssignSuppliersPage = () => {
 export default AssignSuppliersPage;
 
 AssignSuppliersPage.getLayout = function getLayout(page: ReactElement) {
-  return <DashboardLayout noStyle>{page}</DashboardLayout>;
+  return (
+    <DashboardLayout noStyle>
+      <DistributionPlanLayout> {page}</DistributionPlanLayout>
+    </DashboardLayout>
+  );
 };

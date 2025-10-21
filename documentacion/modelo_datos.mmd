@@ -2,7 +2,7 @@
 %% Referencia: scripts/supabase_sql.sql
 
 erDiagram
-    app_user {
+    auth {
         uuid id PK
         string email
         string password_hash
@@ -11,33 +11,6 @@ erDiagram
         datetime last_login
         datetime created_at
         datetime updated_at
-    }
-
-    product {
-        uuid id PK
-        string name
-        string description
-        enum unit
-        string main_photo
-        float reference_price
-        datetime created_at
-    }
-
-    supplier {
-        uuid id PK
-        string name
-        string contact
-        string phone
-        uuid user_id FK
-        datetime created_at
-    }
-
-    offer {
-        uuid id PK
-        uuid product_id FK
-        uuid supplier_id FK
-        float price
-        boolean available
     }
 
     customer {
@@ -49,15 +22,7 @@ erDiagram
         datetime created_at
     }
 
-    driver {
-        uuid id PK
-        string name
-        string phone
-        uuid user_id FK
-        datetime created_at
-    }
-
-    coordinator {
+    operator {
         uuid id PK
         string name
         string phone
@@ -73,16 +38,43 @@ erDiagram
         datetime created_at
     }
 
+    supplier {
+        uuid id PK
+        string name
+        string contact
+        string phone
+        uuid user_id FK
+        datetime created_at
+    }
+
+    product {
+        uuid id PK
+        string name
+        string description
+        enum unit
+        string main_photo
+        decimal reference_price
+        datetime created_at
+    }
+
+    offer {
+        uuid id PK
+        uuid product_id FK
+        uuid supplier_id FK
+        decimal price
+        boolean available
+    }
+
     sale_order {
         uuid id PK
         uuid customer_id FK
-        datetime order_date
-        datetime delivery_date
+        uuid distribution_plan_id FK
         enum status
         float service_fee
-        float delivery_charge
+        float delivery_fee
         string notes
-        uuid created_by
+        uuid created_by_admin_id FK
+        uuid created_by_customer_id FK
         datetime created_at
         int order_seq
         string order_code
@@ -92,46 +84,10 @@ erDiagram
         uuid id PK
         uuid sale_order_id FK
         uuid product_id FK
-        float quantity
-        float unit_price
-        float delivered_quantity
+        decimal required_quantity
+        decimal delivered_quantity
         datetime delivered_at
         uuid delivered_by
-        datetime created_at
-    }
-
-    purchase_order {
-        uuid id PK
-        uuid supplier_id FK
-        datetime order_date
-        datetime expected_delivery_date
-        enum status
-        string notes
-        uuid created_by
-        datetime created_at
-        int purchase_seq
-        string purchase_code
-    }
-
-    purchase_item {
-        uuid id PK
-        uuid purchase_order_id FK
-        uuid product_id FK
-        uuid supplier_id FK
-        float quantity
-        float estimated_price
-        float actual_price
-        float received_quantity
-        uuid received_by
-        datetime received_at
-        datetime created_at
-    }
-
-    fulfillment {
-        uuid id PK
-        uuid sale_item_id FK
-        uuid purchase_item_id FK
-        float quantity
         datetime created_at
     }
 
@@ -139,7 +95,7 @@ erDiagram
         uuid id PK
         uuid customer_id FK
         uuid product_id FK
-        float quantity
+        decimal quantity
         datetime created_at
         datetime updated_at
     }
@@ -148,7 +104,7 @@ erDiagram
         uuid id PK
         date plan_date
         enum status
-        uuid coordinator_id FK
+        uuid operator_id FK
         string notes
         datetime cutoff_at
         datetime created_at
@@ -157,46 +113,67 @@ erDiagram
         string plan_code
     }
 
-    distribution_plan_order {
+    purchase_order {
         uuid id PK
+        uuid supplier_id FK
         uuid distribution_plan_id FK
-        uuid sale_order_id FK
-        int sequence
         enum status
-        datetime delivered_at
-        uuid assigned_user_id FK
+        string notes
+        uuid created_by FK
+        datetime created_at
+        datetime received_at
+        int purchase_seq
+        string purchase_code
+    }
+
+    purchase_item {
+        uuid id PK
+        uuid purchase_order_id FK
+        uuid offer_id FK
+        decimal quantity
+        decimal actual_price
+        decimal received_quantity
+        uuid received_by FK
+        datetime received_at
+        datetime created_at
+    }
+
+    fulfillment {
+        uuid id PK
+        uuid sale_item_id FK
+        uuid purchase_item_id FK
         datetime created_at
     }
 
     %% Relaciones (cardinalidades)
-    supplier }o--|| app_user : user_account
-    customer }o--|| app_user : user_account
+    customer }o--|| auth : user_account
+    operator }o--|| auth : user_account
+    admin }o--|| auth : user_account
+    supplier }o--|| auth : user_account
 
     offer }o--|| product : product
     offer }o--|| supplier : supplier
 
     sale_order }o--|| customer : customer
+    sale_order }o--|| distribution_plan : plan
+    sale_order }o--|| admin : created_by_admin
+    sale_order }o--|| customer : created_by_customer
+
     sale_item }o--|| sale_order : order
     sale_item }o--|| product : product
-
-    purchase_order }o--|| supplier : supplier
-    purchase_item }o--|| purchase_order : order
-    purchase_item }o--|| product : product
-    purchase_item }o--|| supplier : supplier
-
-    fulfillment }o--|| sale_item : sale_item
-    fulfillment }o--|| purchase_item : purchase_item
 
     shopping_cart }o--|| customer : customer
     shopping_cart }o--|| product : product
 
-    driver }o--|| app_user : user_account
-    coordinator }o--|| app_user : user_account
-    admin }o--|| app_user : user_account
+    distribution_plan }o--|| operator : operator
 
-    distribution_plan }o--|| coordinator : coordinator
+    purchase_order }o--|| supplier : supplier
+    purchase_order }o--|| distribution_plan : plan
+    purchase_order }o--|| auth : created_by
 
-    distribution_plan_order }o--|| distribution_plan : plan
-    distribution_plan_order }o--|| sale_order : sale_order
+    purchase_item }o--|| purchase_order : order
+    purchase_item }o--|| offer : offer
+    purchase_item }o--|| auth : received_by
 
-    %% Vistas (referencia): sale_order_with_total, sale_order_with_total_and_status, purchase_order_with_total
+    fulfillment }o--|| sale_item : sale_item
+    fulfillment }o--|| purchase_item : purchase_item

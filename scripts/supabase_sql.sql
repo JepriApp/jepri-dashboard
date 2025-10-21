@@ -2,12 +2,9 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TYPE unit_type AS ENUM ('lb', 'kg', 'atado');
 CREATE TYPE user_role AS ENUM ('admin', 'operator', 'supplier', 'customer');
--- Estados de órdenes
-CREATE TYPE sale_order_status AS ENUM ('pending', 'processing', 'out_for_delivery', 'delivered', 'cancelled');
-CREATE TYPE purchase_order_status AS ENUM ('created', 'published', 'accepted', 'delivered', 'cancelled', 'rejected');
 
 -- Tabla de usuarios simplificada
-CREATE TABLE app_user (
+CREATE TABLE auth (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     email VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
@@ -16,6 +13,44 @@ CREATE TABLE app_user (
     last_login TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+-- Tabla de clientes
+CREATE TABLE customer (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(200) NOT NULL,
+    contact VARCHAR(200),
+    phone VARCHAR(20),
+    user_id UUID NOT NULL REFERENCES auth(id) ON DELETE RESTRICT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+-- Tabla de coordinadores (operators)
+CREATE TABLE operator (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(200) NOT NULL,
+    phone VARCHAR(20),
+    user_id UUID NOT NULL REFERENCES auth(id) ON DELETE RESTRICT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Tabla de administradores (admins)
+CREATE TABLE admin (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(200) NOT NULL,
+    phone VARCHAR(20),
+    user_id UUID NOT NULL REFERENCES auth(id) ON DELETE RESTRICT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Tabla de proveedores
+CREATE TABLE supplier (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(200) NOT NULL,
+    contact VARCHAR(200),
+    phone VARCHAR(20),
+    user_id UUID NOT NULL REFERENCES auth(id) ON DELETE RESTRICT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Tabla de productos
@@ -29,74 +64,65 @@ CREATE TABLE product (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Tabla de proveedores
-CREATE TABLE supplier (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name VARCHAR(200) NOT NULL,
-    contact VARCHAR(200),
-    phone VARCHAR(20),
-    user_id UUID REFERENCES app_user(id),
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
 
--- Tabla de ofertas de proveedores
+-- Tabla de catálogos de proveedores
 CREATE TABLE offer (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    product_id UUID NOT NULL REFERENCES product(id) ON DELETE CASCADE,
+    product_id UUID NOT NULL REFERENCES product(id) ON DELETE RESTRICT,
     supplier_id UUID NOT NULL REFERENCES supplier(id) ON DELETE RESTRICT,
     price DECIMAL(12,2) NOT NULL,
     available BOOLEAN DEFAULT true,
     UNIQUE(product_id, supplier_id)
 );
 
--- Tabla de clientes
-CREATE TABLE customer (
+-- Tabla de carrito de compras (temporal antes de crear orden)
+CREATE TABLE shopping_cart (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name VARCHAR(200) NOT NULL,
-    contact VARCHAR(200),
-    phone VARCHAR(20),
-    user_id UUID REFERENCES app_user(id),
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    customer_id UUID NOT NULL REFERENCES customer(id) ON DELETE CASCADE,
+    product_id UUID NOT NULL REFERENCES product(id),
+    quantity DECIMAL(12,2) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (customer_id, product_id)
 );
 
--- Tabla de conductores (drivers)
-CREATE TABLE driver (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name VARCHAR(200) NOT NULL,
-    phone VARCHAR(20),
-    user_id UUID REFERENCES app_user(id),
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- === Distribution Plan (operación diaria) ===
 
--- Tabla de coordinadores (coordinators)
-CREATE TABLE coordinator (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name VARCHAR(200) NOT NULL,
-    phone VARCHAR(20),
-    user_id UUID REFERENCES app_user(id),
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- Enums de estado
+CREATE TYPE distribution_plan_status AS ENUM ('planned', 'preparing', 'in_progress', 'completed', 'cancelled');
 
--- Tabla de administradores (admins)
-CREATE TABLE admin (
+-- Entidad principal del plan
+CREATE TABLE distribution_plan (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name VARCHAR(200) NOT NULL,
-    phone VARCHAR(20),
-    user_id UUID REFERENCES app_user(id),
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    plan_date DATE NOT NULL,
+    status distribution_plan_status NOT NULL DEFAULT 'planned',
+    operator_id UUID REFERENCES operator(id),
+    notes TEXT,
+    cutoff_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    -- Identificador humano: número secuencial global (ej: 000123)
+    plan_seq INTEGER,
+    plan_code TEXT UNIQUE
 );
 
 -- Tabla de órdenes de venta (a clientes)
+
+CREATE TYPE sale_order_status AS ENUM ('pending', 'processing', 'out_for_delivery', 'delivered', 'cancelled');
+
 CREATE TABLE sale_order (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     customer_id UUID NOT NULL REFERENCES customer(id),
-    order_date TIMESTAMPTZ DEFAULT NOW(),
-    delivery_date TIMESTAMPTZ,
+    distribution_plan_id UUID NOT NULL REFERENCES distribution_plan(id),
     status sale_order_status NOT NULL DEFAULT 'pending',
     service_fee DECIMAL(12,2) DEFAULT 0,
-    delivery_charge DECIMAL(12,2) DEFAULT 0,
+    delivery_fee DECIMAL(12,2) DEFAULT 0,
     notes TEXT,
-    created_by UUID,
+    created_by_admin_id UUID REFERENCES admin(id) ON DELETE RESTRICT,
+    created_by_customer_id UUID REFERENCES customer(id) ON DELETE RESTRICT,
+    CONSTRAINT sale_order_exactly_one_creator CHECK (
+        (created_by_admin_id IS NOT NULL) <> (created_by_customer_id IS NOT NULL)
+    ),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     -- Identificador humano: número secuencial global (ej: 000123)
     order_seq INTEGER,
@@ -108,182 +134,41 @@ CREATE TABLE sale_item (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     sale_order_id UUID NOT NULL REFERENCES sale_order(id) ON DELETE CASCADE,
     product_id UUID NOT NULL REFERENCES product(id),
-    quantity DECIMAL(12,2) NOT NULL,
-    unit_price DECIMAL(12,2) NOT NULL,
+    required_quantity DECIMAL(12,2) NOT NULL,
     delivered_quantity DECIMAL(12,2),
     delivered_at TIMESTAMPTZ,
     delivered_by UUID,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- (purchase_order se crea más abajo, después de distribution_plan)
-
--- (purchase_item se crea más abajo, después de purchase_order)
-
--- (fulfillment se crea más abajo, después de purchase_item)
-
--- Tabla de carrito de compras (temporal antes de crear orden)
-CREATE TABLE shopping_cart (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    customer_id UUID NOT NULL REFERENCES customer(id) ON DELETE CASCADE,
-    product_id UUID NOT NULL REFERENCES product(id),
-    quantity DECIMAL(12,2) NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    UNIQUE (sale_order_id, product_id)
 );
 
-
--- Índices para mejorar el rendimiento
-CREATE INDEX idx_offer_product ON offer(product_id);
-CREATE INDEX idx_offer_supplier ON offer(supplier_id);
-CREATE INDEX idx_sale_item_order ON sale_item(sale_order_id);
-CREATE INDEX idx_sale_item_product ON sale_item(product_id);
-CREATE INDEX idx_shopping_cart_customer ON shopping_cart(customer_id);
-CREATE INDEX idx_shopping_cart_product ON shopping_cart(product_id);
-
--- Índices para consultas por fecha (reportería)
-CREATE INDEX idx_sale_order_date ON sale_order(order_date);
-CREATE INDEX idx_sale_order_delivery ON sale_order(delivery_date);
-CREATE INDEX idx_sale_order_customer ON sale_order(customer_id);
-
--- Índices para usuarios
-CREATE INDEX idx_app_user_role ON app_user(role);
-CREATE INDEX idx_app_user_email ON app_user(email);
-
--- Data de prueba para usuarios
-INSERT INTO app_user (email, password_hash, role) VALUES
-('admin@jepri.com', '$2a$10$rJJEZpxNK5DnM/I23KnOp.I7D0QeFmB9wVdgvFNwvErgZGl7pNIHe', 'admin'),
-('operador@jepri.com', '$2a$10$rJJEZpxNK5DnM/I23KnOp.I7D0QeFmB9wVdgvFNwvErgZGl7pNIHe', 'operator'),
-('proveedor1@ejemplo.com', '$2a$10$rJJEZpxNK5DnM/I23KnOp.I7D0QeFmB9wVdgvFNwvErgZGl7pNIHe', 'supplier'),
-('proveedor2@ejemplo.com', '$2a$10$rJJEZpxNK5DnM/I23KnOp.I7D0QeFmB9wVdgvFNwvErgZGl7pNIHe', 'supplier'),
-('cliente1@ejemplo.com', '$2a$10$rJJEZpxNK5DnM/I23KnOp.I7D0QeFmB9wVdgvFNwvErgZGl7pNIHe', 'customer'),
-('cliente2@ejemplo.com', '$2a$10$rJJEZpxNK5DnM/I23KnOp.I7D0QeFmB9wVdgvFNwvErgZGl7pNIHe', 'customer');
-
--- Actualizar proveedores con usuarios
-UPDATE supplier SET user_id = (SELECT id FROM app_user WHERE email = 'proveedor1@ejemplo.com') WHERE name = 'Frutas y Verduras El Campesino';
-UPDATE supplier SET user_id = (SELECT id FROM app_user WHERE email = 'proveedor2@ejemplo.com') WHERE name = 'Plaza Bazurto - Puesto 45';
-
--- Actualizar clientes con usuarios
-UPDATE customer SET user_id = (SELECT id FROM app_user WHERE email = 'cliente1@ejemplo.com') WHERE name = 'Restaurante El Buen Sabor';
-UPDATE customer SET user_id = (SELECT id FROM app_user WHERE email = 'cliente2@ejemplo.com') WHERE name = 'Cafetería Central';
-
--- Data de prueba para proveedores
-INSERT INTO supplier (name, contact, phone) VALUES
-('Frutas y Verduras El Campesino', 'Carlos Martínez', '3001234567'),
-('Plaza Bazurto - Puesto 45', 'Ana Rodríguez', '3009876543'),
-('Distribuidora La Cosecha', 'Juan Pérez', '3156789012'),
-('Mercado Central - Local 12', 'María González', '3207654321'),
-('Agroventas del Caribe', 'Luis Hernández', '3108765432');
-
--- Data de prueba para clientes
-INSERT INTO customer (name, contact, phone) VALUES
-('Restaurante El Buen Sabor', 'Pedro Gómez', '3112345678'),
-('Cafetería Central', 'Laura Díaz', '3223456789'),
-('Hotel Caribe Real', 'Roberto Sánchez', '3134567890'),
-('Restaurante La Parrilla', 'Carmen Jiménez', '3045678901'),
-('Comidas Rápidas El Muelle', 'Javier Torres', '3156789012');
-
--- Data de prueba para productos
-INSERT INTO product (name, description, unit, reference_price, main_photo) VALUES
-('Tomate', 'Tomate fresco de la región', 'kg', 4500, 'https://images.unsplash.com/photo-1607305387299-a3d9611cd469?w=300&auto=format&fit=crop'),
-('Cebolla', 'Cebolla cabezona blanca', 'kg', 3800, 'https://images.unsplash.com/photo-1580201092675-a0a6a6cafbb1?w=300&auto=format&fit=crop'),
-('Papa', 'Papa pastusa', 'kg', 2500, 'https://images.unsplash.com/photo-1518977676601-b53f82aba655?w=300&auto=format&fit=crop'),
-('Zanahoria', 'Zanahoria fresca', 'kg', 2200, 'https://images.unsplash.com/photo-1598170845058-32b9d6a5da37?w=300&auto=format&fit=crop'),
-('Plátano', 'Plátano verde', 'kg', 2800, 'https://images.unsplash.com/photo-1603833665858-e61d17a86224?w=300&auto=format&fit=crop'),
-('Yuca', 'Yuca fresca', 'kg', 2000, 'https://images.unsplash.com/photo-1598512752271-33f913a5af13?w=300&auto=format&fit=crop'),
-('Lechuga', 'Lechuga crespa', 'kg', 3500, 'https://images.unsplash.com/photo-1622206151226-18ca2c9ab4a1?w=300&auto=format&fit=crop'),
-('Cilantro', 'Cilantro fresco', 'atado', 1500, 'https://images.unsplash.com/photo-1600512264242-a0811d093856?w=300&auto=format&fit=crop'),
-('Ajo', 'Ajo importado', 'kg', 12000, 'https://images.unsplash.com/photo-1615477550927-6ec8445fcf2d?w=300&auto=format&fit=crop'),
-('Pimentón', 'Pimentón rojo', 'kg', 4200, 'https://images.unsplash.com/photo-1563565375-f3fdfdbefa83?w=300&auto=format&fit=crop');
-
--- Data de prueba para ofertas (relación producto-proveedor)
-INSERT INTO offer (product_id, supplier_id, price, available) VALUES
-((SELECT id FROM product WHERE name = 'Tomate'), (SELECT id FROM supplier WHERE name = 'Frutas y Verduras El Campesino'), 4200, true),
-((SELECT id FROM product WHERE name = 'Cebolla'), (SELECT id FROM supplier WHERE name = 'Frutas y Verduras El Campesino'), 3500, true),
-((SELECT id FROM product WHERE name = 'Papa'), (SELECT id FROM supplier WHERE name = 'Frutas y Verduras El Campesino'), 2300, true),
-((SELECT id FROM product WHERE name = 'Zanahoria'), (SELECT id FROM supplier WHERE name = 'Frutas y Verduras El Campesino'), 2000, true),
-((SELECT id FROM product WHERE name = 'Tomate'), (SELECT id FROM supplier WHERE name = 'Plaza Bazurto - Puesto 45'), 4300, true),
-((SELECT id FROM product WHERE name = 'Plátano'), (SELECT id FROM supplier WHERE name = 'Plaza Bazurto - Puesto 45'), 2600, true),
-((SELECT id FROM product WHERE name = 'Yuca'), (SELECT id FROM supplier WHERE name = 'Plaza Bazurto - Puesto 45'), 1800, true),
-((SELECT id FROM product WHERE name = 'Lechuga'), (SELECT id FROM supplier WHERE name = 'Distribuidora La Cosecha'), 3300, true),
-((SELECT id FROM product WHERE name = 'Cilantro'), (SELECT id FROM supplier WHERE name = 'Distribuidora La Cosecha'), 1300, true),
-((SELECT id FROM product WHERE name = 'Ajo'), (SELECT id FROM supplier WHERE name = 'Mercado Central - Local 12'), 11500, true),
-((SELECT id FROM product WHERE name = 'Pimentón'), (SELECT id FROM supplier WHERE name = 'Mercado Central - Local 12'), 4000, true),
-((SELECT id FROM product WHERE name = 'Tomate'), (SELECT id FROM supplier WHERE name = 'Agroventas del Caribe'), 4400, true),
-((SELECT id FROM product WHERE name = 'Cebolla'), (SELECT id FROM supplier WHERE name = 'Agroventas del Caribe'), 3700, true);
-
--- === Distribution Plan (operación diaria) ===
-
--- Enums de estado
-CREATE TYPE distribution_plan_status AS ENUM ('planned', 'preparing', 'in_progress', 'completed', 'cancelled');
-CREATE TYPE distribution_plan_order_status AS ENUM ('pending', 'out_for_delivery', 'delivered', 'failed', 'cancelled');
-
--- Entidad principal del plan
-CREATE TABLE distribution_plan (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    plan_date DATE NOT NULL,
-    status distribution_plan_status NOT NULL DEFAULT 'planned',
-    coordinator_id UUID REFERENCES coordinator(id),
-    notes TEXT,
-    cutoff_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    -- Identificador humano: número secuencial global (ej: 000123)
-    plan_seq INTEGER,
-    plan_code TEXT UNIQUE
-);
-
--- (Tabla distribution_plan_worker eliminada en MVP simplificado; se usa coordinator_id en distribution_plan)
-
--- Órdenes incluidas en el plan (lista ordenada)
-CREATE TABLE distribution_plan_order (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    distribution_plan_id UUID NOT NULL REFERENCES distribution_plan(id) ON DELETE CASCADE,
-    sale_order_id UUID NOT NULL REFERENCES sale_order(id) ON DELETE CASCADE,
-    sequence INTEGER NOT NULL,
-    status distribution_plan_order_status NOT NULL DEFAULT 'pending',
-    delivered_at TIMESTAMPTZ,
-    assigned_user_id UUID REFERENCES app_user(id),
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE (distribution_plan_id, sale_order_id),
-    UNIQUE (distribution_plan_id, sequence)
-);
-
--- Índices
-CREATE INDEX idx_distribution_plan_date ON distribution_plan(plan_date);
-CREATE INDEX idx_distribution_plan_coordinator ON distribution_plan(coordinator_id);
-CREATE INDEX idx_distribution_plan_order_plan ON distribution_plan_order(distribution_plan_id);
-CREATE INDEX idx_distribution_plan_order_assignee ON distribution_plan_order(assigned_user_id);
--- Cardinalidad: cada sale_order sólo puede estar en un plan
-CREATE UNIQUE INDEX idx_distribution_plan_order_sale_order_unique ON distribution_plan_order(sale_order_id);
+CREATE TYPE purchase_order_status AS ENUM ('created', 'published', 'accepted', 'delivered', 'cancelled', 'rejected');
 
 -- Tabla de órdenes de compra (a proveedores)
 CREATE TABLE purchase_order (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     supplier_id UUID NOT NULL REFERENCES supplier(id) ON DELETE RESTRICT,
     distribution_plan_id UUID NOT NULL REFERENCES distribution_plan(id) ON DELETE RESTRICT,
-    order_date TIMESTAMPTZ DEFAULT NOW(),
     status purchase_order_status NOT NULL DEFAULT 'created',
     notes TEXT,
-    created_by UUID,
+    created_by UUID NOT NULL REFERENCES auth(id) ON DELETE RESTRICT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     received_at TIMESTAMPTZ,
     -- Identificador humano: número secuencial global (ej: 000123)
     purchase_seq INTEGER,
-    purchase_code TEXT UNIQUE
+    purchase_code TEXT UNIQUE,
+    UNIQUE (supplier_id, distribution_plan_id)
 );
 
 -- Tabla de items de compra
 CREATE TABLE purchase_item (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     purchase_order_id UUID NOT NULL REFERENCES purchase_order(id) ON DELETE CASCADE,
-    product_id UUID NOT NULL REFERENCES product(id),
-    supplier_id UUID NOT NULL REFERENCES supplier(id),
+    offer_id UUID NOT NULL REFERENCES offer(id),
     quantity DECIMAL(12,2) NOT NULL,
-    estimated_price DECIMAL(12,2),
     actual_price DECIMAL(12,2),
     received_quantity DECIMAL(12,2),
-    received_by UUID,
+    received_by UUID REFERENCES auth(id) ON DELETE RESTRICT,
     received_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -293,77 +178,9 @@ CREATE TABLE fulfillment (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     sale_item_id UUID NOT NULL REFERENCES sale_item(id) ON DELETE CASCADE,
     purchase_item_id UUID NOT NULL REFERENCES purchase_item(id) ON DELETE CASCADE,
-    quantity DECIMAL(12,2) NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (sale_item_id, purchase_item_id)
 );
-
--- Índices reubicados para purchase_item, purchase_order y fulfillment
-CREATE INDEX idx_purchase_item_order ON purchase_item(purchase_order_id);
-CREATE INDEX idx_purchase_item_product ON purchase_item(product_id);
-CREATE INDEX idx_purchase_item_supplier ON purchase_item(supplier_id);
-CREATE INDEX idx_purchase_order_plan ON purchase_order(distribution_plan_id);
-CREATE INDEX idx_purchase_order_date ON purchase_order(order_date);
-CREATE INDEX idx_fulfillment_sale_item ON fulfillment(sale_item_id);
-CREATE INDEX idx_fulfillment_purchase_item ON fulfillment(purchase_item_id);
-
--- Vistas para totales y estado efectivo (ubicadas después de crear distribution_plan y distribution_plan_order)
--- Vista para calcular el total de las órdenes de venta
-CREATE OR REPLACE VIEW sale_order_with_total AS
-SELECT 
-    so.*,
-    COALESCE(SUM(si.quantity * si.unit_price), 0) + so.service_fee + so.delivery_charge AS total
-FROM 
-    sale_order so
-LEFT JOIN 
-    sale_item si ON so.id = si.sale_order_id
-GROUP BY 
-    so.id;
-
--- Vista que agrega estado efectivo derivado del distribution plan
-CREATE OR REPLACE VIEW sale_order_with_total_and_status AS
-SELECT 
-    so.*,
-    COALESCE(SUM(si.quantity * si.unit_price), 0) + so.service_fee + so.delivery_charge AS total,
-    CASE
-        WHEN so.status = 'cancelled' THEN 'cancelled'::sale_order_status
-        WHEN dpo.status IS NULL THEN so.status
-        WHEN dpo.status = 'pending' THEN 'processing'::sale_order_status
-        WHEN dpo.status = 'out_for_delivery' THEN 'out_for_delivery'::sale_order_status
-        WHEN dpo.status = 'delivered' THEN 'delivered'::sale_order_status
-        WHEN dpo.status = 'failed' THEN 'processing'::sale_order_status
-        WHEN dpo.status = 'cancelled' THEN CASE WHEN so.status = 'cancelled' THEN 'cancelled'::sale_order_status ELSE 'processing'::sale_order_status END
-    END AS effective_status
-FROM 
-    sale_order so
-LEFT JOIN 
-    sale_item si ON so.id = si.sale_order_id
-LEFT JOIN LATERAL (
-    SELECT dpo.status
-    FROM distribution_plan_order dpo
-    JOIN distribution_plan dp ON dp.id = dpo.distribution_plan_id
-    WHERE dpo.sale_order_id = so.id
-    ORDER BY dp.plan_date DESC, dpo.created_at DESC
-    LIMIT 1
-) dpo ON TRUE
-GROUP BY 
-    so.id, dpo.status;
-
--- Vista para total de órdenes de compra (derivado de purchase_item)
-CREATE OR REPLACE VIEW purchase_order_with_total AS
-SELECT 
-    po.*,
-    COALESCE(SUM(COALESCE(pi.actual_price, pi.estimated_price) * pi.quantity), 0) AS total
-FROM 
-    purchase_order po
-LEFT JOIN 
-    purchase_item pi ON pi.purchase_order_id = po.id
-GROUP BY 
-    po.id;
-
--- ================================
--- Códigos humanos con contador global (sin fecha)
--- ================================
 
 -- Sequences globales
 CREATE SEQUENCE IF NOT EXISTS sale_order_seq START 1;
@@ -377,12 +194,11 @@ DECLARE
 BEGIN
     seq := nextval('sale_order_seq');
     NEW.order_seq := seq;
-    NEW.order_code := LPAD(seq::text, 6, '0');
+    NEW.order_code := LPAD(seq::text, 4, '0');
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_set_sale_order_code ON sale_order;
 CREATE TRIGGER trg_set_sale_order_code
 BEFORE INSERT ON sale_order
 FOR EACH ROW EXECUTE FUNCTION set_sale_order_code();
@@ -393,12 +209,11 @@ DECLARE
 BEGIN
     seq := nextval('purchase_order_seq');
     NEW.purchase_seq := seq;
-    NEW.purchase_code := LPAD(seq::text, 6, '0');
+    NEW.purchase_code := LPAD(seq::text, 4, '0');
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_set_purchase_order_code ON purchase_order;
 CREATE TRIGGER trg_set_purchase_order_code
 BEFORE INSERT ON purchase_order
 FOR EACH ROW EXECUTE FUNCTION set_purchase_order_code();
@@ -409,265 +224,52 @@ DECLARE
 BEGIN
     seq := nextval('distribution_plan_seq');
     NEW.plan_seq := seq;
-    NEW.plan_code := LPAD(seq::text, 6, '0');
+    NEW.plan_code := LPAD(seq::text, 4, '0');
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_set_distribution_plan_code ON distribution_plan;
 CREATE TRIGGER trg_set_distribution_plan_code
 BEFORE INSERT ON distribution_plan
 FOR EACH ROW EXECUTE FUNCTION set_distribution_plan_code();
 
--- ================================
--- Automatizaciones de estado según excepciones
--- ================================
-
--- Al insertar el primer purchase_order del plan: pasar plan de 'planned' a 'preparing'
-CREATE OR REPLACE FUNCTION set_plan_preparing_on_po_insert() RETURNS TRIGGER AS $$
-BEGIN
-    UPDATE distribution_plan dp
-    SET status = 'preparing'
-    WHERE dp.id = NEW.distribution_plan_id
-      AND dp.status = 'planned';
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS trg_set_plan_preparing_on_po_insert ON purchase_order;
-CREATE TRIGGER trg_set_plan_preparing_on_po_insert
-AFTER INSERT ON purchase_order
-FOR EACH ROW EXECUTE FUNCTION set_plan_preparing_on_po_insert();
-
--- Al registrar por primera vez received_quantity en un purchase_item:
--- marcar received_at del purchase_order y pasar plan de 'preparing' a 'in_progress'
-CREATE OR REPLACE FUNCTION set_po_received_at_and_plan_in_progress_on_pi_update() RETURNS TRIGGER AS $$
+-- Cleanup orphan purchase_items and empty purchase_orders (status 'created') after fulfillment deletions
+CREATE OR REPLACE FUNCTION cleanup_purchase_items_on_fulfillment_delete() RETURNS TRIGGER AS $$
 DECLARE
-    v_po_id UUID;
-    v_dp_id UUID;
+    po_id UUID;
 BEGIN
-    IF COALESCE(NEW.received_quantity, 0) > 0 AND COALESCE(OLD.received_quantity, 0) <= 0 THEN
-        v_po_id := NEW.purchase_order_id;
-        UPDATE purchase_order
-        SET received_at = COALESCE(received_at, NOW())
-        WHERE id = v_po_id;
+    -- Get the purchase_order of the affected purchase_item
+    SELECT purchase_order_id INTO po_id
+    FROM purchase_item
+    WHERE id = OLD.purchase_item_id;
 
-        SELECT distribution_plan_id INTO v_dp_id FROM purchase_order WHERE id = v_po_id;
-        UPDATE distribution_plan
-        SET status = 'in_progress'
-        WHERE id = v_dp_id AND status = 'preparing';
+    -- If no fulfillments remain for this purchase_item, delete it
+    IF NOT EXISTS (
+        SELECT 1 FROM fulfillment WHERE purchase_item_id = OLD.purchase_item_id
+    ) THEN
+        DELETE FROM purchase_item WHERE id = OLD.purchase_item_id;
     END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_set_po_received_at_and_plan_in_progress_on_pi_update ON purchase_item;
-CREATE TRIGGER trg_set_po_received_at_and_plan_in_progress_on_pi_update
-AFTER UPDATE OF received_quantity ON purchase_item
-FOR EACH ROW EXECUTE FUNCTION set_po_received_at_and_plan_in_progress_on_pi_update();
-
--- Completar el plan cuando todas sus órdenes asociadas están en estado final (delivered/cancelled)
-CREATE OR REPLACE FUNCTION set_plan_completed_on_dpo_status_update() RETURNS TRIGGER AS $$
-DECLARE
-    remaining_count INT;
-BEGIN
-    IF NEW.status IN ('delivered', 'cancelled') THEN
-        SELECT COUNT(*) INTO remaining_count
-        FROM distribution_plan_order dpo
-        WHERE dpo.distribution_plan_id = NEW.distribution_plan_id
-          AND dpo.status IN ('pending', 'out_for_delivery', 'failed');
-
-        IF remaining_count = 0 THEN
-            UPDATE distribution_plan dp
-            SET status = 'completed'
-            WHERE dp.id = NEW.distribution_plan_id AND dp.status <> 'cancelled';
+    -- If the purchase_order has no items left and is 'created', delete it
+    IF po_id IS NOT NULL THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM purchase_item WHERE purchase_order_id = po_id
+        ) THEN
+            IF EXISTS (
+                SELECT 1 FROM purchase_order WHERE id = po_id AND status = 'created'
+            ) THEN
+                DELETE FROM purchase_order WHERE id = po_id;
+            END IF;
         END IF;
     END IF;
-    RETURN NEW;
+
+    RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_set_plan_completed_on_dpo_status_update ON distribution_plan_order;
-CREATE TRIGGER trg_set_plan_completed_on_dpo_status_update
-AFTER UPDATE OF status ON distribution_plan_order
-FOR EACH ROW EXECUTE FUNCTION set_plan_completed_on_dpo_status_update();
+DROP TRIGGER IF EXISTS trg_cleanup_purchase_items_on_fulfillment_delete ON fulfillment;
 
--- Índices únicos (si no existen)
-CREATE UNIQUE INDEX IF NOT EXISTS sale_order_order_code_unique_idx ON sale_order(order_code);
-CREATE UNIQUE INDEX IF NOT EXISTS purchase_order_purchase_code_unique_idx ON purchase_order(purchase_code);
-CREATE UNIQUE INDEX IF NOT EXISTS distribution_plan_plan_code_unique_idx ON distribution_plan(plan_code);
-CREATE UNIQUE INDEX IF NOT EXISTS sale_order_order_seq_unique_idx ON sale_order(order_seq);
-CREATE UNIQUE INDEX IF NOT EXISTS purchase_order_purchase_seq_unique_idx ON purchase_order(purchase_seq);
-CREATE UNIQUE INDEX IF NOT EXISTS distribution_plan_plan_seq_unique_idx ON distribution_plan(plan_seq);
-
--- Migración: backfill códigos globales para filas existentes sin código y ajustar sequences
-DO $$
-DECLARE
-    max_so INT;
-    max_po INT;
-    max_dp INT;
-BEGIN
-    -- Sale orders
-    UPDATE sale_order
-    SET order_seq = s.seq,
-        order_code = LPAD(s.seq::text, 6, '0')
-    FROM (
-        SELECT id, row_number() OVER (ORDER BY created_at, id) AS seq
-        FROM sale_order WHERE order_code IS NULL
-    ) AS s
-    WHERE sale_order.id = s.id;
-
-    SELECT COALESCE(MAX(order_seq), 0) INTO max_so FROM sale_order;
-    IF max_so > 0 THEN
-        PERFORM setval('sale_order_seq', max_so);
-    ELSE
-        PERFORM setval('sale_order_seq', 1, false);
-    END IF;
-
-    -- Purchase orders
-    UPDATE purchase_order
-    SET purchase_seq = p.seq,
-        purchase_code = LPAD(p.seq::text, 6, '0')
-    FROM (
-        SELECT id, row_number() OVER (ORDER BY created_at, id) AS seq
-        FROM purchase_order WHERE purchase_code IS NULL
-    ) AS p
-    WHERE purchase_order.id = p.id;
-
-    SELECT COALESCE(MAX(purchase_seq), 0) INTO max_po FROM purchase_order;
-    IF max_po > 0 THEN
-        PERFORM setval('purchase_order_seq', max_po);
-    ELSE
-        PERFORM setval('purchase_order_seq', 1, false);
-    END IF;
-
-    -- Distribution plans
-    UPDATE distribution_plan
-    SET plan_seq = d.seq,
-        plan_code = LPAD(d.seq::text, 6, '0')
-    FROM (
-        SELECT id, row_number() OVER (ORDER BY created_at, id) AS seq
-        FROM distribution_plan WHERE plan_code IS NULL
-    ) AS d
-    WHERE distribution_plan.id = d.id;
-
-    SELECT COALESCE(MAX(plan_seq), 0) INTO max_dp FROM distribution_plan;
-    IF max_dp > 0 THEN
-        PERFORM setval('distribution_plan_seq', max_dp);
-    ELSE
-        PERFORM setval('distribution_plan_seq', 1, false);
-    END IF;
-END $$;
-
--- ================================
--- Órdenes de venta de ejemplo (pendientes)
--- ================================
-
--- Pedido 1: Restaurante El Buen Sabor
-WITH so1 AS (
-  INSERT INTO sale_order (customer_id, status, service_fee, delivery_charge, notes)
-  VALUES ((SELECT id FROM customer WHERE name = 'Restaurante El Buen Sabor'), 'pending', 5000, 10000, 'Entrega mañana')
-  RETURNING id
-)
-INSERT INTO sale_item (sale_order_id, product_id, quantity, unit_price)
-SELECT so1.id, (SELECT id FROM product WHERE name = 'Tomate'), 10, (SELECT reference_price FROM product WHERE name = 'Tomate') FROM so1
-UNION ALL
-SELECT so1.id, (SELECT id FROM product WHERE name = 'Cebolla'), 5, (SELECT reference_price FROM product WHERE name = 'Cebolla') FROM so1
-UNION ALL
-SELECT so1.id, (SELECT id FROM product WHERE name = 'Lechuga'), 3, (SELECT reference_price FROM product WHERE name = 'Lechuga') FROM so1;
-
--- Pedido 2: Cafetería Central
-WITH so2 AS (
-  INSERT INTO sale_order (customer_id, status, service_fee, delivery_charge, notes)
-  VALUES ((SELECT id FROM customer WHERE name = 'Cafetería Central'), 'pending', 3500, 8000, 'Entrega por la tarde')
-  RETURNING id
-)
-INSERT INTO sale_item (sale_order_id, product_id, quantity, unit_price)
-SELECT so2.id, (SELECT id FROM product WHERE name = 'Papa'), 8, (SELECT reference_price FROM product WHERE name = 'Papa') FROM so2
-UNION ALL
-SELECT so2.id, (SELECT id FROM product WHERE name = 'Zanahoria'), 6, (SELECT reference_price FROM product WHERE name = 'Zanahoria') FROM so2
-UNION ALL
-SELECT so2.id, (SELECT id FROM product WHERE name = 'Ajo'), 2, (SELECT reference_price FROM product WHERE name = 'Ajo') FROM so2;
-
--- ================================
--- Ejemplo: Plan de distribución vinculado con órdenes de venta y compra
--- ================================
-
--- Crea un plan para mañana si no existe ya uno para esa fecha,
--- enlaza las dos sale orders de ejemplo al plan, y crea órdenes de compra
--- para esa misma fecha con ítems asociados a proveedores existentes.
-WITH dp AS (
-  INSERT INTO distribution_plan (plan_date, status, cutoff_at)
-  SELECT CURRENT_DATE + INTERVAL '1 day', 'planned', NOW()
-  WHERE NOT EXISTS (
-    SELECT 1 FROM distribution_plan WHERE plan_date = CURRENT_DATE + INTERVAL '1 day'
-  )
-  RETURNING id, plan_date
-), so_a AS (
-  SELECT id FROM sale_order
-  WHERE customer_id = (SELECT id FROM customer WHERE name = 'Restaurante El Buen Sabor')
-  ORDER BY created_at DESC
-  LIMIT 1
-), so_b AS (
-  SELECT id FROM sale_order
-  WHERE customer_id = (SELECT id FROM customer WHERE name = 'Cafetería Central')
-  ORDER BY created_at DESC
-  LIMIT 1
-), dpo_ins AS (
-  INSERT INTO distribution_plan_order (distribution_plan_id, sale_order_id, sequence, status)
-  SELECT dp.id, so_a.id, 1, 'out_for_delivery'::distribution_plan_order_status FROM dp, so_a
-  UNION ALL
-  SELECT dp.id, so_b.id, 2, 'delivered'::distribution_plan_order_status FROM dp, so_b
-  RETURNING distribution_plan_id
-), po1 AS (
-  INSERT INTO purchase_order (supplier_id, distribution_plan_id, status, notes)
-  SELECT (SELECT id FROM supplier WHERE name = 'Agroventas del Caribe'),
-         (SELECT id FROM dp),
-         'created'::purchase_order_status,
-         'Compra para plan (Agroventas del Caribe)'
-  FROM dp
-  RETURNING id, supplier_id
-), po2 AS (
-  INSERT INTO purchase_order (supplier_id, distribution_plan_id, status, notes)
-  SELECT (SELECT id FROM supplier WHERE name = 'Mercado Central - Local 12'),
-         (SELECT id FROM dp),
-         'created'::purchase_order_status,
-         'Compra para plan (Mercado Central - Local 12)'
-  FROM dp
-  RETURNING id, supplier_id
-)
-INSERT INTO purchase_item (purchase_order_id, product_id, supplier_id, quantity, estimated_price)
-SELECT po1.id,
-       (SELECT id FROM product WHERE name = 'Tomate'),
-       po1.supplier_id,
-       15,
-       (SELECT reference_price FROM product WHERE name = 'Tomate')
-FROM po1
-UNION ALL
-SELECT po1.id,
-       (SELECT id FROM product WHERE name = 'Cebolla'),
-       po1.supplier_id,
-       10,
-       (SELECT reference_price FROM product WHERE name = 'Cebolla')
-FROM po1
-UNION ALL
-SELECT po2.id,
-       (SELECT id FROM product WHERE name = 'Ajo'),
-       po2.supplier_id,
-       4,
-       (SELECT reference_price FROM product WHERE name = 'Ajo')
-FROM po2;
-
--- Crear fulfillments de ejemplo enlazando items de venta del plan al ítem de compra del mismo producto
-INSERT INTO fulfillment (sale_item_id, purchase_item_id, quantity)
-SELECT si.id, pi.id, LEAST(si.quantity, pi.quantity)
-FROM distribution_plan dp
-JOIN distribution_plan_order dpo ON dpo.distribution_plan_id = dp.id
-JOIN sale_item si ON si.sale_order_id = dpo.sale_order_id
-JOIN purchase_order po ON po.distribution_plan_id = dp.id
-JOIN purchase_item pi ON pi.purchase_order_id = po.id AND pi.product_id = si.product_id
-WHERE dp.plan_date = CURRENT_DATE + INTERVAL '1 day'
-  AND NOT EXISTS (
-    SELECT 1 FROM fulfillment f
-    WHERE f.sale_item_id = si.id AND f.purchase_item_id = pi.id
-  );
+CREATE TRIGGER trg_cleanup_purchase_items_on_fulfillment_delete
+AFTER DELETE ON fulfillment
+FOR EACH ROW
+EXECUTE FUNCTION cleanup_purchase_items_on_fulfillment_delete();

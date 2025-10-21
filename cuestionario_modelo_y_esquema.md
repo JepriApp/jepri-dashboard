@@ -41,7 +41,7 @@ Este formulario está pensado para validar el modelo de negocio y el esquema act
 - ¿Los estados de `purchase_order` (`created`, `accepted`, `delivered`, `cancelled`, `rejected`) tienen transiciones definidas? ¿Quién las opera (operador vs proveedor)?
   - Respuesta: Operador.
 
-## Ofertas y Precios
+## catálogos y Precios
 - `offer` usa `UNIQUE(product_id, supplier_id)` y un `price` activo por proveedor. ¿Necesitamos histórico/versionado de precios o el último precio disponible basta para MVP?
   - Respuesta: No. El último precio disponible es suficiente.
 - `sale_item.unit_price`: ¿siempre viene del `product.reference_price` del momento, o se puede negociar por cliente?

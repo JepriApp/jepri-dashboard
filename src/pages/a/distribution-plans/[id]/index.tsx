@@ -16,6 +16,7 @@ import {
   Descriptions,
   Statistic,
   Tooltip,
+  theme,
 } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
@@ -24,6 +25,9 @@ import { supabase } from "@/services/supabase.client";
 import type { SaleOrder, SaleItem } from "@/services/supabase.service";
 import { getPendingOrdersForAdmin } from "@/services/supabase.service";
 import { formatPriceAccounting } from "@/utils/formatPrice";
+import { useAuthStore } from "@/store/auth.store";
+import DistributionPlanLayout from "@/components/layout/DistributionPlanLayout";
+import { ArrowDownOutlined, PlusOutlined } from "@ant-design/icons";
 
 type OfferOption = {
   id: string;
@@ -69,54 +73,56 @@ function usePlanData(planId?: string) {
       const { data: plan, error: planErr } = await supabase
         .from("distribution_plan")
         .select(
-          "id, plan_date, status, notes, plan_code, cutoff_at, created_at, updated_at, coordinator:coordinator_id ( id, name )"
+          "id, plan_date, status, notes, plan_code, cutoff_at, created_at, updated_at, operator:operator_id ( id, name )"
         )
         .eq("id", planId)
         .single();
       if (planErr) throw planErr;
 
-      const { data: rows, error: dpoErr } = await supabase
-        .from("distribution_plan_order")
+      const { data: rows, error: soErr } = await supabase
+        .from("sale_order")
         .select(
           `
-          id, sequence, status,
-          sale_order:sale_order_id (
+          id,
+          created_at,
+          status,
+          notes,
+          order_code,
+          service_fee,
+          delivery_fee,
+          customer:customer_id (
+            name,
+            auth:user_id ( email )
+          ),
+          sale_item:sale_item (
             id,
-            order_date,
-            delivery_date,
-            status,
-            notes,
-            order_code,
-            service_fee,
-            delivery_charge,
-            customer:customer_id (
-              name,
-              app_user:user_id ( email )
-            ),
-            sale_item:sale_item (
+            product_id,
+            required_quantity,
+            delivered_quantity,
+            product:product_id (
               id,
-              product_id,
-              quantity,
-              unit_price,
-              product:product_id (
-                id,
-                name,
-                unit,
-                description,
-                reference_price,
-                main_photo
-              ),
-              fulfillment:fulfillment (
+              name,
+              unit,
+              description,
+              reference_price,
+              main_photo
+            ),
+            fulfillment:fulfillment (
+              id,
+              purchase_item:purchase_item_id (
                 id,
                 quantity,
-                purchase_item:purchase_item_id (
+                actual_price,
+                purchase_order:purchase_order_id (
                   id,
-                  quantity,
-                  purchase_order:purchase_order_id (
-                    id,
-                    purchase_code,
-                    supplier:supplier_id ( id, name )
-                  )
+                  purchase_code,
+                  supplier:supplier_id ( id, name )
+                ),
+                offer:offer_id (
+                  id,
+                  price,
+                  product:product_id ( id, name, unit ),
+                  supplier:supplier_id ( id, name )
                 )
               )
             )
@@ -124,36 +130,48 @@ function usePlanData(planId?: string) {
         `
         )
         .eq("distribution_plan_id", planId)
-        .order("sequence", { ascending: true });
-      if (dpoErr) throw dpoErr;
+        .order("created_at", { ascending: true });
+      if (soErr) throw soErr;
 
       const orders: PlanOrder[] = (rows || []).map((r: any) => {
-        const saleItems = r.sale_order?.sale_item ?? [];
-        const service_fee = r.sale_order?.service_fee ?? 0;
-        const delivery_charge = r.sale_order?.delivery_charge ?? 0;
+        const rawItems = r.sale_item ?? [];
+        const saleItems = rawItems.map((it: any) => {
+          const assigned_quantity = (
+            Array.isArray(it.fulfillment) ? it.fulfillment : []
+          ).reduce(
+            (sum: number, f: any) =>
+              sum + Number(f?.purchase_item?.quantity ?? 0),
+            0
+          );
+          return {
+            ...it,
+            quantity: Number(it.required_quantity || 0),
+            unit_price: Number(it?.product?.reference_price ?? 0),
+            assigned_quantity,
+          };
+        });
+        const service_fee = r?.service_fee ?? 0;
+        const delivery_charge = r?.delivery_fee ?? 0;
         const subtotal = saleItems.reduce(
           (acc: number, it: any) =>
             acc + Number(it.quantity) * Number(it.unit_price || 0),
           0
         );
-        const total =
-          typeof r.sale_order?.total === "number"
-            ? r.sale_order.total
-            : subtotal + service_fee + delivery_charge;
+        const total = subtotal + service_fee + delivery_charge;
         return {
-          id: r.sale_order?.id,
-          order_code: r.sale_order?.order_code,
-          order_date: r.sale_order?.order_date,
-          delivery_date: r.sale_order?.delivery_date,
-          status: r.sale_order?.status,
+          id: r.id,
+          order_code: r.order_code,
+          order_date: r.created_at,
+          delivery_date: plan?.plan_date,
+          status: r.status,
           total,
           subtotal,
           service_fee,
           delivery_charge,
-          notes: r.sale_order?.notes,
+          notes: r.notes,
           user: {
-            name: r.sale_order?.customer?.name ?? "",
-            email: r.sale_order?.customer?.app_user?.email ?? "",
+            name: r.customer?.name ?? "",
+            email: r.customer?.auth?.email ?? "",
           },
           items: saleItems,
         } as PlanOrder;
@@ -187,22 +205,23 @@ function usePurchaseOrdersForPlan(distributionPlanId?: string) {
           supplier:supplier_id ( id, name ),
           purchase_item:purchase_item (
             id,
-            product_id,
             quantity,
-            estimated_price,
             actual_price,
-            product:product_id (
+            offer:offer_id (
               id,
-              name,
-              unit
+              price,
+              product:product_id (
+                id,
+                name,
+                unit
+              )
             ),
             fulfillment:fulfillment (
               id,
-              quantity,
               sale_item:sale_item_id (
                 id,
-                quantity,
-                sale_order:sale_order_id ( id, order_code ),
+                required_quantity,
+                sale_order:sale_order_id ( id, order_code, customer:customer_id ( id, name ) ),
                 product:product_id ( id, name, unit )
               )
             )
@@ -225,23 +244,66 @@ const PlanEditorPage = () => {
   const orders = data?.orders || [];
   const dpoStatusCounts = data?.dpoStatusCounts || {};
 
-  // Modal para vincular órdenes existentes
-  const [linkModalOpen, setLinkModalOpen] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [linking, setLinking] = useState(false);
-  const {
-    data: pendingOrders = [],
-    isLoading: loadingPendingOrders,
-  } = useQuery<SaleOrder[]>({
-    queryKey: ["pendingOrdersForLinking"],
-    queryFn: getPendingOrdersForAdmin,
-    staleTime: 60_000,
-  });
+
+  // Estado del modal para editar status del plan
+  const [statusModalOpen, setStatusModalOpen] = useState(false);
+  const [nextStatus, setNextStatus] = useState<string>(
+    plan?.status ?? "planned"
+  );
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
+  // Estado de resaltado de vínculos (por id de orden de venta)
+  const [highlightSaleOrderId, setHighlightSaleOrderId] = useState<
+    string | null
+  >(null);
+  // Estado de resaltado de vínculos (por id de fulfillment)
+  const [highlightFulfillmentId, setHighlightFulfillmentId] = useState<
+    string | null
+  >(null);
+  // Tokens de tema para estilos de Tag (consistentes con assign-suppliers)
+  const { token } = theme.useToken();
+  const PLAN_STATUSES = [
+    { label: "Planificado", value: "planned" },
+    { label: "Preparando", value: "preparing" },
+    { label: "En progreso", value: "in_progress" },
+    { label: "Completado", value: "completed" },
+    { label: "Cancelado", value: "cancelled" },
+  ];
+
+  const openStatusModal = () => {
+    setNextStatus(plan?.status ?? "planned");
+    setStatusModalOpen(true);
+  };
+
+  const handleUpdatePlanStatus = async () => {
+    if (!planId) {
+      message.error("Plan no identificado");
+      return;
+    }
+    try {
+      setIsUpdatingStatus(true);
+      const { error } = await supabase
+        .from("distribution_plan")
+        .update({ status: nextStatus })
+        .eq("id", String(planId));
+      if (error) throw error;
+      message.success("Estado del plan actualizado");
+      setStatusModalOpen(false);
+      await refetch();
+    } catch (e) {
+      console.error(e);
+      message.error("No se pudo actualizar el estado");
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
 
   const [assignments, setAssignments] = useState<Record<string, Assignment[]>>(
     {}
   );
-  // Precargar ofertas de todos los productos involucrados
+  // Precargar catálogos de todos los productos involucrados
   type OfferWithProductId = OfferOption & { product_id: string };
   const itemsFlat = useMemo(() => {
     const all: SaleItem[] = [];
@@ -281,8 +343,7 @@ const PlanEditorPage = () => {
       const { data, error } = await supabase
         .from("offer")
         .select(`id, price, product_id, supplier:supplier_id ( id, name )`)
-        .in("product_id", productIds)
-        .eq("available", true);
+        .in("product_id", productIds);
       if (error) throw error;
       return (data || []).map((o: any) => ({
         id: o.id,
@@ -318,7 +379,7 @@ const PlanEditorPage = () => {
     !!statusNow && ["in_progress", "completed"].includes(statusNow);
   const allowAssignments = statusNow === "preparing";
 
-  // Eliminado: carga manual de ofertas. Ahora están precargadas con React Query.
+  // Eliminado: carga manual de catálogos. Ahora están precargadas con React Query.
 
   function upsertAssignment(
     saleItemId: string,
@@ -346,106 +407,25 @@ const PlanEditorPage = () => {
     });
   }
 
-  function removeAssignmentRow(saleItemId: string, idx: number) {
-    setAssignments((prev) => {
-      const current = prev[saleItemId] || [];
-      const updated = current.filter((_, i) => i !== idx);
-      return { ...prev, [saleItemId]: updated };
-    });
-  }
-
-  async function handleGeneratePurchaseOrders() {
-    if (!plan || !plan.plan_date) {
-      message.warning("El plan no está cargado");
-      return;
-    }
-    const bySupplier = new Map<
-      string,
-      {
-        supplier_name: string;
-        items: Array<{ product_id: string; quantity: number; price: number }>;
-      }
-    >();
-    orders.forEach((order) => {
-      (order.items || []).forEach((item) => {
-        const rows = assignments[item.id] || [];
-        rows.forEach((row) => {
-          if (!row.supplier_id || row.quantity <= 0) return;
-          if (!bySupplier.has(row.supplier_id)) {
-            bySupplier.set(row.supplier_id, {
-              supplier_name: row.supplier_name,
-              items: [],
-            });
-          }
-          bySupplier.get(row.supplier_id)!.items.push({
-            product_id: item.product_id,
-            quantity: row.quantity,
-            price: row.price,
-          });
-        });
-      });
-    });
-
-    if (bySupplier.size === 0) {
-      message.warning("Asigne al menos un proveedor por item");
-      return;
-    }
-
-    try {
-      const poRows = Array.from(bySupplier.entries()).map(([supplier_id]) => ({
-        supplier_id,
-        distribution_plan_id: String(plan.id),
-        order_date: dayjs().toISOString(),
-        total: 0,
-      }));
-      const { data: createdPOs, error: poErr } = await supabase
-        .from("purchase_order")
-        .insert(poRows)
-        .select();
-      if (poErr) throw poErr;
-      const poBySupplier = new Map<string, string>();
-      createdPOs.forEach((po: any) => poBySupplier.set(po.supplier_id, po.id));
-
-      const piRows: any[] = [];
-      bySupplier.forEach((payload, supplier_id) => {
-        const purchase_order_id = poBySupplier.get(supplier_id)!;
-        payload.items.forEach((it) => {
-          piRows.push({
-            purchase_order_id,
-            product_id: it.product_id,
-            supplier_id,
-            quantity: it.quantity,
-            estimated_price: it.price,
-          });
-        });
-      });
-      const { error: piErr } = await supabase
-        .from("purchase_item")
-        .insert(piRows);
-      if (piErr) throw piErr;
-      message.success("Órdenes de compra generadas según asignaciones");
-    } catch (e: any) {
-      console.error(e);
-      message.error("No se pudieron generar las órdenes de compra");
-    }
-  }
 
   const orderColumns = [
-    {
-      title: "Código",
-      dataIndex: "order_code",
-      key: "order_code",
-    },
-    {
-      title: "Fecha",
-      dataIndex: "order_date",
-      key: "order_date",
-      render: (val: string) => dayjs(val).format("YYYY-MM-DD HH:mm"),
-    },
     {
       title: "Cliente",
       dataIndex: ["user", "name"],
       key: "user_name",
+      render: (name: string | undefined, record: PlanOrder) => (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <Typography.Text>{name || "—"}</Typography.Text>
+          <Typography.Text type="secondary" ellipsis>
+            {record.order_code || "Sin código"}
+          </Typography.Text>
+        </div>
+      ),
     },
     {
       title: "Email",
@@ -469,9 +449,10 @@ const PlanEditorPage = () => {
       key: "charges",
       render: (_: unknown, record: PlanOrder) => (
         <Typography.Text style={{ whiteSpace: "nowrap" }}>
-          Servicio: {formatPriceAccounting(Number(record.service_fee || 0))} 
-          <br/>
-          Domicilio: {formatPriceAccounting(Number(record.delivery_charge || 0))}
+          Servicio: {formatPriceAccounting(Number(record.service_fee || 0))}
+          <br />
+          Domicilio:{" "}
+          {formatPriceAccounting(Number(record.delivery_charge || 0))}
         </Typography.Text>
       ),
     },
@@ -490,22 +471,22 @@ const PlanEditorPage = () => {
 
   const poColumns = [
     {
-      title: "Código",
-      dataIndex: "purchase_code",
-      key: "purchase_code",
-    },
-    {
-      title: "Entrega esperada (plan)",
-      key: "expected_delivery_date_plan",
-      render: () =>
-        plan?.plan_date
-          ? dayjs(plan.plan_date).startOf("day").format("YYYY-MM-DD")
-          : "-",
-    },
-    {
       title: "Proveedor",
       dataIndex: ["supplier", "name"],
       key: "supplier_name",
+      render: (name: string | undefined, record: any) => (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <Typography.Text>{name || "—"}</Typography.Text>
+          <Typography.Text type="secondary" ellipsis>
+            {record.purchase_code || "Sin código"}
+          </Typography.Text>
+        </div>
+      ),
     },
     {
       title: "Estado",
@@ -522,7 +503,7 @@ const PlanEditorPage = () => {
           (sum: number, it: any) =>
             sum +
             Number(it.quantity || 0) *
-              Number(it.actual_price ?? it.estimated_price ?? 0),
+              Number(it.actual_price ?? it.offer?.price ?? 0),
           0
         );
         return formatPriceAccounting(total);
@@ -535,174 +516,44 @@ const PlanEditorPage = () => {
     },
   ];
 
-  const pendingOrderColumns = [
-    {
-      title: "Código",
-      dataIndex: "order_code",
-      key: "order_code",
-    },
-    {
-      title: "Fecha",
-      dataIndex: "order_date",
-      key: "order_date",
-      render: (val: string) => dayjs(val).format("YYYY-MM-DD HH:mm"),
-    },
-    {
-      title: "Cliente",
-      dataIndex: ["user", "name"],
-      key: "user_name",
-    },
-    {
-      title: "Email",
-      dataIndex: ["user", "email"],
-      key: "user_email",
-    },
-    {
-      title: "Total",
-      dataIndex: "total",
-      key: "total",
-      render: (t: number | undefined) => formatPriceAccounting(Number(t ?? 0)),
-    },
-    {
-      title: "Items",
-      key: "items_count",
-      render: (_: unknown, record: SaleOrder) => record.items?.length ?? 0,
-    },
-  ];
-
-  async function handleLinkSelectedOrders() {
-    if (!planId) {
-      message.warning("Plan no identificado");
-      return;
-    }
-    if (selectedOrderIds.length === 0) {
-      message.warning("Seleccione al menos una orden");
-      return;
-    }
-    try {
-      setLinking(true);
-      const { data: seqRows, error: seqErr } = await supabase
-        .from("distribution_plan_order")
-        .select("sequence")
-        .eq("distribution_plan_id", planId)
-        .order("sequence", { ascending: false })
-        .limit(1);
-      if (seqErr) throw seqErr;
-      const lastSeq = Array.isArray(seqRows) && seqRows.length > 0
-        ? Number(seqRows[0]?.sequence || 0)
-        : 0;
-      const startSeq = lastSeq + 1;
-      const rows = selectedOrderIds.map((soId, idx) => ({
-        distribution_plan_id: String(planId),
-        sale_order_id: String(soId),
-        sequence: startSeq + idx,
-        status: "pending",
-      }));
-      const { error: insErr } = await supabase
-        .from("distribution_plan_order")
-        .insert(rows);
-      if (insErr) throw insErr;
-      message.success("Órdenes vinculadas al plan");
-      setLinkModalOpen(false);
-      setSelectedOrderIds([]);
-      await refetch();
-    } catch (e: any) {
-      console.error(e);
-      message.error("No se pudieron vincular las órdenes");
-    } finally {
-      setLinking(false);
-    }
-  }
-
   return (
     <>
-      <Space style={{ marginBottom: 16 }} wrap>
-        <Typography.Title level={4}>
-          Plan {plan?.plan_code ?? planId} —{" "}
-          {plan ? dayjs(plan.plan_date).format("YYYY-MM-DD") : ""}
-        </Typography.Title>
-        <Tag color="blue">{plan?.status}</Tag>
-        {allowAssignments && (
-          <Button
-            type="primary"
-            onClick={handleGeneratePurchaseOrders}
-            disabled={itemsFlat.length === 0}
-          >
-            Generar órdenes de compra
-          </Button>
-        )}
-        <Button onClick={() => refetch()}>Refrescar</Button>
-        <Button onClick={() => router.push(`/a/sale-orders/create?planId=${planId}`)}>
-          Agregar nueva orden de venta
-        </Button>
-        <Button onClick={() => setLinkModalOpen(true)}>
-          Agregar orden de venta existente
-        </Button>
-        <Button onClick={() => router.push(`/a/distribution-plans/${planId}/assign-suppliers`)}>
-          Asignar proveedores
-        </Button>
-      </Space>
-
-      <Modal
-        open={linkModalOpen}
-        title="Agregar orden de venta existente"
-        onCancel={() => setLinkModalOpen(false)}
-        width={900}
-        footer={[
-          <Button key="cancel" onClick={() => setLinkModalOpen(false)}>
-            Cancelar
-          </Button>,
-          <Button
-            key="link"
-            type="primary"
-            disabled={selectedOrderIds.length === 0}
-            loading={linking}
-            onClick={handleLinkSelectedOrders}
-          >
-            Agregar al plan
-          </Button>,
-        ]}
+      <Descriptions
+        bordered
+        column={{ xs: 1, sm: 2, md: 2, lg: 3, xl: 4, xxl: 4 }}
+        style={{ marginBottom: "16px" }}
       >
-        <Table
-          dataSource={pendingOrders}
-          columns={pendingOrderColumns as any}
-          rowKey="id"
-          loading={loadingPendingOrders}
-          pagination={{ pageSize: 8 }}
-          rowSelection={{
-            selectedRowKeys: selectedOrderIds as any,
-            onChange: (keys) => setSelectedOrderIds(keys as string[]),
-          }}
-        />
-      </Modal>
+        <Descriptions.Item label="Código">
+          {plan?.plan_code ?? "-"}
+        </Descriptions.Item>
+        <Descriptions.Item label="Fecha del plan">
+          {plan ? dayjs(plan.plan_date).format("YYYY-MM-DD") : "-"}
+        </Descriptions.Item>
+        <Descriptions.Item label="Estado">
+          <Tag color="blue">{plan?.status}</Tag>
+        </Descriptions.Item>
+        <Descriptions.Item label="Coordinador">
+          {plan?.operator?.name ?? "-"}
+        </Descriptions.Item>
+        <Descriptions.Item label="Corte">
+          {plan?.cutoff_at
+            ? dayjs(plan.cutoff_at).format("YYYY-MM-DD HH:mm")
+            : "-"}
+        </Descriptions.Item>
+        <Descriptions.Item label="Notas">
+          {plan?.notes ?? "-"}
+        </Descriptions.Item>
+      </Descriptions>
 
-      <Card title="Reporte del plan" style={{ marginBottom: 16 }}>
-        <Descriptions
-          size="small"
-          column={{ xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 4 }}
-        >
-          <Descriptions.Item label="Código">
-            {plan?.plan_code ?? "-"}
-          </Descriptions.Item>
-          <Descriptions.Item label="Fecha del plan">
-            {plan ? dayjs(plan.plan_date).format("YYYY-MM-DD") : "-"}
-          </Descriptions.Item>
-          <Descriptions.Item label="Estado">
-            <Tag color="blue">{plan?.status}</Tag>
-          </Descriptions.Item>
-          <Descriptions.Item label="Coordinador">
-            {plan?.coordinator?.name ?? "-"}
-          </Descriptions.Item>
-          <Descriptions.Item label="Corte">
-            {plan?.cutoff_at
-              ? dayjs(plan.cutoff_at).format("YYYY-MM-DD HH:mm")
-              : "-"}
-          </Descriptions.Item>
-          <Descriptions.Item label="Notas">
-            {plan?.notes ?? "-"}
-          </Descriptions.Item>
-        </Descriptions>
-      </Card>
+      <Space
+        style={{
+          marginBottom: 16,
+          display: "flex",
+          flexDirection: "row-reverse",
+        }}
+      >
+        <Button onClick={openStatusModal}>Editar estado del plan</Button>
+      </Space>
       <Space size="large" wrap>
         <Card variant="outlined">
           <Statistic title="Órdenes en plan" value={orders.length} />
@@ -736,14 +587,30 @@ const PlanEditorPage = () => {
           />
         </Card>
       </Space>
-
       {isLoading ? (
         <Skeleton active />
       ) : (
         <>
           <Divider orientation="left">Pedidos</Divider>
+          <Space
+            style={{
+              marginBottom: 16,
+              display: "flex",
+              flexDirection: "row-reverse",
+            }}
+          >
+            <Button
+              onClick={() =>
+                router.push(`/a/sale-orders/create?planId=${planId}`)
+              }
+              icon={<PlusOutlined />}
+            >
+              Agregar pedido
+            </Button>
+          </Space>
           <Table
             dataSource={orders}
+            style={{ overflow: "auto" }}
             columns={orderColumns as any}
             rowKey="id"
             expandable={{
@@ -759,13 +626,15 @@ const PlanEditorPage = () => {
                         title: "Producto",
                         dataIndex: ["product", "name"],
                         key: "product_name",
+                        render: (_: unknown, it: any) =>
+                          it?.offer?.product?.name ?? it?.product?.name ?? "-",
                       },
                       {
                         title: "Cant./Unidad",
                         key: "quantity_unit",
                         render: (_: unknown, it: any) =>
                           `${Number(it.quantity || 0)} ${
-                            it.product?.unit ?? ""
+                            it?.offer?.product?.unit ?? it?.product?.unit ?? ""
                           }`,
                       },
                       {
@@ -794,31 +663,65 @@ const PlanEditorPage = () => {
                             : [];
                           if (links.length === 0)
                             return (
-                              <Typography.Text type="secondary">—</Typography.Text>
+                              <Typography.Text type="secondary">
+                                —
+                              </Typography.Text>
                             );
+                          const unit = it?.product?.unit ?? "";
                           return (
                             <Space wrap size={4}>
                               {links.map((f: any) => {
+                                const supName =
+                                  f?.purchase_item?.purchase_order?.supplier
+                                    ?.name ?? "";
                                 const poCode =
-                                  f?.purchase_item?.purchase_order?.purchase_code ?? "";
-                                const supplier =
-                                  f?.purchase_item?.purchase_order?.supplier?.name ?? "";
-                                const qty = Number(f?.quantity || 0);
-                                const unit = it?.product?.unit ?? "";
-                                const label = [
-                                  poCode ? `${poCode}` : "",
-                                  supplier,
-                                  `${qty} ${unit}`,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" · ");
+                                  f?.purchase_item?.purchase_order
+                                    ?.purchase_code ?? "";
+                                const qtyPi = Number(
+                                  f?.purchase_item?.quantity ?? 0
+                                );
+                                const price = Number(
+                                  f?.purchase_item?.actual_price ??
+                                    f?.purchase_item?.offer?.price ??
+                                    0
+                                );
+                                const fid = f?.id;
+                                const isHighlighted =
+                                  !!fid && highlightFulfillmentId === fid;
+                                const segments = [
+                                  supName || poCode || "",
+                                  `${qtyPi} ${unit}`,
+                                  price
+                                    ? `${formatPriceAccounting(price)} c/u`
+                                    : undefined,
+                                ].filter(Boolean);
                                 return (
-                                  <Tooltip
-                                    key={`${it.id}-${poCode}-${qty}`}
-                                    title={`Cumplimiento: ${qty} ${unit}`}
+                                  <Tag
+                                    id={`fullfilmentId_from_sale_order/${fid}`}
+                                    onClick={() => {
+                                      if (!fid) return;
+                                      setHighlightFulfillmentId((prev) =>
+                                        prev === fid ? null : fid
+                                      );
+                                    }}
+                                    style={{
+                                      cursor: fid ? "pointer" : "default",
+                                      borderColor: isHighlighted
+                                        ? token.colorPrimary
+                                        : undefined,
+                                      backgroundColor: isHighlighted
+                                        ? token.colorPrimaryBg
+                                        : undefined,
+                                    }}
                                   >
-                                    <Tag>{label}</Tag>
-                                  </Tooltip>
+                                    <Space wrap split="·">
+                                      {segments.map((e, idx) => (
+                                        <Typography.Text key={idx}>
+                                          {e as any}
+                                        </Typography.Text>
+                                      ))}
+                                    </Space>
+                                  </Tag>
                                 );
                               })}
                             </Space>
@@ -833,10 +736,26 @@ const PlanEditorPage = () => {
           />
         </>
       )}
-
       {showPurchaseSection && (
         <>
           <Divider orientation="left">Órdenes de compra</Divider>
+
+          <Space
+            style={{
+              marginBottom: 16,
+              display: "flex",
+              flexDirection: "row-reverse",
+            }}
+          >
+            <Button
+              onClick={() =>
+                router.push(`/a/distribution-plans/${planId}/assign-suppliers`)
+              }
+              icon={<ArrowDownOutlined />}
+            >
+              Asignar proveedores
+            </Button>
+          </Space>
           {posLoading ? (
             <Skeleton active />
           ) : (
@@ -844,6 +763,7 @@ const PlanEditorPage = () => {
               dataSource={relatedPOs}
               columns={poColumns as any}
               rowKey="id"
+              style={{ overflow: "auto" }}
               expandable={{
                 expandedRowRender: (po: any) => (
                   <Table
@@ -855,15 +775,20 @@ const PlanEditorPage = () => {
                       [
                         {
                           title: "Producto",
-                          dataIndex: ["product", "name"],
                           key: "product_name",
+                          render: (_: unknown, it: any) =>
+                            it?.offer?.product?.name ??
+                            it?.product?.name ??
+                            "-",
                         },
                         {
                           title: "Cant./Unidad",
                           key: "quantity_unit",
                           render: (_: unknown, it: any) =>
                             `${Number(it.quantity || 0)} ${
-                              it.product?.unit ?? ""
+                              it?.offer?.product?.unit ??
+                              it?.product?.unit ??
+                              ""
                             }`,
                         },
                         {
@@ -871,7 +796,16 @@ const PlanEditorPage = () => {
                           key: "price",
                           render: (_: unknown, it: any) =>
                             formatPriceAccounting(
-                              Number(it.actual_price ?? it.estimated_price ?? 0)
+                              Number(it.actual_price ?? it.offer?.price ?? 0)
+                            ),
+                        },
+                        {
+                          title: "Importe",
+                          key: "line_total",
+                          render: (_: unknown, it: any) =>
+                            formatPriceAccounting(
+                              Number(it.quantity || 0) *
+                                Number(it.actual_price ?? it.offer?.price ?? 0)
                             ),
                         },
                         {
@@ -883,27 +817,66 @@ const PlanEditorPage = () => {
                               : [];
                             if (links.length === 0)
                               return (
-                                <Typography.Text type="secondary">—</Typography.Text>
+                                <Typography.Text type="secondary">
+                                  —
+                                </Typography.Text>
                               );
+                            const qtyPi = Number(it?.quantity ?? 0);
                             return (
                               <Space wrap size={4}>
                                 {links.map((f: any) => {
                                   const soCode =
                                     f?.sale_item?.sale_order?.order_code ?? "";
-                                  const qty = Number(f?.quantity || 0);
-                                  const unit = f?.sale_item?.product?.unit ?? "";
-                                  const label = [
-                                    soCode ? ` ${soCode}` : "",
-                                    `${qty} ${unit}`,
-                                  ]
-                                    .filter(Boolean)
-                                    .join(" · ");
+                                  const customerName =
+                                    f?.sale_item?.sale_order?.customer?.name ??
+                                    "";
+                                  const unit =
+                                    f?.sale_item?.product?.unit ?? "";
+                                  const requiredQty = Number(
+                                    f?.sale_item?.required_quantity ?? 0
+                                  );
+                                  const fid = f?.id;
+                                  const isHighlighted =
+                                    !!fid && highlightFulfillmentId === fid;
+                                  const labelName =
+                                    customerName || soCode || "";
+                                  const segments = [
+                                    labelName,
+                                    `${qtyPi} ${unit}`,
+                                  ].filter(Boolean);
                                   return (
                                     <Tooltip
-                                      key={`${it.id}-${soCode}-${qty}`}
-                                      title={`Cumple pedido: ${qty} ${unit}`}
+                                      key={`${it.id}-${
+                                        fid || labelName
+                                      }-${qtyPi}`}
+                                      title={`Cumple pedido: ${qtyPi} ${unit} · Requerido: ${requiredQty} ${unit}`}
                                     >
-                                      <Tag color="blue">{label}</Tag>
+                                      <Tag
+                                        id={`fullfilmentId_from_purchase_item/${fid}`}
+                                        onClick={() => {
+                                          if (!fid) return;
+                                          setHighlightFulfillmentId((prev) =>
+                                            prev === fid ? null : fid
+                                          );
+                                        }}
+                                        style={{
+                                          cursor: fid ? "pointer" : "default",
+                                          borderColor: isHighlighted
+                                            ? token.colorPrimary
+                                            : undefined,
+                                          backgroundColor: isHighlighted
+                                            ? token.colorPrimaryBg
+                                            : undefined,
+                                        }}
+                                      >
+                                        <Space wrap split="·">
+                                          {segments.map((e, idx) => (
+                                            <Typography.Text key={idx}>
+                                              {e as any}
+                                            </Typography.Text>
+                                          ))}
+                                        </Space>
+                                      </Tag>
                                     </Tooltip>
                                   );
                                 })}
@@ -920,6 +893,20 @@ const PlanEditorPage = () => {
           )}
         </>
       )}
+      <Modal
+        open={statusModalOpen}
+        title="Editar estado del plan"
+        onCancel={() => setStatusModalOpen(false)}
+        onOk={handleUpdatePlanStatus}
+        confirmLoading={isUpdatingStatus}
+      >
+        <Select
+          value={nextStatus}
+          onChange={setNextStatus}
+          options={PLAN_STATUSES}
+          style={{ width: "100%" }}
+        />
+      </Modal>
     </>
   );
 };
@@ -927,5 +914,9 @@ const PlanEditorPage = () => {
 export default PlanEditorPage;
 
 PlanEditorPage.getLayout = function getLayout(page: ReactElement) {
-  return <DashboardLayout> {page}</DashboardLayout>;
+  return (
+    <DashboardLayout noStyle>
+      <DistributionPlanLayout> {page}</DistributionPlanLayout>
+    </DashboardLayout>
+  );
 };

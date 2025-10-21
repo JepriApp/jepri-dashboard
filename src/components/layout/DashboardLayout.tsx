@@ -45,29 +45,53 @@ const lateralMenuItems: Record<string, MenuProps["items"]> = {
       children: undefined,
     },
     {
-      key: `sale-orders`,
+      key: `/a/sale-orders`,
       icon: React.createElement(ShoppingOutlined),
-      label: "Pedidos",
-      children: [
-        {
-          key: `/a/sale-orders/pending`,
-          icon: React.createElement(ShoppingOutlined),
-          label: <Link href="/a/sale-orders/pending">Pendientes</Link>,
-          children: undefined,
-        },
-        {
-          key: `/a/sale-orders/history`,
-          icon: React.createElement(ShoppingOutlined),
-          label: <Link href="/a/sale-orders/history">Historial</Link>,
-          children: undefined,
-        },
-      ],
+      label: <Link href="/a/sale-orders">Pedidos</Link>,
+      children: undefined,
     },
     {
       key: `/a/distribution-plans`,
       icon: React.createElement(ShoppingOutlined),
-      label: <Link href="/a/distribution-plans">Planificador</Link>,
+      label: <Link href="/a/distribution-plans">Operación</Link>,
       children: undefined,
+    },
+    {
+      key: `/a/products`,
+      icon: React.createElement(ShopOutlined),
+      label: <Link href="/a/products">Productos</Link>,
+      children: undefined,
+    },
+    {
+      key: `/a/user`,
+      icon: React.createElement(SettingOutlined),
+      label: "Usuarios",
+      children: [
+        {
+          key: `/a/users/customers`,
+          icon: React.createElement(ShoppingOutlined),
+          label: <Link href="/a/users/customers">Clientes</Link>,
+          children: undefined,
+        },
+        {
+          key: `/a/users/suppliers`,
+          icon: React.createElement(ShoppingOutlined),
+          label: <Link href="/a/users/suppliers">Proveedores</Link>,
+          children: undefined,
+        },
+        {
+          key: `/a/users/operators`,
+          icon: React.createElement(ShoppingOutlined),
+          label: <Link href="/a/users/operators">Operadores</Link>,
+          children: undefined,
+        },
+        {
+          key: `/a/users/admins`,
+          icon: React.createElement(ShoppingOutlined),
+          label: <Link href="/a/users/admins">Administradores</Link>,
+          children: undefined,
+        },
+      ],
     },
   ],
 };
@@ -105,14 +129,6 @@ function DashboardLayout({
 
   const dropdownMenu = {
     items: [
-      {
-        key: "profile",
-        label: "Perfil de usuario",
-        icon: <SettingOutlined />,
-        onClick: () => {
-          router.push(`/${router.pathname.split("/")[1]}/profile`);
-        },
-      },
       {
         key: "logout",
         label: "Cerrar sesión",
@@ -188,7 +204,7 @@ function DashboardLayout({
           marginLeft: sideMenuCollapsed
             ? SIDER_WIDTH["COLLAPSED"]
             : SIDER_WIDTH["EXPANDED"],
-          width: "100%",
+          overflow: "initial",
         }}
       >
         {noStyle ? (
@@ -200,6 +216,7 @@ function DashboardLayout({
                 backgroundColor: "transparent",
                 height: "auto",
                 lineHeight: "36px",
+                paddingLeft: 0,
               }}
             >
               <div
@@ -210,6 +227,7 @@ function DashboardLayout({
                   flexWrap: "wrap",
                   alignItems: "flex-start",
                   width: "100%",
+                  marginBottom: "16px",
                 }}
               >
                 {/* <AutoBreadcrumb breadcrumItemTree={breadcrumItemTree} /> */}
@@ -217,7 +235,7 @@ function DashboardLayout({
                 <AutoTitle titles={titles} subtitles={subtitles} />
               </div>
             </Header>
-            <Content style={{ margin: "24px 16px 0" }}>{children}</Content>
+            <Content>{children}</Content>
             {footer}
           </>
         )}
@@ -287,11 +305,17 @@ function DashboardLayout({
           }}
         />
       </Header>
-      <Content style={{ padding: "0 4px" }}>
-        {/* <AutoBreadcrumb breadcrumItemTree={breadcrumItemTree} /> */}
-        {backButton && <GoBackButton />}
-        <AutoTitle titles={titles} subtitles={subtitles} />
-        {children}
+      <Content style={noStyle ? {} : { padding: "0 4px" }}>
+        {noStyle ? (
+          children
+        ) : (
+          <>
+            {backButton && <GoBackButton />}
+            {/* <AutoBreadcrumb breadcrumItemTree={breadcrumItemTree} /> */}
+            <AutoTitle titles={titles} subtitles={subtitles} />
+            {children}
+          </>
+        )}
       </Content>
       {footer}
     </Layout>
