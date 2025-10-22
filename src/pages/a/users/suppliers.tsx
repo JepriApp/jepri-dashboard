@@ -14,7 +14,8 @@ import {
   Switch, 
   Popconfirm, 
   Tag, 
-  App 
+  App,
+  Modal 
 } from "antd";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/services/supabase.client";
@@ -23,9 +24,12 @@ import { PlusOutlined, DeleteOutlined } from "@ant-design/icons";
 
 interface SupplierRow {
   id: string;
+  user_id: string;
   name: string;
   email?: string;
   phone?: string;
+  contact?: string;
+  is_active?: boolean;
 }
 
 type ProductMinimal = {
@@ -52,6 +56,15 @@ type SupplierWithOffers = {
 
 const { Text } = Typography;
 
+// Utilidad: hash SHA-256 para password (simple, sin sal)
+async function hashPasswordSHA256(password: string): Promise<string> {
+  const enc = new TextEncoder();
+  const data = enc.encode(password);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 const Index = () => {
   const { message } = App.useApp();
   const [offersOpen, setOffersOpen] = useState(false);
@@ -60,7 +73,13 @@ const Index = () => {
   const [originalOfferIds, setOriginalOfferIds] = useState<string[]>([]);
   const [originalOffersMap, setOriginalOffersMap] = useState<Record<string, string>>({});
   const [removedOffersByProduct, setRemovedOffersByProduct] = useState<Record<string, string>>({});
-
+  // Nuevo: estado y formulario para creación de proveedor
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm] = Form.useForm();
+  // Nuevo: estado y formulario para edición de proveedor
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm] = Form.useForm();
+  const [editingSupplier, setEditingSupplier] = useState<SupplierRow | null>(null);
   const { data = [], isLoading, refetch } = useQuery<SupplierRow[]>({
     queryKey: ["users", "suppliers"],
     queryFn: async () => {
@@ -70,17 +89,22 @@ const Index = () => {
           `
           id,
           name,
+          contact,
           phone,
-          auth:user_id ( email )
+          user_id,
+          auth:user_id ( email, is_active )
         `
         )
         .order("name", { ascending: true });
       if (error) throw error;
       return (data || []).map((s: any) => ({
         id: s.id,
+        user_id: s.user_id,
         name: s.name,
         email: s.auth?.email,
         phone: s.phone,
+        contact: s.contact,
+        is_active: s.auth?.is_active,
       }));
     },
     staleTime: 300_000,
@@ -146,18 +170,80 @@ const Index = () => {
     setOffersOpen(true);
   };
 
+  // NUEVO: abrir modal de edición y poblar formulario
+  const openEditModal = (record: SupplierRow) => {
+    setEditingSupplier(record);
+    editForm.setFieldsValue({
+      name: record.name,
+      contact: record.contact || undefined,
+      phone: record.phone || undefined,
+      email: record.email || undefined,
+      is_active: typeof record.is_active === "boolean" ? record.is_active : true,
+    });
+    setEditOpen(true);
+  };
+
+  // NUEVO: mutación para actualizar proveedor (email inmutable)
+  const updateSupplierMutation = useMutation({
+    mutationFn: async (values: any) => {
+      if (!editingSupplier) throw new Error("No hay proveedor seleccionado");
+      const payload: any = {
+        name: values.name,
+        contact: values.contact || null,
+        phone: values.phone || null,
+      };
+      const { error } = await supabase
+        .from("supplier")
+        .update(payload)
+        .eq("id", editingSupplier.id);
+      if (error) throw error;
+      // Actualizar is_active en auth si viene del formulario
+      if (typeof values.is_active === "boolean" && editingSupplier.user_id) {
+        const { error: authErr } = await supabase
+          .from("auth")
+          .update({ is_active: values.is_active })
+          .eq("id", editingSupplier.user_id);
+        if (authErr) throw authErr;
+      }
+    },
+    onSuccess: async () => {
+      message.success("Proveedor actualizado");
+      setEditOpen(false);
+      setEditingSupplier(null);
+      editForm.resetFields();
+      await refetch();
+    },
+    onError: (err: any) => {
+      console.error(err);
+      message.error(err?.message || "Error al actualizar proveedor");
+    },
+  });
+
   const columns = [
     { title: "Nombre", dataIndex: "name", key: "name" },
     { title: "Email", dataIndex: "email", key: "email" },
     { title: "Teléfono", dataIndex: "phone", key: "phone" },
     {
+      title: "Estado",
+      dataIndex: "is_active",
+      key: "is_active",
+      render: (val: boolean | undefined) => (
+        val === true ? <Tag color="green">Activo</Tag> : <Tag color="red">Inactivo</Tag>
+      ),
+    },
+    {
       title: "Acciones",
       key: "actions",
-      width: 150,
+      width: 280,
       render: (_: any, record: SupplierRow) => (
-        <Button type="dashed" onClick={() => openOffersDrawer(record)}>
-          Ver catálogos
-        </Button>
+        <Space>
+          <Button type="dashed" onClick={() => openOffersDrawer(record)}>
+            Ver catálogos
+          </Button>
+          <Button onClick={() => openEditModal(record)}>
+            Editar proveedor
+          </Button>
+        </Space>
       ),
     },
   ];
@@ -258,8 +344,58 @@ const Index = () => {
     },
   });
 
+  // Nuevo: mutación para crear proveedor (crea auth y luego supplier)
+  const createSupplierMutation = useMutation({
+    mutationFn: async (values: any) => {
+      // Crear usuario en auth
+      const passwordHash = await hashPasswordSHA256(values.password);
+      const { data: authRow, error: authErr } = await supabase
+        .from("auth")
+        .insert([{ 
+          email: values.email,
+          password_hash: passwordHash,
+          role: "supplier",
+          is_active: true,
+        }])
+        .select("id")
+        .single();
+      if (authErr) throw authErr;
+
+      // Crear proveedor con referencia a auth.id
+      const payload = { 
+        name: values.name, 
+        contact: values.contact || null,
+        phone: values.phone || null,
+        user_id: authRow.id,
+      };
+      const { error } = await supabase.from("supplier").insert([payload]);
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      message.success("Proveedor creado");
+      setCreateOpen(false);
+      createForm.resetFields();
+      await refetch();
+    },
+    onError: (err: any) => {
+      console.error(err);
+      // Mensaje amigable para email duplicado en auth
+      const msg = typeof err?.message === "string" && err.message.includes("duplicate key")
+        ? "El email ya está en uso. Usa otro email."
+        : (err?.message || "Error al crear proveedor");
+      message.error(msg);
+    },
+  });
+
   return (
     <div>
+      {/* Nuevo: botón para crear proveedor */}
+      <Space style={{ marginBottom: 16 }}>
+        <Button type="primary" onClick={() => setCreateOpen(true)}>
+          Crear proveedor
+        </Button>
+      </Space>
+
       <Table rowKey="id" columns={columns} dataSource={data} loading={isLoading} />
       
       <Drawer
@@ -518,6 +654,106 @@ const Index = () => {
           </Form.List>
         </Form>
       </Drawer>
+
+      {/* Nuevo: Modal para crear proveedor */}
+      <Modal
+        title="Crear proveedor"
+        open={createOpen}
+        onCancel={() => {
+          setCreateOpen(false);
+          createForm.resetFields();
+        }}
+        onOk={() => createForm.submit()}
+        okText="Crear"
+        confirmLoading={createSupplierMutation.isPending}
+      >
+        <Form form={createForm} layout="vertical" onFinish={(values) => createSupplierMutation.mutate(values)}>
+          <Form.Item
+            name="name"
+            label="Nombre"
+            rules={[{ required: true, message: "Ingresa el nombre del proveedor" }]}
+          >
+            <Input placeholder="Nombre del proveedor" />
+          </Form.Item>
+          <Form.Item name="contact" label="Contacto">
+            <Input placeholder="Persona de contacto (opcional)" />
+          </Form.Item>
+          <Form.Item name="phone" label="Teléfono">
+            <Input placeholder="Teléfono (opcional)" />
+          </Form.Item>
+          <Form.Item
+            name="email"
+            label="Email de acceso"
+            rules={[
+              { required: true, message: "Ingresa el email" },
+              { type: "email", message: "Email inválido" },
+            ]}
+          >
+            <Input placeholder="email@ejemplo.com" />
+          </Form.Item>
+          <Form.Item
+            name="password"
+            label="Contraseña inicial"
+            rules={[
+              { required: true, message: "Ingresa una contraseña" },
+              {
+                validator: (_, value) => {
+                  if (!value) return Promise.resolve();
+                  if (value.length < 6) {
+                    return Promise.reject(new Error("La contraseña debe tener al menos 6 caracteres"));
+                  }
+                  if (!/[A-Za-z]/.test(value) || !/\d/.test(value)) {
+                    return Promise.reject(new Error("La contraseña debe incluir letras y números"));
+                  }
+                  return Promise.resolve();
+                },
+              },
+            ]}
+          >
+            <Input.Password placeholder="Contraseña" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Nuevo: Modal para editar proveedor (email inmutable) */}
+      <Modal
+        title="Editar proveedor"
+        open={editOpen}
+        onCancel={() => {
+          setEditOpen(false);
+          setEditingSupplier(null);
+          editForm.resetFields();
+        }}
+        onOk={() => editForm.submit()}
+        okText="Guardar"
+        confirmLoading={updateSupplierMutation.isPending}
+      >
+        <Form form={editForm} layout="vertical" onFinish={(values) => updateSupplierMutation.mutate(values)}>
+          <Form.Item
+            name="name"
+            label="Nombre"
+            rules={[{ required: true, message: "Ingresa el nombre del proveedor" }]}
+          >
+            <Input placeholder="Nombre del proveedor" />
+          </Form.Item>
+          <Form.Item name="contact" label="Contacto">
+            <Input placeholder="Persona de contacto (opcional)" />
+          </Form.Item>
+          <Form.Item name="phone" label="Teléfono">
+            <Input placeholder="Teléfono (opcional)" />
+          </Form.Item>
+          <Form.Item
+            name="is_active"
+            label="Activo"
+            valuePropName="checked"
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item name="email" label="Email">
+            <Input disabled placeholder="Email (inmutable)" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 };

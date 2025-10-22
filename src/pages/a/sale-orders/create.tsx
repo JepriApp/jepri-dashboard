@@ -1,5 +1,5 @@
 import DashboardLayout from "@/components/layout/DashboardLayout";
-import React, { ReactElement, useState } from "react";
+import React, { ReactElement, useState, useEffect } from "react";
 import {
   Button,
   Form,
@@ -70,6 +70,33 @@ const CreateSaleOrderPage = () => {
     retry: 1,
   });
 
+  // Query para obtener el plan específico cuando planId está presente
+  const { data: specificPlan, isLoading: loadingSpecificPlan } =
+    useQuery<DistributionPlanOption | null>({
+      queryKey: ["distributionPlan", planId],
+      queryFn: async () => {
+        if (!planId) return null;
+        const { data, error } = await supabase
+          .from("distribution_plan")
+          .select(`id, plan_date, plan_code, status`)
+          .eq("id", planId)
+          .single();
+        if (error) throw error;
+        return {
+          id: data.id,
+          plan_date: data.plan_date,
+          plan_code: data.plan_code,
+        };
+      },
+      enabled: !!planId,
+      staleTime: 300_000,
+      retry: 1,
+    });
+  useEffect(() => {
+    if (specificPlan?.id) {
+      form.setFieldsValue({ delivery_date: specificPlan.id });
+    }
+  }, [specificPlan?.id, form]);
   const { data: plans = [], isLoading: loadingPlans } = useQuery<
     DistributionPlanOption[]
   >({
@@ -237,7 +264,7 @@ const CreateSaleOrderPage = () => {
         <Form.Item label="Fecha de entrega (plan)" name="delivery_date">
           <Select
             placeholder="Selecciona fecha del plan"
-            loading={loadingPlans}
+            loading={loadingPlans || loadingSpecificPlan}
             showSearch
             optionFilterProp="label"
             options={[
@@ -245,6 +272,16 @@ const CreateSaleOrderPage = () => {
                 value: p.id,
                 label: `${dayjs(p.plan_date).format("YYYY-MM-DD")}`,
               })),
+              ...(specificPlan && !plans.some((p) => p.id === specificPlan.id)
+                ? [
+                    {
+                      value: specificPlan.id,
+                      label: `${dayjs(specificPlan.plan_date).format(
+                        "YYYY-MM-DD"
+                      )}`,
+                    },
+                  ]
+                : []),
             ]}
           />
         </Form.Item>
@@ -377,7 +414,7 @@ const CreateSaleOrderPage = () => {
             <Button type="primary" htmlType="submit" loading={submitting}>
               Crear orden
             </Button>
-            <Button onClick={() => router.push("/a/sale-orders/pending")}>
+            <Button onClick={() => router.back()}>
               Cancelar
             </Button>
           </div>
