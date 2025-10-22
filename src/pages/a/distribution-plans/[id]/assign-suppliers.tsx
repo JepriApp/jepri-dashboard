@@ -283,7 +283,7 @@ const AssignSuppliersPage = () => {
   const { message } = App.useApp();
   const planId = router.query.id as string | undefined;
   const { data } = usePlanData(planId);
-  const orders = data?.orders || [];
+  const orders = useMemo(() => data?.orders || [], [data]);
   const { data: relatedPOs = [], isLoading: posLoading } =
     usePurchaseOrdersForPlan(planId);
   const [collapsed, setCollapsed] = useState(false);
@@ -718,6 +718,7 @@ const AssignSuppliersPage = () => {
                 style={{
                   fontSize: "16px",
                 }}
+                key="toggle-collapse"
               />,
             ]}
           >
@@ -1040,6 +1041,7 @@ const AssignSuppliersPage = () => {
                             return (
                               <Tag
                                 id={`fullfilmentId_from_sale_order/${f?.id}`}
+                                key={`fullfilmentId_from_sale_order/${f?.id}`}
                                 onClick={() => {
                                   const fid = f?.id;
                                   if (!fid) return;
@@ -1061,9 +1063,9 @@ const AssignSuppliersPage = () => {
                                       : undefined,
                                 }}
                               >
-                                <Space wrap split="·">
+                                <Space wrap split="·" key={f?.id}>
                                   {label.map((e) => (
-                                    <Typography.Text>{e}</Typography.Text>
+                                    <Typography.Text key={e}>{e}</Typography.Text>
                                   ))}
                                 </Space>
                               </Tag>
@@ -1215,6 +1217,7 @@ const AssignSuppliersPage = () => {
                                           "fullfilmentId_from_purchase_order/" +
                                           i.fulfillment?.[0]?.id
                                         }
+                                        key={i.fulfillment?.[0]?.id}
                                         onClick={() => {
                                           const fid = i.fulfillment?.[0]?.id;
                                           if (!fid) return;
@@ -1241,9 +1244,9 @@ const AssignSuppliersPage = () => {
                                               : undefined,
                                         }}
                                       >
-                                        <Space wrap split="·">
+                                        <Space wrap split="·" key={i.fulfillment?.[0]?.id}>
                                           {labels.map((e) => (
-                                            <Typography.Text>
+                                            <Typography.Text key={e}>
                                               {e}
                                             </Typography.Text>
                                           ))}

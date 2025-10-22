@@ -410,7 +410,8 @@ export async function createSaleOrder(userId: string) {
 
     // Calcular el subtotal para determinar la tarifa de servicio
     const subtotal = cartItems.reduce((sum, item) => {
-      return sum + (item.product?.reference_price || 0) * item.quantity;
+      const product = Array.isArray(item.product) ? item.product[0] : item.product;
+      return sum + (product?.reference_price || 0) * item.quantity;
     }, 0);
 
     // Crear la orden
