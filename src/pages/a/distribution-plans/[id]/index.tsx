@@ -241,7 +241,7 @@ const PlanEditorPage = () => {
   const planId = router.query.id as string | undefined;
   const { data, isLoading, refetch } = usePlanData(planId);
   const plan = data?.plan;
-  const orders = data?.orders || [];
+  const orders = useMemo(() => data?.orders || [], [data]);
   const dpoStatusCounts = data?.dpoStatusCounts || {};
 
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
@@ -406,7 +406,6 @@ const PlanEditorPage = () => {
       };
     });
   }
-
 
   const orderColumns = [
     {
@@ -697,6 +696,7 @@ const PlanEditorPage = () => {
                                 ].filter(Boolean);
                                 return (
                                   <Tag
+                                    key={`fullfilmentId_from_sale_order/${fid}`}
                                     id={`fullfilmentId_from_sale_order/${fid}`}
                                     onClick={() => {
                                       if (!fid) return;

@@ -332,12 +332,16 @@ const ProductsIndexPage = () => {
       });
 
       // Validar proveedores duplicados
-      const supplierIds = formOffers.map((o) => o.supplier_id).filter(Boolean);
+      const supplierIds = formOffers
+        .map((o: any) => o.supplier_id)
+        .filter(Boolean);
       const duplicates = supplierIds.filter(
-        (id, i) => supplierIds.indexOf(id) !== i
+        (id: string, i: number) => supplierIds.indexOf(id) !== i
       );
       if (duplicates.length) {
-        throw new Error("No se permiten proveedores duplicados en las catálogos");
+        throw new Error(
+          "No se permiten proveedores duplicados en las catálogos"
+        );
       }
 
       // Validar inmutabilidad del proveedor en catálogos existentes
@@ -352,7 +356,7 @@ const ProductsIndexPage = () => {
         }
       }
 
-      const finalIds = formOffers.map((o) => o.id).filter(Boolean) as string[];
+      const finalIds = formOffers.map((o:any) => o.id).filter(Boolean) as string[];
       let toDelete = originalOfferIds.filter((id) => !finalIds.includes(id));
 
       // Preverificación de dependencias antes de eliminar
@@ -385,14 +389,14 @@ const ProductsIndexPage = () => {
       }
 
       // Inserciones
-      const inserts = formOffers.filter((o) => !o.id);
+      const inserts = formOffers.filter((o:any) => !o.id);
       if (inserts.length) {
         const { error } = await supabase.from("offer").insert(inserts);
         if (error) throw error;
       }
 
       // Actualizaciones (una por una) — sin cambiar supplier_id
-      const updates = formOffers.filter((o) => !!o.id);
+      const updates = formOffers.filter((o:any) => !!o.id);
       for (const u of updates) {
         const { error } = await supabase
           .from("offer")
@@ -644,7 +648,7 @@ const ProductsIndexPage = () => {
                                 ]);
                               const usedSupplierIds = new Set(
                                 allOffers
-                                  .map((o, idx) =>
+                                  .map((o:any, idx:number) =>
                                     idx !== name ? o?.supplier_id : undefined
                                   )
                                   .filter(Boolean)

@@ -6,29 +6,11 @@ import {
   ShopOutlined,
   UserOutlined,
 } from "@ant-design/icons";
-import {
-  BranchStateType,
-  ChangeRequestStatusOptionsType,
-  entityTypeOptionsType,
-  ServiceOrderOrderStatusType,
-  ServiceOrderPaymentMethodType,
-  ServiceOrderPaymentStatusType,
-  VendorGendersType,
-} from "./models";
 import { Tag } from "antd";
 
 export const BRANCH_TYPE_LABELS = {
   individual: "Individual",
   company: "Empresa",
-};
-export const BRANCH_STATE_LABELS: Record<BranchStateType[number], string> = {
-  active: "Activo",
-  inactive: "Inactivo",
-  temporarily_closed: "Cerrado temporalmente",
-  maintenance: "En mantenimiento",
-  created: "Creado",
-  verified: "Verificado",
-  suspended: "Suspendido",
 };
 export const BRANCH_IS_ACTIVE_LABELS: Record<string, React.ReactNode> = {
   true: "Activo",
@@ -136,69 +118,4 @@ export const PRODUCT_CATEGORY_LABELS: Record<string, any> = {
   Confecciones: "Confecciones",
   Belleza: "Belleza",
   Gastronomía: "Gastronomía",
-};
-
-export const SERVICE_ORDER_ORDER_STATUS_LABELS: Record<
-  ServiceOrderOrderStatusType[number],
-  any
-> = {
-  received: <Tag color="yellow">Recibido</Tag>,
-  preparing: <Tag color="orange">En preparación</Tag>,
-  shipped: <Tag color="green">En ruta</Tag>,
-  delivered: <Tag color="gray">Entregado</Tag>,
-  cancelled: <Tag color="red">Cancelado</Tag>,
-};
-
-export const SERVICE_ORDER_PAYMENT_STATUS_LABELS: Record<
-  ServiceOrderPaymentStatusType[number],
-  any
-> = {
-  pending: <Tag>Pendiente</Tag>,
-  paid: <Tag color="green">Pagado</Tag>,
-  failed: <Tag color="red">Fallido</Tag>,
-  refunded: <Tag color="blue">Reembolsado</Tag>,
-};
-
-export const GENDER_LABELS: Record<VendorGendersType[number], string> = {
-  M: "Hombre",
-  F: "Mujer",
-  O: "Otro",
-};
-
-export const CHANGE_REQUEST_STATUS_LABEL: Record<
-  ChangeRequestStatusOptionsType[number],
-  string
-> = {
-  PENDING: "Pendiente",
-  APPROVED: "Aprobado",
-  REJECTED: "Rechazado",
-};
-
-export const CHANGE_REQUEST_TYPE_LABEL: Record<
-  entityTypeOptionsType[number],
-  any
-> = {
-  PRODUCT_AND_SERVICE: (
-    <Tag icon={<AppleOutlined />} color="geekblue">
-      Producto/Servicio
-    </Tag>
-  ),
-  STORE: (
-    <Tag icon={<AppstoreOutlined />} color="geekblue">
-      Tienda
-    </Tag>
-  ),
-  VENDOR_PROFILE: (
-    <Tag icon={<UserOutlined />} color="geekblue">
-      Perfil de Vendedor
-    </Tag>
-  ),
-};
-
-export const SERVICE_ORDER_PAYMENT_METHOD_LABELS: Record<
-  ServiceOrderPaymentMethodType[number],
-  string
-> = {
-  cash: "Pago contraentrega - Efectivo",
-  transfer: "Pago en linea - Wompi",
 };

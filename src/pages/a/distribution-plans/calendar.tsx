@@ -200,13 +200,14 @@ const CalendarCreateMultiplePlansPage = () => {
             style={{ width: 380 }}
             title="Resumen y acciones"
             actions={[
-              <Button onClick={() => setSelectedDates(new Set())}>
+              <Button onClick={() => setSelectedDates(new Set())} key="clear">
                 Limpiar selección
               </Button>,
               <Button
                 type="primary"
                 disabled={loadingPlans || newToCreateCount === 0}
                 onClick={handleCreate}
+                key="create"
               >
                 Crear {newToCreateCount} plan
                 {newToCreateCount === 1 ? "" : "es"}
