@@ -2,18 +2,13 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { Layout, theme, Typography, Button, Drawer } from "antd";
 import {
-  AppleOutlined,
-  AppstoreOutlined,
-  DollarOutlined,
   HomeOutlined,
   LogoutOutlined,
   MenuOutlined,
-  PullRequestOutlined,
-  ReconciliationOutlined,
-  SettingOutlined,
   ShopOutlined,
-  ShoppingOutlined,
-  TeamOutlined,
+  ShoppingCartOutlined,
+  TruckOutlined,
+  UserOutlined,
 } from "@ant-design/icons";
 import Image from "next/image";
 import type { MenuProps } from "antd";
@@ -46,13 +41,13 @@ const lateralMenuItems: Record<string, MenuProps["items"]> = {
     },
     {
       key: `/a/sale-orders`,
-      icon: React.createElement(ShoppingOutlined),
+      icon: React.createElement(ShoppingCartOutlined),
       label: <Link href="/a/sale-orders">Pedidos</Link>,
       children: undefined,
     },
     {
       key: `/a/distribution-plans`,
-      icon: React.createElement(ShoppingOutlined),
+      icon: React.createElement(TruckOutlined),
       label: <Link href="/a/distribution-plans">Operación</Link>,
       children: undefined,
     },
@@ -64,30 +59,26 @@ const lateralMenuItems: Record<string, MenuProps["items"]> = {
     },
     {
       key: `/a/user`,
-      icon: React.createElement(SettingOutlined),
+      icon: React.createElement(UserOutlined),
       label: "Usuarios",
       children: [
         {
           key: `/a/users/customers`,
-          icon: React.createElement(ShoppingOutlined),
           label: <Link href="/a/users/customers">Clientes</Link>,
           children: undefined,
         },
         {
           key: `/a/users/suppliers`,
-          icon: React.createElement(ShoppingOutlined),
           label: <Link href="/a/users/suppliers">Proveedores</Link>,
           children: undefined,
         },
         {
           key: `/a/users/operators`,
-          icon: React.createElement(ShoppingOutlined),
           label: <Link href="/a/users/operators">Operadores</Link>,
           children: undefined,
         },
         {
           key: `/a/users/admins`,
-          icon: React.createElement(ShoppingOutlined),
           label: <Link href="/a/users/admins">Administradores</Link>,
           children: undefined,
         },

@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import Link from "next/link";
 import { supabase } from "@/services/supabase.client";
+import { CalendarOutlined } from "@ant-design/icons";
 
 type DistributionPlanRow = {
   id: string;
@@ -74,7 +75,12 @@ const DistributionPlansPage = () => {
   return (
     <>
       <Space style={{ marginBottom: 16 }}>
-        <Button href="/a/distribution-plans/calendar">Calendario</Button>
+        <Button
+          href="/a/distribution-plans/calendar"
+          icon={<CalendarOutlined />}
+        >
+          Calendario
+        </Button>
       </Space>
       <Table
         loading={isLoading}
