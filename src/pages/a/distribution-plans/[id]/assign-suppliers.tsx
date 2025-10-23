@@ -1065,7 +1065,9 @@ const AssignSuppliersPage = () => {
                               >
                                 <Space wrap split="·" key={f?.id}>
                                   {label.map((e) => (
-                                    <Typography.Text key={e}>{e}</Typography.Text>
+                                    <Typography.Text key={e}>
+                                      {e}
+                                    </Typography.Text>
                                   ))}
                                 </Space>
                               </Tag>
@@ -1074,7 +1076,8 @@ const AssignSuppliersPage = () => {
                         </Space>
                         <Button
                           onClick={() => openAssignDrawer(it)}
-                          type="dashed"
+                          color="primary"
+                          variant="outlined"
                         >
                           Asignar
                         </Button>
@@ -1244,7 +1247,11 @@ const AssignSuppliersPage = () => {
                                               : undefined,
                                         }}
                                       >
-                                        <Space wrap split="·" key={i.fulfillment?.[0]?.id}>
+                                        <Space
+                                          wrap
+                                          split="·"
+                                          key={i.fulfillment?.[0]?.id}
+                                        >
                                           {labels.map((e) => (
                                             <Typography.Text key={e}>
                                               {e}

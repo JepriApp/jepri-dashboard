@@ -142,7 +142,7 @@ CREATE TABLE sale_item (
     UNIQUE (sale_order_id, product_id)
 );
 
-CREATE TYPE purchase_order_status AS ENUM ('created', 'published', 'accepted', 'cancelled', 'rejected');
+CREATE TYPE purchase_order_status AS ENUM ('created', 'published', 'accepted', 'received', 'cancelled', 'rejected');
 
 -- Tabla de órdenes de compra (a proveedores)
 CREATE TABLE purchase_order (
@@ -153,14 +153,13 @@ CREATE TABLE purchase_order (
     notes TEXT,
     created_by UUID NOT NULL REFERENCES auth(id) ON DELETE RESTRICT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    received_at TIMESTAMPTZ,
+    updated_by UUID REFERENCES auth(id) ON DELETE RESTRICT,
+    updated_at TIMESTAMPTZ,
     -- Identificador humano: número secuencial global (ej: 000123)
     purchase_seq INTEGER,
     purchase_code TEXT UNIQUE,
     UNIQUE (supplier_id, distribution_plan_id)
 );
-
-CREATE TYPE purchase_item_status AS ENUM ('pending', 'accepted', 'accepted-with-notes', 'rejected', 'not_received');
 
 -- Tabla de items de compra
 CREATE TABLE purchase_item (
@@ -170,10 +169,6 @@ CREATE TABLE purchase_item (
     quantity DECIMAL(12,2) NOT NULL,
     actual_price DECIMAL(12,2),
     received_quantity DECIMAL(12,2),
-    status purchase_item_status DEFAULT 'pending',
-    notes TEXT,
-    received_by UUID REFERENCES auth(id) ON DELETE RESTRICT,
-    received_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

@@ -11,6 +11,8 @@ import {
   InputNumber,
   Input,
   message,
+  Dropdown,
+  Modal,
 } from "antd";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/services/supabase.client";
@@ -18,8 +20,15 @@ import dayjs from "dayjs";
 import { useRouter } from "next/router";
 import { formatPriceAccounting } from "@/utils/formatPrice";
 import { useAuthStore } from "@/store/auth.store";
+import {
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  StopOutlined,
+} from "@ant-design/icons";
+import { renderPurchaseOrderStatusTag } from "@/constants/labels";
 
 const { Text, Title } = Typography;
+const { TextArea } = Input;
 
 type PurchaseItemRow = {
   id: string;
@@ -29,16 +38,16 @@ type PurchaseItemRow = {
   actual_price: number | null;
   quantity: number;
   received_quantity: number | null;
-  received_by: string | null; // email del usuario
-  received_at: string | null; // ISO
-  notes: string | null;
 };
 
 type PurchaseOrderGroup = {
   id: string;
   supplier_name: string;
   purchase_code: string | null;
+  updated_by: string | null;
+  updated_at: string | null;
   status: string | null;
+  notes: string | null;
   items: PurchaseItemRow[];
 };
 
@@ -50,15 +59,21 @@ const SuppliersRecepction = () => {
   const [pendingActualPrice, setPendingActualPrice] = React.useState<
     Record<string, number | undefined>
   >({});
-  const [savingById, setSavingById] = React.useState<Record<string, boolean>>(
-    {}
-  );
   const [pendingReceivedQuantity, setPendingReceivedQuantity] = React.useState<
     Record<string, number | undefined>
   >({});
   const [pendingNotes, setPendingNotes] = React.useState<
     Record<string, string | undefined>
   >({});
+
+  // Estados para los modales de cancelar/rechazar
+  const [rejectModalVisible, setRejectModalVisible] = React.useState(false);
+  const [cancelModalVisible, setCancelModalVisible] = React.useState(false);
+  const [currentOrderId, setCurrentOrderId] = React.useState<string | null>(
+    null
+  );
+  const [rejectNotes, setRejectNotes] = React.useState("");
+  const [cancelNotes, setCancelNotes] = React.useState("");
 
   const getCurrentAuthId = async (): Promise<string | null> => {
     if (user?.id) return user.id;
@@ -91,15 +106,19 @@ const SuppliersRecepction = () => {
           id,
           purchase_code,
           status,
+          notes,
+          updated_by_email: updated_by (
+            email
+          ),
+          updated_at,
           supplier:supplier_id ( id, name ),
           items:purchase_item (
             id,
             quantity,
             actual_price,
             received_quantity,
-            notes,
-            received_by,
-            received_at,
+            updated_by,
+            updated_at,
             offer:offer_id (
               id,
               price,
@@ -109,7 +128,7 @@ const SuppliersRecepction = () => {
                 unit
               )
             ),
-            receiver:received_by (
+            receiver:updated_by (
               email
             )
           )
@@ -124,6 +143,9 @@ const SuppliersRecepction = () => {
         supplier_name: po.supplier?.name ?? "—",
         purchase_code: po.purchase_code ?? null,
         status: po.status ?? null,
+        notes: po.notes ?? null,
+        updated_by: po.updated_by_email?.email ?? null,
+        updated_at: po.updated_at ?? null,
         items: (po.items || []).map((pi: any) => ({
           id: pi.id,
           product_name: pi.offer?.product?.name ?? "—",
@@ -133,8 +155,7 @@ const SuppliersRecepction = () => {
           quantity: Number(pi.quantity || 0),
           received_quantity: pi.received_quantity ?? null,
           received_by: pi.receiver?.email ?? null,
-          received_at: pi.received_at ?? null,
-          notes: pi.notes ?? null,
+          received_at: pi.updated_at ?? null,
         })),
       }));
 
@@ -152,18 +173,15 @@ const SuppliersRecepction = () => {
       const authId = await getCurrentAuthId();
       const payload: any = {
         actual_price: newPrice ?? null,
-        received_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
-      if (authId) payload.received_by = authId;
+      if (authId) payload.updated_by = authId;
       const { error } = await supabase
         .from("purchase_item")
         .update(payload)
         .eq("id", rowId);
       if (error) throw error;
       return { rowId, newPrice };
-    },
-    onMutate: ({ rowId }) => {
-      setSavingById((prev) => ({ ...prev, [rowId]: true }));
     },
     onSuccess: (_data, variables) => {
       message.success("Precio actualizado");
@@ -180,11 +198,6 @@ const SuppliersRecepction = () => {
       console.error("Error al actualizar precio real:", err);
       message.error("No se pudo guardar el precio real");
     },
-    onSettled: (_data, _error, variables) => {
-      if (variables?.rowId) {
-        setSavingById((prev) => ({ ...prev, [variables.rowId]: false }));
-      }
-    },
   });
 
   const updateReceivedQuantityMutation = useMutation<
@@ -197,18 +210,15 @@ const SuppliersRecepction = () => {
       const authId = await getCurrentAuthId();
       const payload: any = {
         received_quantity: newQuantity ?? null,
-        received_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
-      if (authId) payload.received_by = authId;
+      if (authId) payload.updated_by = authId;
       const { error } = await supabase
         .from("purchase_item")
         .update(payload)
         .eq("id", rowId);
       if (error) throw error;
       return { rowId, newQuantity };
-    },
-    onMutate: ({ rowId }) => {
-      setSavingById((prev) => ({ ...prev, [rowId]: true }));
     },
     onSuccess: (_data, variables) => {
       message.success("Cantidad recibida actualizada");
@@ -225,40 +235,32 @@ const SuppliersRecepction = () => {
       console.error("Error al actualizar cantidad recibida:", err);
       message.error("No se pudo guardar la cantidad recibida");
     },
-    onSettled: (_data, _error, variables) => {
-      if (variables?.rowId) {
-        setSavingById((prev) => ({ ...prev, [variables.rowId]: false }));
-      }
-    },
   });
 
   const updateNotesMutation = useMutation<
-    { rowId: string; newNotes: string | null },
+    { purchase_order_id: string; newNotes: string | null },
     any,
-    { rowId: string; newNotes: string | null },
+    { purchase_order_id: string; newNotes: string | null },
     unknown
   >({
-    mutationFn: async ({ rowId, newNotes }) => {
+    mutationFn: async ({ purchase_order_id, newNotes }) => {
       const authId = await getCurrentAuthId();
       const payload: any = {
         notes: newNotes ?? null,
-        received_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
-      if (authId) payload.received_by = authId;
+      if (authId) payload.updated_by = authId;
       const { error } = await supabase
-        .from("purchase_item")
+        .from("purchase_order")
         .update(payload)
-        .eq("id", rowId);
+        .eq("id", purchase_order_id);
       if (error) throw error;
-      return { rowId, newNotes };
-    },
-    onMutate: ({ rowId }) => {
-      setSavingById((prev) => ({ ...prev, [rowId]: true }));
+      return { purchase_order_id, newNotes };
     },
     onSuccess: (_data, variables) => {
       message.success("Notas actualizadas");
       setPendingNotes((prev) => {
-        const { [variables.rowId]: _, ...rest } = prev;
+        const { [variables.purchase_order_id]: _, ...rest } = prev;
         return rest;
       });
       const key = id
@@ -270,222 +272,75 @@ const SuppliersRecepction = () => {
       console.error("Error al actualizar notas:", err);
       message.error("No se pudo guardar las notas");
     },
-    onSettled: (_data, _error, variables) => {
-      if (variables?.rowId) {
-        setSavingById((prev) => ({ ...prev, [variables.rowId]: false }));
-      }
+  });
+
+  const updatePurchaseOrderStatusMutation = useMutation<
+    { purchase_order_id: string; newStatus: string; notes?: string | null },
+    any,
+    { purchase_order_id: string; newStatus: string; notes?: string | null },
+    unknown
+  >({
+    mutationFn: async ({ purchase_order_id, newStatus, notes }) => {
+      const authId = await getCurrentAuthId();
+      const payload: any = {
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+      };
+      if (authId) payload.updated_by = authId;
+      if (notes !== undefined) payload.notes = notes;
+
+      const { error } = await supabase
+        .from("purchase_order")
+        .update(payload)
+        .eq("id", purchase_order_id);
+      if (error) throw error;
+      return { purchase_order_id, newStatus, notes };
+    },
+    onSuccess: (_data, variables) => {
+      message.success("Estado actualizado");
+      const key = id
+        ? ["distributionPlanPurchaseOrdersWithItems", id]
+        : ["distributionPlanPurchaseOrdersWithItems"];
+      queryClient.invalidateQueries({ queryKey: key });
+    },
+    onError: (err: any) => {
+      console.error("Error al actualizar estado:", err);
+      message.error("No se pudo actualizar el estado");
     },
   });
 
-  const columns = [
-    {
-      title: "Producto",
-      dataIndex: "product_name",
-      key: "product_name",
-      render: (v: string | null, record: any) =>
-        `${v} x ${record.product_unit}`,
-    },
-    {
-      title: "Precio",
-      children: [
-        {
-          title: "En la app",
-          dataIndex: "reference_price",
-          key: "reference_price",
-          render: (v: number | null) =>
-            v != null ? formatPriceAccounting(v) : "—",
-        },
-        {
-          title: "Real",
-          dataIndex: "actual_price",
-          key: "actual_price",
-          render: (v: number | null, row: any) => (
-            <InputNumber
-              value={
-                pendingActualPrice[row.id] !== undefined
-                  ? pendingActualPrice[row.id]
-                  : v ?? undefined
-              }
-              min={0}
-              style={{ width: 120 }}
-              disabled={!!savingById[row.id]}
-              onChange={(val) => {
-                setPendingActualPrice((prev) => ({
-                  ...prev,
-                  [row.id]: typeof val === "number" ? val : undefined,
-                }));
-              }}
-              onBlur={() => {
-                const val = pendingActualPrice[row.id];
-                const newPrice = (val !== undefined ? val : v) ?? null;
-                const current = v ?? null;
-                if (newPrice === current) {
-                  // No cambios: limpiar estado pendiente y evitar mutación
-                  setPendingActualPrice((prev) => {
-                    const { [row.id]: _, ...rest } = prev;
-                    return rest;
-                  });
-                  return;
-                }
-                updateActualPriceMutation.mutate({ rowId: row.id, newPrice });
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  const val = pendingActualPrice[row.id];
-                  const newPrice = (val !== undefined ? val : v) ?? null;
-                  const current = v ?? null;
-                  if (newPrice === current) {
-                    setPendingActualPrice((prev) => {
-                      const { [row.id]: _, ...rest } = prev;
-                      return rest;
-                    });
-                    return;
-                  }
-                  updateActualPriceMutation.mutate({ rowId: row.id, newPrice });
-                }
-              }}
-              placeholder="Precio real"
-            />
-          ),
-        },
-      ],
-    },
-    {
-      title: "Cantidad",
-      children: [
-        {
-          title: "Requerida",
-          dataIndex: "quantity",
-          key: "quantity",
-          render: (v: number) => Number(v),
-        },
-        {
-          title: "Recibida",
-          dataIndex: "received_quantity",
-          key: "received_quantity",
-          render: (v: number | null, row: any) => (
-            <InputNumber
-              value={
-                pendingReceivedQuantity[row.id] !== undefined
-                  ? pendingReceivedQuantity[row.id]
-                  : v ?? undefined
-              }
-              min={0}
-              style={{ width: 120 }}
-              disabled={!!savingById[row.id]}
-              onChange={(val) => {
-                setPendingReceivedQuantity((prev) => ({
-                  ...prev,
-                  [row.id]: typeof val === "number" ? val : undefined,
-                }));
-              }}
-              onBlur={() => {
-                const val = pendingReceivedQuantity[row.id];
-                const newQuantity = (val !== undefined ? val : v) ?? null;
-                const current = v ?? null;
-                if (newQuantity === current) {
-                  // No cambios: limpiar estado pendiente y evitar mutación
-                  setPendingReceivedQuantity((prev) => {
-                    const { [row.id]: _, ...rest } = prev;
-                    return rest;
-                  });
-                  return;
-                }
-                updateReceivedQuantityMutation.mutate({
-                  rowId: row.id,
-                  newQuantity,
-                });
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  const val = pendingReceivedQuantity[row.id];
-                  const newQuantity = (val !== undefined ? val : v) ?? null;
-                  const current = v ?? null;
-                  if (newQuantity === current) {
-                    setPendingReceivedQuantity((prev) => {
-                      const { [row.id]: _, ...rest } = prev;
-                      return rest;
-                    });
-                    return;
-                  }
-                  updateReceivedQuantityMutation.mutate({
-                    rowId: row.id,
-                    newQuantity,
-                  });
-                }
-              }}
-              placeholder="Cantidad recibida"
-            />
-          ),
-        },
-      ],
-    },
-    {
-      title: "Notas",
-      dataIndex: "notes",
-      key: "notes",
-      render: (v: string | null, row: any) => {
-        return (
-          <Input
-            value={
-              pendingNotes[row.id] !== undefined
-                ? pendingNotes[row.id]
-                : v ?? undefined
-            }
-            disabled={!!savingById[row.id]}
-            style={{ width: 240 }}
-            onChange={(e) => {
-              const val = e.target.value;
-              setPendingNotes((prev) => ({
-                ...prev,
-                [row.id]: typeof val === "string" ? val : undefined,
-              }));
-            }}
-            onBlur={() => {
-              const val = pendingNotes[row.id];
-              const newNotes = (val !== undefined ? val : v) ?? null;
-              const current = v ?? null;
-              if (newNotes === current) {
-                setPendingNotes((prev) => {
-                  const { [row.id]: _, ...rest } = prev;
-                  return rest;
-                });
-                return;
-              }
-              updateNotesMutation.mutate({ rowId: row.id, newNotes });
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                const val = pendingNotes[row.id];
-                const newNotes = (val !== undefined ? val : v) ?? null;
-                const current = v ?? null;
-                if (newNotes === current) {
-                  setPendingNotes((prev) => {
-                    const { [row.id]: _, ...rest } = prev;
-                    return rest;
-                  });
-                  return;
-                }
-                updateNotesMutation.mutate({ rowId: row.id, newNotes });
-              }
-            }}
-            placeholder="Notas"
-          />
-        );
-      },
-    },
-    {
-      title: "Recepción en bodega",
-      dataIndex: "received_by",
-      key: "received_by",
-      render: (email: string | null, { received_at: val }: any) => (
-        <Space wrap>
-          {email ? email : "—"}
-          {val ? dayjs(val).format("YYYY-MM-DD HH:mm") : "—"}
-        </Space>
-      ),
-    },
-  ];
+  const savingById =
+    updateReceivedQuantityMutation.isPending ||
+    updateActualPriceMutation.isPending ||
+    updatePurchaseOrderStatusMutation.isPending;
+
+  const handleRejectOrder = () => {
+    if (!currentOrderId) return;
+
+    updatePurchaseOrderStatusMutation.mutate({
+      purchase_order_id: currentOrderId,
+      newStatus: "rejected",
+      notes: rejectNotes.trim() || null,
+    });
+
+    setRejectModalVisible(false);
+    setRejectNotes("");
+    setCurrentOrderId(null);
+  };
+
+  const handleCancelOrder = () => {
+    if (!currentOrderId) return;
+
+    updatePurchaseOrderStatusMutation.mutate({
+      purchase_order_id: currentOrderId,
+      newStatus: "cancelled",
+      notes: cancelNotes.trim() || null,
+    });
+
+    setCancelModalVisible(false);
+    setCancelNotes("");
+    setCurrentOrderId(null);
+  };
 
   return (
     <div style={{}}>
@@ -493,31 +348,382 @@ const SuppliersRecepction = () => {
         <Card
           key={group.id}
           style={{ marginBottom: 24, overflow: "auto" }}
-          extra={<Button>Cambiar estado</Button>}
           title={
-            <Space>
-              {group.supplier_name}
-              <Text type="secondary">
-                {group.purchase_code ? group.purchase_code : ""}
-              </Text>
-              <Tag>{group.status || "—"}</Tag>
+            <Space direction="vertical" size={0} align="start">
+              <Space size={8}>
+                <Title level={5} style={{ margin: 0 }}>
+                  {group.supplier_name}
+                </Title>
+                {renderPurchaseOrderStatusTag(group.status)}
+              </Space>
+              <Text type="secondary">{group.purchase_code || "—"}</Text>
             </Space>
+          }
+          extra={
+            <div style={{ textAlign: "right" }}>
+              <Text strong>{group.updated_by || "—"}</Text>
+              <br />
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                Última actualización:{" "}
+                {group.updated_at
+                  ? dayjs(group.updated_at).format("YYYY-MM-DD HH:mm A")
+                  : "—"}
+              </Text>
+            </div>
           }
           styles={{ body: { padding: 0 } }}
         >
-          <Table
-            loading={isLoading}
-            dataSource={group.items}
-            columns={columns as any}
-            rowKey="id"
-            pagination={false}
-          />
+          {(() => {
+            const isEditable = group.status === "accepted";
+            const isFinal = ["received", "cancelled", "rejected"].includes(
+              group.status || ""
+            );
+
+            const groupColumns = [
+              {
+                title: "Producto",
+                dataIndex: "product_name",
+                key: "product_name",
+                render: (v: string | null, record: any) =>
+                  `${v} x ${record.product_unit}`,
+              },
+              {
+                title: "Precio",
+                children: [
+                  {
+                    title: "Mas reciente",
+                    dataIndex: "reference_price",
+                    key: "reference_price",
+                    render: (v: number | null) =>
+                      v != null ? formatPriceAccounting(v) : "—",
+                  },
+                  {
+                    title: "Real",
+                    dataIndex: "actual_price",
+                    key: "actual_price",
+                    render: (v: number | null, row: any) => (
+                      <InputNumber
+                        value={
+                          pendingActualPrice[row.id] !== undefined
+                            ? pendingActualPrice[row.id]
+                            : v ?? undefined
+                        }
+                        min={0}
+                        prefix="$"
+                        style={{ width: 120 }}
+                        disabled={savingById || !isEditable}
+                        onChange={(val) => {
+                          setPendingActualPrice((prev) => ({
+                            ...prev,
+                            [row.id]: typeof val === "number" ? val : undefined,
+                          }));
+                        }}
+                        onBlur={() => {
+                          const val = pendingActualPrice[row.id];
+                          const newPrice =
+                            (val !== undefined ? val : v) ?? null;
+                          const current = v ?? null;
+                          if (newPrice === current || !isEditable) {
+                            // No cambios o no editable: limpiar estado pendiente y evitar mutación
+                            setPendingActualPrice((prev) => {
+                              const { [row.id]: _, ...rest } = prev;
+                              return rest;
+                            });
+                            return;
+                          }
+                          updateActualPriceMutation.mutate({
+                            rowId: row.id,
+                            newPrice,
+                          });
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            const val = pendingActualPrice[row.id];
+                            const newPrice =
+                              (val !== undefined ? val : v) ?? null;
+                            const current = v ?? null;
+                            if (newPrice === current || !isEditable) {
+                              setPendingActualPrice((prev) => {
+                                const { [row.id]: _, ...rest } = prev;
+                                return rest;
+                              });
+                              return;
+                            }
+                            updateActualPriceMutation.mutate({
+                              rowId: row.id,
+                              newPrice,
+                            });
+                          }
+                        }}
+                        placeholder="Precio real"
+                      />
+                    ),
+                  },
+                ],
+              },
+              {
+                title: "Cantidad",
+                children: [
+                  {
+                    title: "Requerida",
+                    dataIndex: "quantity",
+                    key: "quantity",
+                    render: (v: number) => Number(v),
+                  },
+                  {
+                    title: "Recibida",
+                    dataIndex: "received_quantity",
+                    key: "received_quantity",
+                    render: (v: number | null, row: any) => (
+                      <InputNumber
+                        value={
+                          pendingReceivedQuantity[row.id] !== undefined
+                            ? pendingReceivedQuantity[row.id]
+                            : v ?? undefined
+                        }
+                        min={0}
+                        style={{ width: 120 }}
+                        disabled={savingById || !isEditable}
+                        onChange={(val) => {
+                          setPendingReceivedQuantity((prev) => ({
+                            ...prev,
+                            [row.id]: typeof val === "number" ? val : undefined,
+                          }));
+                        }}
+                        onBlur={() => {
+                          const val = pendingReceivedQuantity[row.id];
+                          const newQuantity =
+                            (val !== undefined ? val : v) ?? null;
+                          const current = v ?? null;
+                          if (newQuantity === current || !isEditable) {
+                            // No cambios o no editable: limpiar estado pendiente y evitar mutación
+                            setPendingReceivedQuantity((prev) => {
+                              const { [row.id]: _, ...rest } = prev;
+                              return rest;
+                            });
+                            return;
+                          }
+                          updateReceivedQuantityMutation.mutate({
+                            rowId: row.id,
+                            newQuantity,
+                          });
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            const val = pendingReceivedQuantity[row.id];
+                            const newQuantity =
+                              (val !== undefined ? val : v) ?? null;
+                            const current = v ?? null;
+                            if (newQuantity === current || !isEditable) {
+                              setPendingReceivedQuantity((prev) => {
+                                const { [row.id]: _, ...rest } = prev;
+                                return rest;
+                              });
+                              return;
+                            }
+                            updateReceivedQuantityMutation.mutate({
+                              rowId: row.id,
+                              newQuantity,
+                            });
+                          }
+                        }}
+                        placeholder="Cantidad recibida"
+                      />
+                    ),
+                  },
+                ],
+              },
+            ];
+
+            return (
+              <Table
+                bordered
+                loading={isLoading}
+                dataSource={group.items}
+                columns={groupColumns as any}
+                rowKey="id"
+                pagination={false}
+                footer={() => (
+                  <div
+                    style={{ display: "flex", gap: 8, justifyContent: "end" }}
+                  >
+                    <TextArea
+                      placeholder="Notas de la orden (opcional)"
+                      value={pendingNotes[group.id] ?? group.notes ?? ""}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setPendingNotes((prev) => ({
+                          ...prev,
+                          [group.id]: val,
+                        }));
+                      }}
+                      onBlur={() => {
+                        const pending = pendingNotes[group.id];
+                        const original = group.notes ?? "";
+                        const newTrim = (pending ?? original).trim();
+                        const oldTrim = original.trim();
+                        if (
+                          pending === undefined ||
+                          newTrim === oldTrim ||
+                          !isEditable
+                        ) {
+                          setPendingNotes((prev) => {
+                            const { [group.id]: _, ...rest } = prev;
+                            return rest;
+                          });
+                          return;
+                        }
+                        updateNotesMutation.mutate({
+                          purchase_order_id: group.id,
+                          newNotes: newTrim.length ? newTrim : null,
+                        });
+                      }}
+                      onPressEnter={(e) => {
+                        e.preventDefault();
+                        const pending = pendingNotes[group.id];
+                        const original = group.notes ?? "";
+                        const newTrim = (pending ?? original).trim();
+                        const oldTrim = original.trim();
+                        if (
+                          pending === undefined ||
+                          newTrim === oldTrim ||
+                          !isEditable
+                        ) {
+                          setPendingNotes((prev) => {
+                            const { [group.id]: _, ...rest } = prev;
+                            return rest;
+                          });
+                          return;
+                        }
+                        updateNotesMutation.mutate({
+                          purchase_order_id: group.id,
+                          newNotes: newTrim.length ? newTrim : null,
+                        });
+                      }}
+                      autoSize={{ minRows: 2, maxRows: 6 }}
+                      disabled={updateNotesMutation.isPending || !isEditable}
+                    />
+
+                    {isEditable ? (
+                      <Dropdown.Button
+                        menu={{
+                          items: [
+                            {
+                              key: "rejected",
+                              label: "Rechazar",
+                              icon: <StopOutlined />,
+                            },
+                            {
+                              key: "cancelled",
+                              label: "Cancelar",
+                              icon: <CloseCircleOutlined />,
+                            },
+                          ],
+                          onClick: ({ key }) => {
+                            if (key === "rejected") {
+                              setCurrentOrderId(group.id);
+                              setRejectModalVisible(true);
+                            } else if (key === "cancelled") {
+                              setCurrentOrderId(group.id);
+                              setCancelModalVisible(true);
+                            }
+                          },
+                        }}
+                        onClick={() => {
+                          updatePurchaseOrderStatusMutation.mutate({
+                            purchase_order_id: group.id,
+                            newStatus: "received",
+                          });
+                        }}
+                        type="primary"
+                        disabled={savingById}
+                        style={{ justifyContent: "end" }}
+                      >
+                        <CheckCircleOutlined /> Completar recibo
+                      </Dropdown.Button>
+                    ) : isFinal ? (
+                      <Button
+                        type="primary"
+                        disabled={savingById}
+                        onClick={() => {
+                          updatePurchaseOrderStatusMutation.mutate({
+                            purchase_order_id: group.id,
+                            newStatus: "accepted",
+                          });
+                        }}
+                      >
+                        Volver a editar
+                      </Button>
+                    ) : null}
+                  </div>
+                )}
+              />
+            );
+          })()}
         </Card>
       ))}
 
       {!isLoading && groups.length === 0 && (
         <Text type="secondary">No hay órdenes de compra para este plan.</Text>
       )}
+
+      {/* Modal para rechazar orden */}
+      <Modal
+        title={
+          <Space>
+            <StopOutlined />
+            Rechazar orden
+          </Space>
+        }
+        open={rejectModalVisible}
+        onOk={handleRejectOrder}
+        onCancel={() => {
+          setRejectModalVisible(false);
+          setRejectNotes("");
+          setCurrentOrderId(null);
+        }}
+        okText="Sí, rechazar"
+        cancelText="Cancelar"
+        confirmLoading={updatePurchaseOrderStatusMutation.isPending}
+      >
+        <p>¿Deseas marcar la orden como Rechazada?</p>
+        <TextArea
+          placeholder="Motivo del rechazo (opcional)"
+          value={rejectNotes}
+          onChange={(e) => setRejectNotes(e.target.value)}
+          rows={3}
+          style={{ marginTop: 16 }}
+        />
+      </Modal>
+
+      {/* Modal para cancelar orden */}
+      <Modal
+        title={
+          <Space>
+            <CloseCircleOutlined />
+            Cancelar orden
+          </Space>
+        }
+        open={cancelModalVisible}
+        onOk={handleCancelOrder}
+        onCancel={() => {
+          setCancelModalVisible(false);
+          setCancelNotes("");
+          setCurrentOrderId(null);
+        }}
+        okText="Sí, cancelar"
+        cancelText="Cancelar"
+        confirmLoading={updatePurchaseOrderStatusMutation.isPending}
+      >
+        <p>¿Deseas marcar la orden como Cancelada?</p>
+        <TextArea
+          placeholder="Motivo de la cancelación (opcional)"
+          value={cancelNotes}
+          onChange={(e) => setCancelNotes(e.target.value)}
+          rows={3}
+          style={{ marginTop: 16 }}
+        />
+      </Modal>
     </div>
   );
 };
