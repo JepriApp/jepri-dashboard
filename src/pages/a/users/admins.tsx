@@ -2,7 +2,8 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import React, { ReactElement } from "react";
 import { Table, Typography } from "antd";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/services/supabase.client";
+import { createClient as createSupabaseComponent } from "@/utils/supabase/component";
+const supabase = createSupabaseComponent();
 
 interface AdminRow {
   id: string;

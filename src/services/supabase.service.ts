@@ -1,4 +1,5 @@
-import { supabase } from "./supabase.client";
+import { createClient as createSupabaseComponent } from "@/utils/supabase/component";
+const supabase = createSupabaseComponent();
 
 // Definición de tipos para mejorar la tipificación
 export interface Product {

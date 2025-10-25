@@ -4,7 +4,8 @@ import { Table, Tag, Button, Space } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import Link from "next/link";
-import { supabase } from "@/services/supabase.client";
+import { createClient as createSupabaseComponent } from "@/utils/supabase/component";
+const supabase = createSupabaseComponent();
 import { CalendarOutlined } from "@ant-design/icons";
 
 type DistributionPlanRow = {

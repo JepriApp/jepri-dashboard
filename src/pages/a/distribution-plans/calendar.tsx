@@ -16,7 +16,8 @@ import { CheckOutlined, LeftOutlined, RightOutlined } from "@ant-design/icons";
 import type { Dayjs } from "dayjs";
 import dayjs from "dayjs";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/services/supabase.client";
+import { createClient as createSupabaseComponent } from "@/utils/supabase/component";
+const supabase = createSupabaseComponent();
 import { useRouter } from "next/router";
 
 type DistributionPlanMinimal = {

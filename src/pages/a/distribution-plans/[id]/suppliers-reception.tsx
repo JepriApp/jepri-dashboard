@@ -15,7 +15,9 @@ import {
   Modal,
 } from "antd";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { supabase } from "@/services/supabase.client";
+import { createClient as createSupabaseComponent } from "@/utils/supabase/component";
+const supabase = createSupabaseComponent();
+
 import dayjs from "dayjs";
 import { useRouter } from "next/router";
 import { formatPriceAccounting } from "@/utils/formatPrice";

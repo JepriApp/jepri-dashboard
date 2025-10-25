@@ -2,7 +2,8 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import React, { ReactElement, useState } from "react";
 import { Table, Typography, Button, Space, Modal, Form, Input, Switch, Tag, App } from "antd";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { supabase } from "@/services/supabase.client";
+import { createClient as createSupabaseComponent } from "@/utils/supabase/component";
+const supabase = createSupabaseComponent();
 import { PlusOutlined } from "@ant-design/icons";
 
 interface OperatorRow {

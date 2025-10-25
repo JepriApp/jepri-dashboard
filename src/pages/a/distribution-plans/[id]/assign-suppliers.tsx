@@ -20,7 +20,8 @@ import {
 } from "antd";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/router";
-import { supabase } from "@/services/supabase.client";
+import { createClient as createSupabaseComponent } from "@/utils/supabase/component";
+const supabase = createSupabaseComponent();
 import type { SaleOrder, SaleItem } from "@/services/supabase.service";
 import {
   getOrCreatePurchaseOrderForSupplier,

@@ -21,7 +21,8 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { useRouter } from "next/router";
-import { supabase } from "@/services/supabase.client";
+import { createClient as createSupabaseComponent } from "@/utils/supabase/component";
+const supabase = createSupabaseComponent();
 import type { SaleOrder, SaleItem } from "@/services/supabase.service";
 import { getPendingOrdersForAdmin } from "@/services/supabase.service";
 import { formatPriceAccounting } from "@/utils/formatPrice";

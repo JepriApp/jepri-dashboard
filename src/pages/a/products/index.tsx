@@ -16,7 +16,8 @@ import {
   InputNumber,
 } from "antd";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { supabase } from "@/services/supabase.client";
+import { createClient as createSupabaseComponent } from "@/utils/supabase/component";
+const supabase = createSupabaseComponent();
 import { formatPriceAccounting } from "@/utils/formatPrice";
 import { Image } from "antd";
 import placeholder from "../../../../public/images/logo.png";

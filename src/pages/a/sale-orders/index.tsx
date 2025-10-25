@@ -17,7 +17,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { type SaleOrder } from "@/services/supabase.service";
 import Link from "next/link";
-import { supabase } from "@/services/supabase.client";
+import { createClient as createSupabaseComponent } from "@/utils/supabase/component";
+const supabase = createSupabaseComponent();
 import { formatPriceAccounting } from "@/utils/formatPrice";
 
 // Página enfocada en: seleccionar órdenes y crear el distribution plan

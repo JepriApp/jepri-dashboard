@@ -3,7 +3,8 @@ import { useRouter } from "next/router";
 import { Layout, Card, Space, Tag } from "antd";
 import { HomeOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/services/supabase.client";
+import { createClient as createSupabaseComponent } from "@/utils/supabase/component";
+const supabase = createSupabaseComponent();
 
 export const SIDER_WIDTH = {
   COLLAPSED: 80,

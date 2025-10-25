@@ -312,11 +312,7 @@ function DashboardLayout({
     </Layout>
   );
   return (
-    <AuthVerifier
-      requireAuth={true}
-      roles={["admin"]}
-      user={userSession || undefined}
-    >
+    <AuthVerifier user={userSession || undefined}>
       {isSmallScreen ? mobileLayout : desktopLayout}
     </AuthVerifier>
   );

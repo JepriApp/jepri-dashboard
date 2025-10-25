@@ -12,7 +12,8 @@ import {
 } from "antd";
 import { useRouter } from "next/router";
 import dayjs from "dayjs";
-import { supabase } from "@/services/supabase.client";
+import { createClient as createSupabaseComponent } from "@/utils/supabase/component";
+const supabase = createSupabaseComponent();
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { PlusOutlined, MinusCircleOutlined } from "@ant-design/icons";
 import { useAuthStore } from "@/store/auth.store";
