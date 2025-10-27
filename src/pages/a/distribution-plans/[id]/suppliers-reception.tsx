@@ -109,8 +109,8 @@ const SuppliersRecepction = () => {
           purchase_code,
           status,
           notes,
-          updated_by_email: updated_by (
-            email
+          updated_by_name: updated_by (
+            name
           ),
           updated_at,
           supplier:supplier_id ( id, name ),
@@ -119,8 +119,6 @@ const SuppliersRecepction = () => {
             quantity,
             actual_price,
             received_quantity,
-            updated_by,
-            updated_at,
             offer:offer_id (
               id,
               price,
@@ -129,9 +127,6 @@ const SuppliersRecepction = () => {
                 name,
                 unit
               )
-            ),
-            receiver:updated_by (
-              email
             )
           )
         `
@@ -146,7 +141,7 @@ const SuppliersRecepction = () => {
         purchase_code: po.purchase_code ?? null,
         status: po.status ?? null,
         notes: po.notes ?? null,
-        updated_by: po.updated_by_email?.email ?? null,
+        updated_by: po.updated_by_name?.name ?? null,
         updated_at: po.updated_at ?? null,
         items: (po.items || []).map((pi: any) => ({
           id: pi.id,
@@ -172,12 +167,9 @@ const SuppliersRecepction = () => {
     unknown // TContext
   >({
     mutationFn: async ({ rowId, newPrice }) => {
-      const authId = await getCurrentAuthId();
       const payload: any = {
         actual_price: newPrice ?? null,
-        updated_at: new Date().toISOString(),
       };
-      if (authId) payload.updated_by = authId;
       const { error } = await supabase
         .from("purchase_item")
         .update(payload)
@@ -209,12 +201,9 @@ const SuppliersRecepction = () => {
     unknown
   >({
     mutationFn: async ({ rowId, newQuantity }) => {
-      const authId = await getCurrentAuthId();
       const payload: any = {
         received_quantity: newQuantity ?? null,
-        updated_at: new Date().toISOString(),
       };
-      if (authId) payload.updated_by = authId;
       const { error } = await supabase
         .from("purchase_item")
         .update(payload)
@@ -363,10 +352,9 @@ const SuppliersRecepction = () => {
           }
           extra={
             <div style={{ textAlign: "right" }}>
-              <Text strong>{group.updated_by || "—"}</Text>
               <br />
               <Text type="secondary" style={{ fontSize: 12 }}>
-                Última actualización:{" "}
+                Última actualización:{" "}{group.updated_by || "—"}{" "}
                 {group.updated_at
                   ? dayjs(group.updated_at).format("YYYY-MM-DD HH:mm A")
                   : "—"}
@@ -643,7 +631,8 @@ const SuppliersRecepction = () => {
                       >
                         <CheckCircleOutlined /> Completar recibo
                       </Dropdown.Button>
-                    ) : isFinal ? (
+                    ) : null}
+                    {isFinal ? (
                       <Button
                         type="primary"
                         disabled={savingById}

@@ -43,16 +43,15 @@ function DistributionPlanLayout({ children }: DashboardLayoutProps) {
       children: undefined,
     },
     {
-      key: `/a/distribution-plans/${id}/sale-orders-delivery`,
-      icon: React.createElement(HomeOutlined),
-      label: "Domicilio de Pedidos",
-      disabled: true,
-      children: undefined,
-    },
-    {
       key: `/a/distribution-plans/${id}/finance`,
       icon: React.createElement(HomeOutlined),
       label: "Finanzas",
+      children: undefined,
+    },
+    {
+      key: `/a/distribution-plans/${id}/sale-orders-delivery`,
+      icon: React.createElement(HomeOutlined),
+      label: "Domicilio de Pedidos",
       disabled: true,
       children: undefined,
     },

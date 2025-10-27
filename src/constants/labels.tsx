@@ -15,7 +15,7 @@ const STATUS_COLOR_MAP: Record<string, string> = {
 const STATUS_LABEL_MAP: Record<string, string> = {
   created: "Creada",
   published: "Publicada",
-  accepted: "Aceptada",
+  accepted: "Aceptada por el proveedor",
   received: "Recibida",
   cancelled: "Cancelada",
   rejected: "Rechazada",

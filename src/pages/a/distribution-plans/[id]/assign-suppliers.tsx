@@ -1525,7 +1525,7 @@ const NewOfferModal = ({
       await supabase.from("offer").insert(base);
     },
     onSuccess: async () => {
-      ref?.close();
+      ref?.destroy();
       onSuccess?.();
     },
     onError: (err: any) => {
