@@ -62,7 +62,7 @@ type PlanOrder = Pick<
   subtotal?: number;
 };
 
-function usePlanData(planId?: string) {
+export function usePlanData(planId?: string) {
   return useQuery<{
     plan: any;
     orders: PlanOrder[];

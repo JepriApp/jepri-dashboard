@@ -27,7 +27,6 @@ export default function Index() {
 
   return (
     <>
-      {JSON.stringify(user)}
       <Form
         form={form}
         name="basic"
