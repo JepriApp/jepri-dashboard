@@ -27,6 +27,12 @@ ON public.profiles FOR ALL
 USING (EXISTS (SELECT 1 FROM public.admin a WHERE a.user_id = auth.uid()))
 WITH CHECK (EXISTS (SELECT 1 FROM public.admin a WHERE a.user_id = auth.uid()));
 
+ALTER TABLE public.admin ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS admin_self_all ON public.admin;
+CREATE POLICY admin_self_all
+ON public.admin FOR ALL
+USING (user_id = auth.uid())
+WITH CHECK (user_id = auth.uid());
 -- Role-specific tables (1:1 to profiles)
 CREATE TABLE IF NOT EXISTS public.admin (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -35,12 +41,6 @@ CREATE TABLE IF NOT EXISTS public.admin (
   phone text,
   created_at timestamptz DEFAULT now()
 );
-ALTER TABLE public.admin ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS admin_self_all ON public.admin;
-CREATE POLICY admin_self_all
-ON public.admin FOR ALL
-USING (user_id = auth.uid())
-WITH CHECK (user_id = auth.uid());
 
 -- Nota: la policy de acceso admin a perfiles ya se define arriba como FOR ALL
 
@@ -82,7 +82,7 @@ END $$;
 
 CREATE TABLE IF NOT EXISTS public.customer (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id uuid NOT NULL UNIQUE REFERENCES public.profiles(id) ON DELETE CASCADE,
+  user_id uuid UNIQUE REFERENCES public.profiles(id) ON DELETE CASCADE,
   name text,
   identification_type idetification_type NOT NULL,
   identification_number text NOT NULL,
