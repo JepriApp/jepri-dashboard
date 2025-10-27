@@ -17,6 +17,9 @@ import {
   App,
   Tag,
   Tooltip,
+  Form,
+  Select,
+  Divider,
 } from "antd";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/router";
@@ -279,6 +282,7 @@ function usePurchaseOrdersForPlan(distributionPlanId?: string) {
 }
 const AssignSuppliersPage = () => {
   const router = useRouter();
+  const { modal } = App.useApp();
   const queryClient = useQueryClient();
   const { message } = App.useApp();
   const planId = router.query.id as string | undefined;
@@ -300,8 +304,11 @@ const AssignSuppliersPage = () => {
     [itemsFlat]
   );
 
-  const { data: offers = [], isLoading: offersLoading } =
-    useOffersForProducts(productIds);
+  const {
+    data: offers = [],
+    isLoading: offersLoading,
+    refetch: refetchOffers,
+  } = useOffersForProducts(productIds);
 
   const uniqueProductsCount = useMemo(
     () =>
@@ -1437,6 +1444,22 @@ const AssignSuppliersPage = () => {
               </div>
             </>
           )}
+          <Divider />
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              padding: "16px",
+            }}
+          >
+            <NewOfferModal
+              product_id={assignContext?.productId}
+              onSuccess={refetchOffers}
+              existingSuppliers={offersForCurrentProduct.map(
+                (o: any) => o.supplier_id
+              )}
+            />
+          </div>
         </Drawer>
       </Layout>
     </Layout>
@@ -1451,4 +1474,107 @@ AssignSuppliersPage.getLayout = function getLayout(page: ReactElement) {
       <DistributionPlanLayout> {page}</DistributionPlanLayout>
     </DashboardLayout>
   );
+};
+
+const NewOfferModal = ({
+  product_id,
+  onSuccess,
+  existingSuppliers = [],
+}: {
+  product_id?: string;
+  onSuccess?: () => void;
+  existingSuppliers?: string[];
+}) => {
+  const { modal, message } = App.useApp();
+  let ref: any = null;
+  const {
+    data = [],
+    isLoading,
+    refetch,
+  } = useQuery({
+    queryKey: ["users", "suppliers"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("supplier")
+        .select(
+          `
+          id,
+          name
+        `
+        )
+        .order("name", { ascending: true });
+      if (error) throw error;
+      return (data || []).map((s: any) => ({
+        id: s.id,
+        name: s.name,
+        phone: s.phone,
+        contact: s.contact,
+      }));
+    },
+    staleTime: 300_000,
+    retry: 1,
+  });
+  const saveOffersMutation = useMutation({
+    mutationFn: async (values: any) => {
+      const base: any = {
+        supplier_id: values.supplier_id,
+        price: Number(values.price ?? 0),
+        available: true,
+        product_id: product_id,
+      };
+      await supabase.from("offer").insert(base);
+    },
+    onSuccess: async () => {
+      ref?.close();
+      onSuccess?.();
+    },
+    onError: (err: any) => {
+      console.error(err);
+      message.error(err?.message || "Error al actualizar las catálogos");
+    },
+  });
+  const openModal = () => {
+    ref = modal.info({
+      title: "Agregar nuevo proveedor",
+      closable: true,
+      footer: null,
+      content: (
+        <Form
+          onFinish={async (values) => {
+            await saveOffersMutation.mutateAsync(values);
+          }}
+        >
+          <Form.Item
+            name="supplier_id"
+            label="Proveedor"
+            rules={[{ required: true }]}
+          >
+            <Select
+              options={data
+                .filter((s) => !existingSuppliers.includes(s.id))
+                .map(({ id, name }) => ({
+                  label: name,
+                  value: id,
+                }))}
+              loading={isLoading}
+            />
+          </Form.Item>
+          <Form.Item name="price" label="Precio" rules={[{ required: true }]}>
+            <InputNumber min={0} prefix="$" />
+          </Form.Item>
+          <Form.Item>
+            <Button
+              type="primary"
+              htmlType="submit"
+              loading={saveOffersMutation.isPending}
+            >
+              Guardar
+            </Button>
+          </Form.Item>
+        </Form>
+      ),
+    });
+  };
+  if (!product_id) return null;
+  return <Button onClick={openModal}>Agregar nuevo proveedor</Button>;
 };
