@@ -40,6 +40,44 @@ type PlanOrder = Pick<
 import { createClient as createSupabaseComponent } from "@/utils/supabase/component";
 
 const supabase = createSupabaseComponent();
+export function usePurchaseOrdersForPlan(distributionPlanId?: string) {
+  return useQuery<any[]>({
+    queryKey: ["poForPlan", distributionPlanId],
+    enabled: !!distributionPlanId,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("purchase_order")
+        .select(
+          `
+          id,
+          status,
+          created_at,
+          purchase_code,
+          supplier:supplier_id ( id, name, contact, phone ),
+          purchase_item:purchase_item (
+            id,
+            quantity,
+            actual_price,
+            offer:offer_id (
+              id,
+              price,
+              product:product_id (
+                id,
+                name,
+                unit
+              )
+            )
+          )
+        `
+        )
+        .eq("distribution_plan_id", distributionPlanId)
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      return data || [];
+    },
+  });
+}
 
 export function usePlanData(planId?: string) {
   return useQuery<{
@@ -179,7 +217,9 @@ const SuppliersRecepction = () => {
   const { data, isLoading, refetch } = usePlanData(planId);
   const plan = data?.plan;
   const [commisionRate, setCommisionRate] = useState<number>(24);
-  const [pendingDeliveryCharge, setPendingDeliveryCharge] = useState<Record<string, number | undefined>>({});
+  const [pendingDeliveryCharge, setPendingDeliveryCharge] = useState<
+    Record<string, number | undefined>
+  >({});
   const queryClient = useQueryClient();
   const updateDeliveryChargeMutation = useMutation<
     { rowId: string; newFee: number | null },
@@ -212,6 +252,11 @@ const SuppliersRecepction = () => {
   const orders = useMemo(() => data?.orders || [], [data]);
   const orderColumns = [
     {
+      title: "# Órden de venta",
+      dataIndex: "order_code",
+      key: "order_code",
+    },
+    {
       title: "Cliente",
       dataIndex: ["user", "name"],
       key: "user_name",
@@ -242,7 +287,8 @@ const SuppliersRecepction = () => {
         <Typography.Text style={{ whiteSpace: "nowrap" }}>
           Servicio:{" "}
           {formatPriceAccounting(
-            Number((record.total || 0) - (record.delivery_charge || 0)) * (commisionRate / 100)
+            Number((record.total || 0) - (record.delivery_charge || 0)) *
+              (commisionRate / 100)
           )}
           <br />
           Domicilio:{" "}
@@ -405,6 +451,105 @@ const SuppliersRecepction = () => {
       />
     </Space>
   );
+  const poColumns = [
+    {
+      title: "# Órden de compra",
+      dataIndex: "purchase_code",
+      key: "purchase_code",
+    },
+    {
+      title: "Proveedor",
+      dataIndex: ["supplier", "name"],
+      key: "supplier_name",
+    },
+    {
+      title: "Contacto",
+      dataIndex: ["supplier", "contact"],
+      key: "supplier_contact",
+    },
+    {
+      title: "Teléfono",
+      dataIndex: ["supplier", "phone"],
+      key: "supplier_phone",
+    },
+    {
+      title: "Total",
+      key: "po_total",
+      render: (_: unknown, record: any) => {
+        const items = record.purchase_item || [];
+        const total = items.reduce(
+          (sum: number, it: any) =>
+            sum +
+            Number(it.quantity || 0) *
+              Number(it.actual_price ?? it.offer?.price ?? 0),
+          0
+        );
+        return formatPriceAccounting(total);
+      },
+    },
+    {
+      title: "Items",
+      key: "po_items_count",
+      render: (_: unknown, record: any) => record.purchase_item?.length ?? 0,
+    },
+  ];
+  const { data: relatedPOs = [], isLoading: posLoading } =
+    usePurchaseOrdersForPlan(planId);
+  const suppliersResume = (
+    <Table
+      dataSource={relatedPOs}
+      columns={poColumns as any}
+      rowKey="id"
+      style={{ overflow: "auto" }}
+      expandable={{
+        expandedRowRender: (po: any) => (
+          <Table
+            dataSource={po.purchase_item || []}
+            rowKey="id"
+            pagination={false}
+            columns={
+              [
+                {
+                  title: "Producto",
+                  key: "product_name",
+                  render: (_: unknown, it: any) => (
+                    <>
+                      {it?.offer?.product?.name}{" "}
+                      <Tag>
+                        {it?.offer?.product?.unit ?? it?.product?.unit ?? ""}
+                      </Tag>
+                    </>
+                  ),
+                },
+                {
+                  title: "Cant./Unidad",
+                  key: "quantity_unit",
+                  render: (_: unknown, it: any) => Number(it.quantity || 0),
+                },
+                {
+                  title: "Precio",
+                  key: "price",
+                  render: (_: unknown, it: any) =>
+                    formatPriceAccounting(
+                      Number(it.actual_price ?? it.offer?.price ?? 0)
+                    ),
+                },
+                {
+                  title: "Importe",
+                  key: "line_total",
+                  render: (_: unknown, it: any) =>
+                    formatPriceAccounting(
+                      Number(it.quantity || 0) *
+                        Number(it.actual_price ?? it.offer?.price ?? 0)
+                    ),
+                },
+              ] as any
+            }
+          />
+        ),
+      }}
+    />
+  );
   const items: TabsProps["items"] = [
     {
       key: "1",
@@ -414,7 +559,7 @@ const SuppliersRecepction = () => {
     {
       key: "2",
       label: "Proveedores",
-      children: "Content of Tab Pane 2",
+      children: suppliersResume,
     },
   ];
   return <Tabs defaultActiveKey="1" items={items} />;
