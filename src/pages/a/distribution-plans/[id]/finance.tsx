@@ -14,7 +14,7 @@ import {
 } from "antd";
 import React, { ReactElement, useMemo, useState } from "react";
 import { useRouter } from "next/router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 type PlanOrder = Pick<
   SaleOrder,
   | "id"
@@ -179,6 +179,36 @@ const SuppliersRecepction = () => {
   const { data, isLoading, refetch } = usePlanData(planId);
   const plan = data?.plan;
   const [commisionRate, setCommisionRate] = useState<number>(24);
+  const [pendingDeliveryCharge, setPendingDeliveryCharge] = useState<Record<string, number | undefined>>({});
+  const queryClient = useQueryClient();
+  const updateDeliveryChargeMutation = useMutation<
+    { rowId: string; newFee: number | null },
+    any,
+    { rowId: string; newFee: number | null }
+  >({
+    mutationFn: async ({ rowId, newFee }) => {
+      const payload: any = {
+        delivery_fee: newFee ?? null,
+      };
+      const { error } = await supabase
+        .from("sale_order")
+        .update(payload)
+        .eq("id", rowId);
+      if (error) throw error;
+      return { rowId, newFee };
+    },
+    onSuccess: (_data, variables) => {
+      setPendingDeliveryCharge((prev) => {
+        const { [variables.rowId]: _, ...rest } = prev;
+        return rest;
+      });
+      const key = ["distributionPlan", "finances", planId];
+      queryClient.invalidateQueries({ queryKey: key });
+    },
+    onError: (err: any) => {
+      console.error("Error al actualizar cargo de domicilio:", err);
+    },
+  });
   const orders = useMemo(() => data?.orders || [], [data]);
   const orderColumns = [
     {
@@ -212,11 +242,63 @@ const SuppliersRecepction = () => {
         <Typography.Text style={{ whiteSpace: "nowrap" }}>
           Servicio:{" "}
           {formatPriceAccounting(
-            Number((record.total || 0) * (commisionRate / 100))
+            Number((record.total || 0) - (record.delivery_charge || 0)) * (commisionRate / 100)
           )}
           <br />
           Domicilio:{" "}
-          {formatPriceAccounting(Number(record.delivery_charge || 0))}
+          <InputNumber
+            value={
+              pendingDeliveryCharge[record.id] !== undefined
+                ? pendingDeliveryCharge[record.id]
+                : Number(record.delivery_charge || 0)
+            }
+            style={{ width: 120 }}
+            min={0}
+            precision={2}
+            prefix="$"
+            size="small"
+            disabled={updateDeliveryChargeMutation.isPending}
+            onChange={(val) => {
+              setPendingDeliveryCharge((prev) => ({
+                ...prev,
+                [record.id]: typeof val === "number" ? val : undefined,
+              }));
+            }}
+            onBlur={() => {
+              const pending = pendingDeliveryCharge[record.id];
+              const original = Number(record.delivery_charge || 0);
+              const newVal = pending !== undefined ? pending : original;
+              if (newVal === original) {
+                setPendingDeliveryCharge((prev) => {
+                  const { [record.id]: _, ...rest } = prev;
+                  return rest;
+                });
+                return;
+              }
+              updateDeliveryChargeMutation.mutate({
+                rowId: record.id,
+                newFee: newVal ?? null,
+              });
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                const pending = pendingDeliveryCharge[record.id];
+                const original = Number(record.delivery_charge || 0);
+                const newVal = pending !== undefined ? pending : original;
+                if (newVal === original) {
+                  setPendingDeliveryCharge((prev) => {
+                    const { [record.id]: _, ...rest } = prev;
+                    return rest;
+                  });
+                  return;
+                }
+                updateDeliveryChargeMutation.mutate({
+                  rowId: record.id,
+                  newFee: newVal ?? null,
+                });
+              }
+            }}
+          />
         </Typography.Text>
       ),
     },
