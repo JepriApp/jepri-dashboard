@@ -65,7 +65,8 @@ export function usePurchaseOrdersForPlan(distributionPlanId?: string) {
               product:product_id (
                 id,
                 name,
-                unit
+                unit,
+                siigo_id
               )
             )
           )
@@ -126,7 +127,8 @@ export function usePlanData(planId?: string) {
               unit,
               description,
               reference_price,
-              main_photo
+              main_photo,
+              siigo_id
             ),
             fulfillment:fulfillment (
               id,
@@ -384,6 +386,11 @@ const SuppliersRecepction = () => {
               columns={
                 [
                   {
+                    title: "Siigo ID",
+                    dataIndex: ["product", "siigo_id"],
+                    key: "siigo_id",
+                  },
+                  {
                     title: "Producto/Unidad",
                     dataIndex: ["product", "name"],
                     key: "product_name",
@@ -502,15 +509,21 @@ const SuppliersRecepction = () => {
       rowKey="id"
       style={{ overflow: "auto" }}
       expandable={{
-        expandedRowRender: (po: any) => (
+        expandedRowRender: (po) => (
           <Table
             dataSource={po.purchase_item || []}
             rowKey="id"
             pagination={false}
+            size="small"
             columns={
               [
                 {
-                  title: "Producto",
+                  title: "Siigo ID",
+                  dataIndex: ["offer", "product", "siigo_id"],
+                  key: "siigo_id",
+                },
+                {
+                  title: "Producto/Unidad",
                   key: "product_name",
                   render: (_: unknown, it: any) => (
                     <>
@@ -522,7 +535,7 @@ const SuppliersRecepction = () => {
                   ),
                 },
                 {
-                  title: "Cant./Unidad",
+                  title: "Cantidad",
                   key: "quantity_unit",
                   render: (_: unknown, it: any) => Number(it.quantity || 0),
                 },
