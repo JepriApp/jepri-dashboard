@@ -133,8 +133,7 @@ function usePlanData(planId?: string) {
           service_fee,
           delivery_fee,
           customer:customer_id (
-            name,
-            auth:user_id ( email )
+            name
           ),
           sale_item:sale_item (
             id,

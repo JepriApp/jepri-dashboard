@@ -23,7 +23,12 @@ export interface SaleOrder {
   customer_id: string;
   order_date: string;
   delivery_date: string | null;
-  status: "pending" | "processing" | "out_for_delivery" | "delivered" | "cancelled";
+  status:
+    | "pending"
+    | "processing"
+    | "out_for_delivery"
+    | "delivered"
+    | "cancelled";
   service_fee: number;
   delivery_charge: number;
   distribution_plan_code?: string;
@@ -61,6 +66,20 @@ export interface CartItem {
     reference_price: number;
   };
 }
+export async function logIn(email: string, password: string) {
+  const { error, data } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) {
+    console.error(error);
+    return null;
+  }
+  return data;
+}
+export async function signOut() {
+  const { error } = await supabase.auth.signOut();
+  if (error) {
+    console.error(error);
+  }
+}
 // Obtener todos los productos
 export async function getProducts() {
   const { data, error } = await supabase.from("product").select("*");
@@ -83,6 +102,22 @@ export async function getUserByEmail(email: string) {
 
   if (error) {
     console.error("Error al obtener usuario:", error);
+    return null;
+  }
+
+  return data;
+}
+
+// Obtener perfil por id (profiles)
+export async function getProfileById(userId: string) {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("role, name, created_at")
+    .eq("id", userId)
+    .single();
+
+  if (error) {
+    console.error("Error al obtener perfil:", error);
     return null;
   }
 
@@ -411,7 +446,9 @@ export async function createSaleOrder(userId: string) {
 
     // Calcular el subtotal para determinar la tarifa de servicio
     const subtotal = cartItems.reduce((sum, item) => {
-      const product = Array.isArray(item.product) ? item.product[0] : item.product;
+      const product = Array.isArray(item.product)
+        ? item.product[0]
+        : item.product;
       return sum + (product?.reference_price || 0) * item.quantity;
     }, 0);
 
@@ -549,8 +586,13 @@ export async function getPendingOrdersForAdmin(): Promise<SaleOrder[]> {
           unit_price: item.product?.reference_price ?? 0,
           product: item.product,
         }));
-        const itemsTotal = items.reduce((sum: number, it: any) => sum + (it.unit_price || 0) * (it.quantity || 0), 0);
-        const total = itemsTotal + (order.service_fee ?? 0) + (order.delivery_fee ?? 0);
+        const itemsTotal = items.reduce(
+          (sum: number, it: any) =>
+            sum + (it.unit_price || 0) * (it.quantity || 0),
+          0
+        );
+        const total =
+          itemsTotal + (order.service_fee ?? 0) + (order.delivery_fee ?? 0);
 
         return {
           id: order.id,
@@ -635,8 +677,13 @@ export async function getAllOrdersForAdmin(): Promise<SaleOrder[]> {
           unit_price: item.product?.reference_price ?? 0,
           product: item.product,
         }));
-        const itemsTotal = items.reduce((sum: number, it: any) => sum + (it.unit_price || 0) * (it.quantity || 0), 0);
-        const total = itemsTotal + (order.service_fee ?? 0) + (order.delivery_fee ?? 0);
+        const itemsTotal = items.reduce(
+          (sum: number, it: any) =>
+            sum + (it.unit_price || 0) * (it.quantity || 0),
+          0
+        );
+        const total =
+          itemsTotal + (order.service_fee ?? 0) + (order.delivery_fee ?? 0);
 
         return {
           id: order.id,
@@ -675,7 +722,12 @@ export async function getOrCreatePurchaseOrderForSupplier(params: {
   notes?: string | null;
   createdBy?: string | null;
 }) {
-  const { supplierId, distributionPlanId, notes = null, createdBy = null } = params;
+  const {
+    supplierId,
+    distributionPlanId,
+    notes = null,
+    createdBy = null,
+  } = params;
   // Reutiliza la PO para el proveedor en el plan si existe (cualquier estado); si no, crea una nueva
   const { data: existing, error: findErr } = await supabase
     .from("purchase_order")

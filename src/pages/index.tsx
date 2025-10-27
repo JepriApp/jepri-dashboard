@@ -1,48 +1,52 @@
-import { Button, Form, Input } from "antd";
-import { ReactElement } from "react";
+import { App, Button, Form, Input } from "antd";
+import { ReactElement, useEffect, useState } from "react";
 import LandingPageLayout from "@/components/layout/LandingPageLayout";
 import Link from "next/link";
 import { LoginOutlined } from "@ant-design/icons";
 import { useRouter } from "next/router";
 import { useAuthStore } from "@/store/auth.store";
+import { User } from "@supabase/supabase-js";
+import { useForm } from "antd/es/form/Form";
 
 export type LogInForm = {
   email: string;
   password: string;
 };
-const styles = {
-  formItem: {
-    flex: "1 1 600px",
-    width: "100%",
-    maxWidth: "600px",
-  },
-};
 
 export default function Index() {
   const router = useRouter();
-  const { setUser, availableUsers, fetchUserDetails } = useAuthStore();
-
-  const handleAdminLogin = async () => {
-    try {
-      const admins = availableUsers.filter((u) => u.role === "admin");
-      if (admins.length === 0) return;
-
-      const selectedAdmin = admins[0];
-      setUser(selectedAdmin);
-      await fetchUserDetails(selectedAdmin.email);
-      router.push("/a/home");
-    } catch (error) {
-      console.error("Error al iniciar sesión como admin:", error);
+  const { message } = App.useApp();
+  const { user, login } = useAuthStore();
+  const [loading, setLoading] = useState(false);
+  const [form] = useForm();
+  useEffect(() => {
+    if (user?.id) {
+      router.replace("/a/home");
     }
-  };
+  }, [user]);
+
   return (
     <>
+      {JSON.stringify(user)}
       <Form
+        form={form}
         name="basic"
         autoComplete="off"
         layout="vertical"
         requiredMark={false}
         initialValues={{}}
+        onFinish={async (values) => {
+          try {
+            const { email, password } = values;
+            setLoading(true);
+            await login(email, password);
+            setLoading(false);
+          } catch (error: any) {
+            setLoading(false);
+            message.error(error?.message || "Error al iniciar sesión");
+            console.error("Error al iniciar sesión:", error);
+          }
+        }}
       >
         <Form.Item<LogInForm>
           name="email"
@@ -71,16 +75,17 @@ export default function Index() {
             style={{ width: 320, height: 44, fontSize: 16, textAlign: "left" }}
           />
         </Form.Item>
-        <Form.Item style={{ width: 320, textAlign: "center", marginBottom: 0 }}>
+        {/* <Form.Item style={{ width: 320, textAlign: "center", marginBottom: 0 }}>
           <Link href={"/(auth)/forgotPassword"} style={{ fontSize: 14 }}>
             ¿Olvidaste tu contraseña?
           </Link>
-        </Form.Item>
+        </Form.Item> */}
         <Form.Item style={{ width: 320, marginBottom: 0 }}>
           <Button
             type="primary"
             htmlType="submit"
             icon={<LoginOutlined />}
+            loading={loading}
             style={{
               width: "100%",
               height: 44,
@@ -88,21 +93,7 @@ export default function Index() {
               borderRadius: 22,
             }}
           >
-            Entrar al panel
-          </Button>
-        </Form.Item>
-        <Form.Item style={{ width: 320, marginBottom: 0, marginTop: 20 }}>
-          <Button
-            onClick={handleAdminLogin}
-            style={{
-              width: "100%",
-              height: 44,
-              fontSize: 16,
-              borderRadius: 22,
-            }}
-          >
-            {" "}
-            Entrar como admin{" "}
+            Iniciar sesión
           </Button>
         </Form.Item>
       </Form>

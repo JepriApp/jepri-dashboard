@@ -21,6 +21,7 @@ import { AutoMenu } from "../pure/AutoMenu";
 import { ProfileButton } from "../pure/ProfileButton";
 import { useWindowSize } from "../../../hooks/useWindowSize";
 import { useAuthStore, User } from "@/store/auth.store";
+import { createClient as clientToSignOut } from "@/utils/supabase/component";
 
 export const SIDER_WIDTH = {
   COLLAPSED: 80,
@@ -114,10 +115,19 @@ function DashboardLayout({
   const primaryUrlSegment = router.pathname.split("/")[1];
   const { width } = useWindowSize();
   const [mounted, setMounted] = useState(false);
+  const supabase = clientToSignOut();
+
   useEffect(() => setMounted(true), []);
   const isSmallScreen = mounted && width < SCREEN_BREAKPOINTS["MOBILE"];
   const { user: userSession } = useAuthStore();
-
+  async function signOut() {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error(error);
+      return
+    }
+    router.push("/");
+  }
   const dropdownMenu = {
     items: [
       {
@@ -125,7 +135,7 @@ function DashboardLayout({
         label: "Cerrar sesión",
         icon: <LogoutOutlined />,
         onClick: async () => {
-          router.push("/");
+          await signOut();
         },
       },
     ],
@@ -312,7 +322,7 @@ function DashboardLayout({
     </Layout>
   );
   return (
-    <AuthVerifier user={userSession || undefined}>
+    <AuthVerifier user={userSession || undefined} roles={['authenticated']}>      
       {isSmallScreen ? mobileLayout : desktopLayout}
     </AuthVerifier>
   );

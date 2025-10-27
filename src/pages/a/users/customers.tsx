@@ -23,7 +23,9 @@ const Index = () => {
           id,
           name,
           phone,
-          auth:user_id ( email )
+          contact,
+          identification_type,
+          identification_number
         `
         )
         .order("name", { ascending: true });
@@ -33,6 +35,9 @@ const Index = () => {
         name: c.name,
         email: c.auth?.email,
         phone: c.phone,
+        contact: c.contact,
+        identification_type: c.identification_type,
+        identification_number: c.identification_number,
       }));
     },
     staleTime: 300_000,
@@ -41,7 +46,9 @@ const Index = () => {
 
   const columns = [
     { title: "Nombre", dataIndex: "name", key: "name" },
-    { title: "Email", dataIndex: "email", key: "email" },
+    { title: "Tipo de Identificación", dataIndex: "identification_type", key: "identification_type" },
+    { title: "Número de Identificación", dataIndex: "identification_number", key: "identification_number" },
+    { title: "Contacto", dataIndex: "contact", key: "contact" },
     { title: "Teléfono", dataIndex: "phone", key: "phone" },
   ];
 

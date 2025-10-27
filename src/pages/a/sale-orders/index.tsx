@@ -58,10 +58,7 @@ const Index = () => {
         customer:customer_id (
           id,
           user_id,
-          name,
-          auth:user_id (
-            email
-          )
+          name
         ),
         distribution_plan:distribution_plan_id (
           id,
@@ -124,7 +121,7 @@ const Index = () => {
               notes: order.notes,
               user: {
                 name: order.customer?.name ?? "Sin nombre",
-                email: order.customer?.auth?.email ?? "Sin email",
+                email: "Sin email",
               },
               items,
             };

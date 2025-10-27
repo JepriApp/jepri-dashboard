@@ -1,21 +1,21 @@
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import React, { ReactElement, useState } from "react";
-import { 
-  Table, 
-  Typography, 
-  Button, 
-  Space, 
-  Drawer, 
-  Form, 
-  Card, 
-  Input, 
-  Select, 
-  InputNumber, 
-  Switch, 
-  Popconfirm, 
-  Tag, 
+import {
+  Table,
+  Typography,
+  Button,
+  Space,
+  Drawer,
+  Form,
+  Card,
+  Input,
+  Select,
+  InputNumber,
+  Switch,
+  Popconfirm,
+  Tag,
   App,
-  Modal 
+  Modal,
 } from "antd";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { createClient as createSupabaseComponent } from "@/utils/supabase/component";
@@ -69,19 +69,30 @@ async function hashPasswordSHA256(password: string): Promise<string> {
 const Index = () => {
   const { message } = App.useApp();
   const [offersOpen, setOffersOpen] = useState(false);
-  const [offersEditingSupplier, setOffersEditingSupplier] = useState<SupplierWithOffers | null>(null);
+  const [offersEditingSupplier, setOffersEditingSupplier] =
+    useState<SupplierWithOffers | null>(null);
   const [offersForm] = Form.useForm();
   const [originalOfferIds, setOriginalOfferIds] = useState<string[]>([]);
-  const [originalOffersMap, setOriginalOffersMap] = useState<Record<string, string>>({});
-  const [removedOffersByProduct, setRemovedOffersByProduct] = useState<Record<string, string>>({});
+  const [originalOffersMap, setOriginalOffersMap] = useState<
+    Record<string, string>
+  >({});
+  const [removedOffersByProduct, setRemovedOffersByProduct] = useState<
+    Record<string, string>
+  >({});
   // Nuevo: estado y formulario para creación de proveedor
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm] = Form.useForm();
   // Nuevo: estado y formulario para edición de proveedor
   const [editOpen, setEditOpen] = useState(false);
   const [editForm] = Form.useForm();
-  const [editingSupplier, setEditingSupplier] = useState<SupplierRow | null>(null);
-  const { data = [], isLoading, refetch } = useQuery<SupplierRow[]>({
+  const [editingSupplier, setEditingSupplier] = useState<SupplierRow | null>(
+    null
+  );
+  const {
+    data = [],
+    isLoading,
+    refetch,
+  } = useQuery<SupplierRow[]>({
     queryKey: ["users", "suppliers"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -91,9 +102,7 @@ const Index = () => {
           id,
           name,
           contact,
-          phone,
-          user_id,
-          auth:user_id ( email, is_active )
+          phone
         `
         )
         .order("name", { ascending: true });
@@ -112,7 +121,9 @@ const Index = () => {
     retry: 1,
   });
 
-  const { data: products = [], isLoading: productsLoading } = useQuery<ProductMinimal[]>({
+  const { data: products = [], isLoading: productsLoading } = useQuery<
+    ProductMinimal[]
+  >({
     queryKey: ["products-minimal"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -129,13 +140,15 @@ const Index = () => {
     // Fetch supplier offers
     const { data: supplierOffers, error } = await supabase
       .from("offer")
-      .select(`
+      .select(
+        `
         id, price, available,
         product:product_id(id, name, unit, reference_price)
-      `)
+      `
+      )
       .eq("supplier_id", record.id)
       .order("product(name)", { ascending: true });
-    
+
     if (error) {
       message.error("Error al cargar las catálogos del proveedor");
       return;
@@ -159,8 +172,10 @@ const Index = () => {
       price: Number(o.price ?? 0),
       available: Boolean(o.available),
     }));
-    
-    setOriginalOfferIds(initialItems.map((i) => i.id).filter(Boolean) as string[]);
+
+    setOriginalOfferIds(
+      initialItems.map((i) => i.id).filter(Boolean) as string[]
+    );
     const map: Record<string, string> = {};
     initialItems.forEach((i) => {
       if (i.id && i.product_id) map[i.id as string] = i.product_id as string;
@@ -179,7 +194,8 @@ const Index = () => {
       contact: record.contact || undefined,
       phone: record.phone || undefined,
       email: record.email || undefined,
-      is_active: typeof record.is_active === "boolean" ? record.is_active : true,
+      is_active:
+        typeof record.is_active === "boolean" ? record.is_active : true,
     });
     setEditOpen(true);
   };
@@ -222,24 +238,16 @@ const Index = () => {
 
   const columns = [
     { title: "Nombre", dataIndex: "name", key: "name" },
-    { title: "Email", dataIndex: "email", key: "email" },
+    { title: "Contacto", dataIndex: "contact", key: "contact" },
     { title: "Teléfono", dataIndex: "phone", key: "phone" },
-    {
-      title: "Estado",
-      dataIndex: "is_active",
-      key: "is_active",
-      render: (val: boolean | undefined) => (
-        val === true ? <Tag color="green">Activo</Tag> : <Tag color="red">Inactivo</Tag>
-      ),
-    },
     {
       title: "Acciones",
       key: "actions",
       width: 280,
       render: (_: any, record: SupplierRow) => (
         <Space>
-          <Button type="dashed" onClick={() => openOffersDrawer(record)}>
-            Ver catálogos
+          <Button onClick={() => openOffersDrawer(record)}>
+            Ver catálogo
           </Button>
           <Button onClick={() => openEditModal(record)}>
             Editar proveedor
@@ -251,10 +259,14 @@ const Index = () => {
 
   const saveOffersMutation = useMutation({
     mutationFn: async (values: any) => {
-      if (!offersEditingSupplier) throw new Error("No hay proveedor seleccionado");
-      
+      if (!offersEditingSupplier)
+        throw new Error("No hay proveedor seleccionado");
+
       const formOffers = (values.offers || []).map((o: any) => {
-        const revivedId = !o.id && o.product_id ? removedOffersByProduct[o.product_id] : undefined;
+        const revivedId =
+          !o.id && o.product_id
+            ? removedOffersByProduct[o.product_id]
+            : undefined;
         const base: any = {
           product_id: o.product_id,
           price: Number(o.price ?? 0),
@@ -267,8 +279,12 @@ const Index = () => {
       });
 
       // Validar productos duplicados
-      const productIds = formOffers.map((o: any) => o.product_id).filter(Boolean);
-      const duplicates = productIds.filter((id: any, i: any) => productIds.indexOf(id) !== i);
+      const productIds = formOffers
+        .map((o: any) => o.product_id)
+        .filter(Boolean);
+      const duplicates = productIds.filter(
+        (id: any, i: any) => productIds.indexOf(id) !== i
+      );
       if (duplicates.length) {
         throw new Error("No se permiten productos duplicados en las catálogos");
       }
@@ -285,7 +301,9 @@ const Index = () => {
         }
       }
 
-      const finalIds = formOffers.map((o: any) => o.id).filter(Boolean) as string[];
+      const finalIds = formOffers
+        .map((o: any) => o.id)
+        .filter(Boolean) as string[];
       let toDelete = originalOfferIds.filter((id) => !finalIds.includes(id));
 
       // Preverificación de dependencias antes de eliminar
@@ -295,7 +313,9 @@ const Index = () => {
           .select("offer_id")
           .in("offer_id", toDelete);
         if (usedErr) throw usedErr;
-        const blockedIds = Array.from(new Set((used || []).map((row: any) => row.offer_id)));
+        const blockedIds = Array.from(
+          new Set((used || []).map((row: any) => row.offer_id))
+        );
         if (blockedIds.length) {
           toDelete = toDelete.filter((id) => !blockedIds.includes(id));
           message.warning(
@@ -307,7 +327,10 @@ const Index = () => {
       // Ejecutar operaciones
       // Borrados
       if (toDelete.length) {
-        const { error } = await supabase.from("offer").delete().in("id", toDelete);
+        const { error } = await supabase
+          .from("offer")
+          .delete()
+          .in("id", toDelete);
         if (error) throw error;
       }
 
@@ -348,26 +371,10 @@ const Index = () => {
   // Nuevo: mutación para crear proveedor (crea auth y luego supplier)
   const createSupplierMutation = useMutation({
     mutationFn: async (values: any) => {
-      // Crear usuario en auth
-      const passwordHash = await hashPasswordSHA256(values.password);
-      const { data: authRow, error: authErr } = await supabase
-        .from("auth")
-        .insert([{ 
-          email: values.email,
-          password_hash: passwordHash,
-          role: "supplier",
-          is_active: true,
-        }])
-        .select("id")
-        .single();
-      if (authErr) throw authErr;
-
-      // Crear proveedor con referencia a auth.id
-      const payload = { 
-        name: values.name, 
+      const payload = {
+        name: values.name,
         contact: values.contact || null,
         phone: values.phone || null,
-        user_id: authRow.id,
       };
       const { error } = await supabase.from("supplier").insert([payload]);
       if (error) throw error;
@@ -381,9 +388,11 @@ const Index = () => {
     onError: (err: any) => {
       console.error(err);
       // Mensaje amigable para email duplicado en auth
-      const msg = typeof err?.message === "string" && err.message.includes("duplicate key")
-        ? "El email ya está en uso. Usa otro email."
-        : (err?.message || "Error al crear proveedor");
+      const msg =
+        typeof err?.message === "string" &&
+        err.message.includes("duplicate key")
+          ? "El email ya está en uso. Usa otro email."
+          : err?.message || "Error al crear proveedor";
       message.error(msg);
     },
   });
@@ -397,10 +406,17 @@ const Index = () => {
         </Button>
       </Space>
 
-      <Table rowKey="id" columns={columns} dataSource={data} loading={isLoading} />
-      
+      <Table
+        rowKey="id"
+        columns={columns}
+        dataSource={data}
+        loading={isLoading}
+      />
+
       <Drawer
-        title={`Catálogos del proveedor${offersEditingSupplier ? ` — ${offersEditingSupplier.name}` : ""}`}
+        title={`Catálogos del proveedor${
+          offersEditingSupplier ? ` — ${offersEditingSupplier.name}` : ""
+        }`}
         open={offersOpen}
         width={720}
         onClose={() => {
@@ -485,18 +501,25 @@ const Index = () => {
                                   name,
                                   "product_id",
                                 ]);
-                                const product = products.find((p) => p.id === pid);
+                                const product = products.find(
+                                  (p) => p.id === pid
+                                );
                                 return product ? (
                                   <Space>
                                     <span>{product.name}</span>
                                     <Tag color="geekblue">{product.unit}</Tag>
                                     {product.reference_price && (
                                       <Text type="secondary">
-                                        Ref: {formatPriceAccounting(product.reference_price)}
+                                        Ref:{" "}
+                                        {formatPriceAccounting(
+                                          product.reference_price
+                                        )}
                                       </Text>
                                     )}
                                   </Space>
-                                ) : "—";
+                                ) : (
+                                  "—"
+                                );
                               })()}
                             </Text>
                           </Form.Item>
@@ -517,12 +540,11 @@ const Index = () => {
                           <Select
                             placeholder="Selecciona producto"
                             options={(() => {
-                              const allOffers = offersForm.getFieldValue("offers") || [];
-                              const currentProductId = offersForm.getFieldValue([
-                                "offers",
-                                name,
-                                "product_id",
-                              ]);
+                              const allOffers =
+                                offersForm.getFieldValue("offers") || [];
+                              const currentProductId = offersForm.getFieldValue(
+                                ["offers", name, "product_id"]
+                              );
                               const usedProductIds = new Set(
                                 allOffers
                                   .map((o: any, idx: any) =>
@@ -536,9 +558,15 @@ const Index = () => {
                                     !usedProductIds.has(p.id) ||
                                     p.id === currentProductId
                                 )
-                                .map((p) => ({ 
-                                  value: p.id, 
-                                  label: `${p.name} (${p.unit})${p.reference_price ? ` - Ref: ${formatPriceAccounting(p.reference_price)}` : ''}` 
+                                .map((p) => ({
+                                  value: p.id,
+                                  label: `${p.name} (${p.unit})${
+                                    p.reference_price
+                                      ? ` - Ref: ${formatPriceAccounting(
+                                          p.reference_price
+                                        )}`
+                                      : ""
+                                  }`,
                                 }));
                             })()}
                             loading={productsLoading}
@@ -546,18 +574,23 @@ const Index = () => {
                             optionFilterProp="label"
                             onSelect={(value) => {
                               // Auto-fill price with reference price if available
-                              const selectedProduct = products.find(p => p.id === value);
+                              const selectedProduct = products.find(
+                                (p) => p.id === value
+                              );
                               if (selectedProduct?.reference_price) {
                                 offersForm.setFieldValue(
-                                  ["offers", name, "price"], 
+                                  ["offers", name, "price"],
                                   selectedProduct.reference_price
                                 );
                               }
                               // Handle revival logic
                               const revivedId = removedOffersByProduct[value];
                               if (revivedId) {
-                                offersForm.setFieldValue(["offers", name, "id"], revivedId);
-                                setRemovedOffersByProduct(prev => {
+                                offersForm.setFieldValue(
+                                  ["offers", name, "id"],
+                                  revivedId
+                                );
+                                setRemovedOffersByProduct((prev) => {
                                   const updated = { ...prev };
                                   delete updated[value];
                                   return updated;
@@ -593,8 +626,10 @@ const Index = () => {
                       >
                         <Switch />
                       </Form.Item>
-                      
-                      <Form.Item style={{ gridColumn: "2 / 3", marginRight: 0 }}>
+
+                      <Form.Item
+                        style={{ gridColumn: "2 / 3", marginRight: 0 }}
+                      >
                         {offersForm.getFieldValue(["offers", name, "id"]) ? (
                           <Popconfirm
                             title="¿Eliminar catálogo?"
@@ -611,9 +646,9 @@ const Index = () => {
                                 "id",
                               ]);
                               if (productId && offerId) {
-                                setRemovedOffersByProduct(prev => ({
+                                setRemovedOffersByProduct((prev) => ({
                                   ...prev,
-                                  [productId]: offerId
+                                  [productId]: offerId,
                                 }));
                               }
                               remove(name);
@@ -668,11 +703,17 @@ const Index = () => {
         okText="Crear"
         confirmLoading={createSupplierMutation.isPending}
       >
-        <Form form={createForm} layout="vertical" onFinish={(values) => createSupplierMutation.mutate(values)}>
+        <Form
+          form={createForm}
+          layout="vertical"
+          onFinish={(values) => createSupplierMutation.mutate(values)}
+        >
           <Form.Item
             name="name"
             label="Nombre"
-            rules={[{ required: true, message: "Ingresa el nombre del proveedor" }]}
+            rules={[
+              { required: true, message: "Ingresa el nombre del proveedor" },
+            ]}
           >
             <Input placeholder="Nombre del proveedor" />
           </Form.Item>
@@ -681,37 +722,6 @@ const Index = () => {
           </Form.Item>
           <Form.Item name="phone" label="Teléfono">
             <Input placeholder="Teléfono (opcional)" />
-          </Form.Item>
-          <Form.Item
-            name="email"
-            label="Email de acceso"
-            rules={[
-              { required: true, message: "Ingresa el email" },
-              { type: "email", message: "Email inválido" },
-            ]}
-          >
-            <Input placeholder="email@ejemplo.com" />
-          </Form.Item>
-          <Form.Item
-            name="password"
-            label="Contraseña inicial"
-            rules={[
-              { required: true, message: "Ingresa una contraseña" },
-              {
-                validator: (_, value) => {
-                  if (!value) return Promise.resolve();
-                  if (value.length < 6) {
-                    return Promise.reject(new Error("La contraseña debe tener al menos 6 caracteres"));
-                  }
-                  if (!/[A-Za-z]/.test(value) || !/\d/.test(value)) {
-                    return Promise.reject(new Error("La contraseña debe incluir letras y números"));
-                  }
-                  return Promise.resolve();
-                },
-              },
-            ]}
-          >
-            <Input.Password placeholder="Contraseña" />
           </Form.Item>
         </Form>
       </Modal>
@@ -729,11 +739,17 @@ const Index = () => {
         okText="Guardar"
         confirmLoading={updateSupplierMutation.isPending}
       >
-        <Form form={editForm} layout="vertical" onFinish={(values) => updateSupplierMutation.mutate(values)}>
+        <Form
+          form={editForm}
+          layout="vertical"
+          onFinish={(values) => updateSupplierMutation.mutate(values)}
+        >
           <Form.Item
             name="name"
             label="Nombre"
-            rules={[{ required: true, message: "Ingresa el nombre del proveedor" }]}
+            rules={[
+              { required: true, message: "Ingresa el nombre del proveedor" },
+            ]}
           >
             <Input placeholder="Nombre del proveedor" />
           </Form.Item>
@@ -743,11 +759,7 @@ const Index = () => {
           <Form.Item name="phone" label="Teléfono">
             <Input placeholder="Teléfono (opcional)" />
           </Form.Item>
-          <Form.Item
-            name="is_active"
-            label="Activo"
-            valuePropName="checked"
-          >
+          <Form.Item name="is_active" label="Activo" valuePropName="checked">
             <Switch />
           </Form.Item>
           <Form.Item name="email" label="Email">

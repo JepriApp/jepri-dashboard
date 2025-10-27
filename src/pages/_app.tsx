@@ -5,24 +5,62 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { App as AntdApp } from "antd";
 import { createClient as createSupabaseSSR } from "@/utils/supabase/server-props";
-import { useAuthStore } from "@/store/auth.store";
+import { useAuthStore, UserRole } from "@/store/auth.store";
 import { createClient as createSupabaseComponent } from "@/utils/supabase/component";
+import { User } from "@supabase/supabase-js";
 
 function MyApp({ Component, pageProps }: AppProps) {
   const [queryClient] = useState(() => new QueryClient());
-  const getLayout = (Component as any).getLayout || ((page: ReactElement) => page);
+  const getLayout =
+    (Component as any).getLayout || ((page: ReactElement) => page);
 
-  // Hidratar el store con el usuario proveniente del SSR
+  // Hidratación inicial desde SSR/CSR: set mínimo y enriquece vía store
   useEffect(() => {
-    const user = (pageProps as any)?.user;
-    if (user?.id && user?.email) {
-      // setUser requiere un objeto User tipado; inicialmente colocamos un rol por defecto
-      // y luego enriquecemos con detalles desde la BD (fetchUserDetails)
-      const { setUser, fetchUserDetails } = useAuthStore.getState();
-      setUser({ id: user.id, email: user.email, role: "admin" });
+    const user = (pageProps as any)?.user as User | null;
+    if (user?.id && user?.email && user?.role) {
+      const { fetchUserDetails } = useAuthStore.getState();
+      const role = user.role as UserRole;
+      useAuthStore.setState({
+        user: { id: user.id, email: user.email, role },
+      });
       fetchUserDetails(user.email).catch(() => {});
     }
   }, [pageProps]);
+
+  // Suscripción a cambios de autenticación: usa el store para enriquecer
+  useEffect(() => {
+    const supabase = createSupabaseComponent();
+    const { fetchUserDetails } = useAuthStore.getState();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      try {
+        if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+          const u = session?.user;
+          if (u?.id) {
+            const current = useAuthStore.getState().user;
+            const alreadySameUser = current?.id === u.id;
+            if (!alreadySameUser) {
+              const role = u.role as UserRole;
+              useAuthStore.setState({
+                user: { id: u.id, email: u.email || "", role },
+              });
+            }
+            if (u.email) {
+              await fetchUserDetails(u.email).catch(() => {});
+            }
+          }
+        } else if (event === "SIGNED_OUT") {
+          useAuthStore.setState({ user: null});
+        }
+      } catch (e) {
+        console.error("onAuthStateChange handler error:", e);
+      }
+    });
+
+    return () => subscription?.unsubscribe();
+  }, []);
 
   return (
     <AntdApp>
@@ -38,19 +76,16 @@ function MyApp({ Component, pageProps }: AppProps) {
 MyApp.getInitialProps = async (appCtx: AppContext) => {
   const appProps = await NextApp.getInitialProps(appCtx);
 
-  // Detectar si se ejecuta en servidor o en cliente (navegación entre rutas)
   const isServer = typeof window === "undefined" || !!(appCtx?.ctx as any)?.req;
 
   try {
-    let user = null as any;
+    let user: User | null = null;
 
     if (isServer) {
-      // En servidor, usa el cliente SSR que lee/escribe cookies desde req/res
       const supabase = createSupabaseSSR(appCtx.ctx as any);
       const { data, error } = await supabase.auth.getUser();
       user = error ? null : data?.user ?? null;
     } else {
-      // En cliente (transiciones), usa el cliente de navegador; no hay req/res
       const supabase = createSupabaseComponent();
       const { data, error } = await supabase.auth.getUser();
       user = error ? null : data?.user ?? null;

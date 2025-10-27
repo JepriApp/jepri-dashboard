@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { getUserByEmail } from "../services/supabase.service";
+import { getProfileById, logIn, signOut } from "../services/supabase.service";
 import { persist, PersistOptions, createJSONStorage } from "zustand/middleware";
 
 export type UserRole = "admin" | "operator" | "supplier" | "customer";
@@ -16,12 +16,9 @@ export interface User {
 
 interface AuthState {
   user: User | null;
-  isAuthenticated: boolean;
-  availableUsers: User[];
-  setUser: (user: User) => void;
   fetchUserDetails: (email: string) => Promise<void>;
-  logout: () => void;
-  setAvailableUsers: (users: User[]) => void;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
 }
 
 const STORE_NAME = "AuthStore";
@@ -31,59 +28,57 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       user: null,
       isAuthenticated: false,
-      availableUsers: [
-        { id: "1", email: "admin@jepri.com", role: "admin" },
-        { id: "2", email: "operador@jepri.com", role: "operator" },
-        {
-          id: "3",
-          email: "proveedor1@ejemplo.com",
-          role: "supplier",
-          name: "Frutas y Verduras El Campesino",
-        },
-        {
-          id: "4",
-          email: "proveedor2@ejemplo.com",
-          role: "supplier",
-          name: "Plaza Bazurto - Puesto 45",
-        },
-        {
-          id: "5",
-          email: "cliente1@ejemplo.com",
-          role: "customer",
-          name: "Restaurante El Buen Sabor",
-        },
-        {
-          id: "6",
-          email: "cliente2@ejemplo.com",
-          role: "customer",
-          name: "Cafetería Central",
-        },
-      ],
-      setUser: (user) => set({ user, isAuthenticated: true }),
       fetchUserDetails: async (email) => {
         try {
-          const userDetails = await getUserByEmail(email);
-          if (userDetails) {
-            // Actualizar el usuario con los detalles completos de la base de datos
-            const currentUser = get().user;
-            if (currentUser) {
-              set({
-                user: {
-                  ...currentUser,
-                  ...userDetails,
-                },
-              });
-            }
-            console.log("Detalles de usuario obtenidos:", userDetails);
+          // Usar el id del usuario actual para leer perfiles y evitar duplicar lógica
+          const currentUser = get().user;
+          if (!currentUser?.id) {
+            console.error("No hay usuario en el store para enriquecer");
+            return;
+          }
+
+          const profile = await getProfileById(currentUser.id);
+          if (profile) {
+            set({
+              user: {
+                ...currentUser,
+                role: profile.role ?? currentUser.role,
+                name: profile.name ?? currentUser.name,
+                created_at: profile.created_at ?? currentUser.created_at,
+              },
+            });
+            console.log("Perfil de usuario obtenido:", profile);
           } else {
-            console.error("No se encontraron detalles del usuario");
+            console.error("No se encontró perfil para el usuario");
           }
         } catch (error) {
-          console.error("Error al obtener detalles del usuario:", error);
+          console.error("Error al obtener perfil del usuario:", error);
         }
       },
-      logout: () => set({ user: null, isAuthenticated: false }),
-      setAvailableUsers: (users) => set({ availableUsers: users }),
+      login: async (email, password) => {
+        try {
+          const loginData = await logIn(email, password);
+          if (loginData?.user) {
+            set({
+              user: {
+                id: loginData.user.id,
+                email: loginData.user.email || "",
+                role: loginData.user.role as UserRole, 
+              },
+            });
+          }
+        } catch (error) {
+          console.error("Error en el flujo de login:", error);
+        }
+      },
+      logout: async () => {
+        try {
+          await signOut();
+          set({ user: null });
+        } catch (error) {
+          console.error("Error en el flujo de logout:", error);
+        }
+      },
     }),
     {
       name: STORE_NAME,

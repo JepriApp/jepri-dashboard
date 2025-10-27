@@ -93,7 +93,7 @@ function usePlanData(planId?: string) {
           delivery_fee,
           customer:customer_id (
             name,
-            auth:user_id ( email )
+            profile:user_id ( id )
           ),
           sale_item:sale_item (
             id,
@@ -172,7 +172,7 @@ function usePlanData(planId?: string) {
           notes: r.notes,
           user: {
             name: r.customer?.name ?? "",
-            email: r.customer?.auth?.email ?? "",
+            email: r.customer?.profile?.email ?? "Sin email",
           },
           items: saleItems,
         } as PlanOrder;
@@ -255,10 +255,6 @@ const PlanEditorPage = () => {
   );
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
-  // Estado de resaltado de vínculos (por id de orden de venta)
-  const [highlightSaleOrderId, setHighlightSaleOrderId] = useState<
-    string | null
-  >(null);
   // Estado de resaltado de vínculos (por id de fulfillment)
   const [highlightFulfillmentId, setHighlightFulfillmentId] = useState<
     string | null
@@ -426,11 +422,6 @@ const PlanEditorPage = () => {
           </Typography.Text>
         </div>
       ),
-    },
-    {
-      title: "Email",
-      dataIndex: ["user", "email"],
-      key: "user_email",
     },
     {
       title: "Estado",

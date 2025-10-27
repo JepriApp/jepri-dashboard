@@ -168,7 +168,7 @@ const ProductsIndexPage = () => {
       render: (_: any, record: ProductWithOffers) => (
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Image
-            src={record.main_photo || ""}
+            src={record.main_photo || undefined}
             fallback={placeholder.src}
             alt={record.name}
             width={64}

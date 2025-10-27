@@ -21,7 +21,8 @@ import { useAuthStore } from "@/store/auth.store";
 interface CustomerOption {
   id: string;
   name: string;
-  email?: string;
+  identification_type?: string;
+  identification_number?: string;
 }
 
 interface DistributionPlanOption {
@@ -55,7 +56,8 @@ const CreateSaleOrderPage = () => {
           `
           id,
           name,
-          auth:user_id ( email )
+          identification_type,
+          identification_number
         `
         )
         .order("name", { ascending: true });
@@ -63,7 +65,8 @@ const CreateSaleOrderPage = () => {
       const opts: CustomerOption[] = (data || []).map((c: any) => ({
         id: c.id,
         name: c.name,
-        email: c.auth?.email,
+        identification_type: c.identification_type,
+        identification_number: c.identification_number,
       }));
       return opts;
     },
@@ -241,8 +244,12 @@ const CreateSaleOrderPage = () => {
         layout="vertical"
         onFinish={onFinish}
         initialValues={{
-          service_fee: 0,
-          delivery_charge: 0,
+          items: [
+            {
+              product_id: undefined,
+              quantity: 0,
+            },
+          ],
         }}
       >
         <Form.Item
@@ -257,7 +264,7 @@ const CreateSaleOrderPage = () => {
             optionFilterProp="label"
             options={customers.map((c) => ({
               value: c.id,
-              label: `${c.name}${c.email ? ` (${c.email})` : ""}`,
+              label: `${c.name} ${c.identification_type} ${c.identification_number}`,
             }))}
           />
         </Form.Item>
@@ -285,14 +292,6 @@ const CreateSaleOrderPage = () => {
                 : []),
             ]}
           />
-        </Form.Item>
-
-        <Form.Item label="Tarifa de servicio" name="service_fee">
-          <InputNumber min={0} style={{ width: "100%" }} />
-        </Form.Item>
-
-        <Form.Item label="Cargo por entrega" name="delivery_charge">
-          <InputNumber min={0} style={{ width: "100%" }} />
         </Form.Item>
 
         <Form.Item label="Notas" name="notes">
@@ -394,7 +393,9 @@ const CreateSaleOrderPage = () => {
                       style={{ width: "100%" }}
                     />
                   </Form.Item>
-                  <MinusCircleOutlined onClick={() => remove(field.name)} />
+                  {fields.length !== 1 && (
+                    <MinusCircleOutlined onClick={() => remove(field.name)} />
+                  )}
                 </div>
               ))}
               <Form.ErrorList errors={errors} />
@@ -415,9 +416,7 @@ const CreateSaleOrderPage = () => {
             <Button type="primary" htmlType="submit" loading={submitting}>
               Crear orden
             </Button>
-            <Button onClick={() => router.back()}>
-              Cancelar
-            </Button>
+            <Button onClick={() => router.back()}>Cancelar</Button>
           </div>
         </Form.Item>
       </Form>
