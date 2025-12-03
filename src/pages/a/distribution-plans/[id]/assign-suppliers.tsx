@@ -30,7 +30,7 @@ import {
   getOrCreatePurchaseOrderForSupplier,
   upsertFulfillment,
 } from "@/services/supabase.service";
-import { formatPriceAccounting } from "@/utils/formatPrice";
+import { formatPriceAccounting } from "../../../../../utils/formatPrice";
 import { useAuthStore } from "@/store/auth.store";
 import {
   CheckCircleFilled,

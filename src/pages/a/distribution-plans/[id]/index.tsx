@@ -25,7 +25,7 @@ import { createClient as createSupabaseComponent } from "@/utils/supabase/compon
 const supabase = createSupabaseComponent();
 import type { SaleOrder, SaleItem } from "@/services/supabase.service";
 import { getPendingOrdersForAdmin } from "@/services/supabase.service";
-import { formatPriceAccounting } from "@/utils/formatPrice";
+import { formatPriceAccounting } from "../../../../../utils/formatPrice";
 import { useAuthStore } from "@/store/auth.store";
 import DistributionPlanLayout from "@/components/layout/DistributionPlanLayout";
 import { ArrowDownOutlined, PlusOutlined } from "@ant-design/icons";

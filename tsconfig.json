@@ -19,7 +19,9 @@
       "@forms/*": ["./src/components/forms/*"],
       "@constants": ["./src/constants/constants.ts"],
       "@models": ["./src/constants/models.ts"],
-      "@actions/*": ["./src/actions/*"]
+      "@actions/*": ["./src/actions/*"],
+      "@lib/*": ["./lib/*"],
+      "@utils/*": ["./utils/*"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"],

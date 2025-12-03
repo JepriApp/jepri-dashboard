@@ -15,7 +15,7 @@ const AuthVerifier = ({ user, children, roles = [] }: AuthVerifierProps): React.
   if (!mounted) return null;
 
   // If requires generic authentication
-  const requiresAuth = roles.includes("authenticated");
+  const requiresAuth = roles.includes("authenticated"); //TODO: Colocar el rol correcto
   if (requiresAuth) {
     if (!user?.id) {
       router.replace("/");

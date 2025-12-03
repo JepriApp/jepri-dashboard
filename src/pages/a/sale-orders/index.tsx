@@ -19,7 +19,7 @@ import { type SaleOrder } from "@/services/supabase.service";
 import Link from "next/link";
 import { createClient as createSupabaseComponent } from "@/utils/supabase/component";
 const supabase = createSupabaseComponent();
-import { formatPriceAccounting } from "@/utils/formatPrice";
+import { formatPriceAccounting } from "../../../../utils/formatPrice";
 
 // Página enfocada en: seleccionar órdenes y crear el distribution plan
 const { Text } = Typography;

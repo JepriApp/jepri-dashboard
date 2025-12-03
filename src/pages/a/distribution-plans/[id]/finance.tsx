@@ -1,7 +1,7 @@
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import DistributionPlanLayout from "@/components/layout/DistributionPlanLayout";
 import { SaleOrder } from "@/services/supabase.service";
-import { formatPriceAccounting } from "@/utils/formatPrice";
+import { formatPriceAccounting } from "../../../../../utils/formatPrice";
 import {
   Form,
   InputNumber,

@@ -11,6 +11,8 @@ export interface Product {
   reference_price: number;
 }
 
+
+
 export interface Customer {
   id: string;
   user_id: string;
@@ -80,6 +82,7 @@ export async function signOut() {
     console.error(error);
   }
 }
+
 // Obtener todos los productos
 export async function getProducts() {
   const { data, error } = await supabase.from("product").select("*");

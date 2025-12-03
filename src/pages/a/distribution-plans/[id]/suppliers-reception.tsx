@@ -20,7 +20,7 @@ const supabase = createSupabaseComponent();
 
 import dayjs from "dayjs";
 import { useRouter } from "next/router";
-import { formatPriceAccounting } from "@/utils/formatPrice";
+import { formatPriceAccounting } from "../../../../../utils/formatPrice";
 import { useAuthStore } from "@/store/auth.store";
 import {
   CheckCircleOutlined,

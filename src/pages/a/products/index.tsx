@@ -13,43 +13,22 @@ import {
   Modal,
   Form,
   Select,
-  InputNumber,
+  InputNumber,Image,
+  Drawer,
+  Popconfirm
 } from "antd";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { createClient as createSupabaseComponent } from "@/utils/supabase/component";
-const supabase = createSupabaseComponent();
-import { formatPriceAccounting } from "@/utils/formatPrice";
-import { Image } from "antd";
+import { getProductsWithOffers, ProductWithOffers, SupplierMinimal } from "@/services/productsPage";
+import { createClient } from "../../../../lib/supabase/client";
 import placeholder from "../../../../public/images/logo.png";
-import { Drawer, Popconfirm } from "antd";
-import { PlusOutlined, DeleteOutlined } from "@ant-design/icons";
-type SupplierMinimal = {
-  id: string;
-  name: string;
-  phone?: string | null;
-};
-
-type OfferWithSupplier = {
-  id: string;
-  price: number;
-  available: boolean;
-  supplier: SupplierMinimal;
-};
-
-type ProductWithOffers = {
-  id: string;
-  name: string;
-  description?: string | null;
-  unit: string;
-  reference_price?: number | null;
-  main_photo?: string | null;
-  offers?: OfferWithSupplier[];
-};
+import { formatPriceAccounting } from "@utils/formatPrice";
+import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 
 const { Title, Text } = Typography;
 
 const ProductsIndexPage = () => {
   const { message } = App.useApp();
+  const [supabase] = useState(() => createClient());
   const [query, setQuery] = useState("");
   const [availableOnly, setAvailableOnly] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -77,29 +56,9 @@ const ProductsIndexPage = () => {
     refetch,
   } = useQuery<ProductWithOffers[]>({
     queryKey: ["products-with-offers"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("product")
-        .select(
-          `id, name, description, unit, reference_price, main_photo,
-           offers:offer(id, price, available, supplier:supplier_id(id, name, phone))`
-        )
-        .order("name", { ascending: true });
-      if (error) throw error;
-      return (data || []).map((p: any) => ({
-        ...p,
-        offers: (p.offers || []).map((o: any) => {
-          const supplierObj = Array.isArray(o.supplier)
-            ? o.supplier[0]
-            : o.supplier;
-          return {
-            ...o,
-            supplier: supplierObj || null,
-          };
-        }),
-      })) as ProductWithOffers[];
-    },
+    queryFn: () => getProductsWithOffers(supabase),
     staleTime: 30_000,
+    enabled: !!supabase,
   });
 
   const { data: suppliers = [], isLoading: suppliersLoading } = useQuery<
@@ -114,7 +73,7 @@ const ProductsIndexPage = () => {
       if (error) throw error;
       return data || [];
     },
-    staleTime: 60_000,
+    staleTime: 60000,
   });
 
   const filteredProducts = useMemo(() => {
@@ -168,7 +127,7 @@ const ProductsIndexPage = () => {
       render: (_: any, record: ProductWithOffers) => (
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Image
-            src={record.main_photo || undefined}
+            src={record.main_photo||""}
             fallback={placeholder.src}
             alt={record.name}
             width={64}

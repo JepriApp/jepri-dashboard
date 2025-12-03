@@ -20,7 +20,7 @@ import {
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { createClient as createSupabaseComponent } from "@/utils/supabase/component";
 const supabase = createSupabaseComponent();
-import { formatPriceAccounting } from "@/utils/formatPrice";
+import { formatPriceAccounting } from "../../../../utils/formatPrice";
 import { PlusOutlined, DeleteOutlined } from "@ant-design/icons";
 
 interface SupplierRow {
