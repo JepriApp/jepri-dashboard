@@ -47,3 +47,51 @@ export async function getProductsWithOffers(
     }),
   })) as ProductWithOffers[];
 }
+
+export async function getSuppliersMinimal(
+  supabase: SupabaseClient
+): Promise<SupplierMinimal[]> {
+  const { data, error } = await supabase
+    .from("supplier")
+    .select("id, name, phone")
+    .order("name", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+export interface newProductBody {
+  name: any;
+  unit: any;
+  description: any;
+  reference_price: number | null;
+  main_photo: any;
+}
+export async function createNewProduct(
+  supabase: SupabaseClient,
+  payload: newProductBody
+): Promise<any> {
+  const { data, error } = await supabase
+    .from("product")
+    .insert([payload])
+    .select();
+  if (error) throw error;
+  return data;
+}
+
+export interface updateProductBody {
+    description: any;
+    reference_price: number | null;
+    main_photo: any;
+}
+export async function updateProduct(
+  supabase: SupabaseClient,
+  id:string,
+  payload: updateProductBody
+): Promise<any> {
+  const { data, error } = await supabase
+    .from("product")
+    .update(payload)
+    .eq("id", id)
+    .select();
+  if (error) throw error;
+  return data;
+}

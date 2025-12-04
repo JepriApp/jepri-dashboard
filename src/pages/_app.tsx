@@ -4,11 +4,11 @@ import React, { ReactElement, useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { App as AntdApp, ConfigProvider } from "antd";
-import { createClient as createSupabaseSSR } from "@/utils/supabase/server-props";
 import { useAuthStore, UserRole } from "@/store/auth.store";
 import { createClient as createSupabaseComponent } from "@/utils/supabase/component";
 import { User } from "@supabase/supabase-js";
 import es_ES from "antd/locale/es_ES";
+import { createClient } from "@/lib/supabase/server";
 
 function MyApp({ Component, pageProps }: AppProps) {
   const [queryClient] = useState(() => new QueryClient());
@@ -85,7 +85,7 @@ MyApp.getInitialProps = async (appCtx: AppContext) => {
     let user: User | null = null;
 
     if (isServer) {
-      const supabase = createSupabaseSSR(appCtx.ctx as any);
+      const supabase = createClient();
       const { data, error } = await supabase.auth.getUser();
       user = error ? null : data?.user ?? null;
     } else {

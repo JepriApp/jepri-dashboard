@@ -1,9 +1,8 @@
 import type { User } from "@supabase/supabase-js";
 import type { GetServerSidePropsContext } from "next";
 import { createClient as clientToSignOut } from "@/utils/supabase/component";
-
-import { createClient } from "@/utils/supabase/server-props";
 import { useRouter } from "next/router";
+import { createClient } from "@/lib/supabase/server";
 
 export default function PrivatePage({ user }: { user: User }) {
   const supabase = clientToSignOut();
@@ -25,7 +24,7 @@ export default function PrivatePage({ user }: { user: User }) {
 }
 
 export async function getServerSideProps(context: GetServerSidePropsContext) {
-  const supabase = createClient(context);
+  const supabase = createClient()
 
   const { data, error } = await supabase.auth.getUser();
 

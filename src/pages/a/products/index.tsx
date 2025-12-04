@@ -13,13 +13,21 @@ import {
   Modal,
   Form,
   Select,
-  InputNumber,Image,
+  InputNumber,
+  Image,
   Drawer,
-  Popconfirm
+  Popconfirm,
 } from "antd";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { getProductsWithOffers, ProductWithOffers, SupplierMinimal } from "@/services/productsPage";
-import { createClient } from "../../../../lib/supabase/client";
+import {
+  createNewProduct,
+  getProductsWithOffers,
+  getSuppliersMinimal,
+  ProductWithOffers,
+  SupplierMinimal,
+  updateProduct,
+} from "@/services/productsPage";
+import { createClient } from "../../../lib/supabase/client";
 import placeholder from "../../../../public/images/logo.png";
 import { formatPriceAccounting } from "@utils/formatPrice";
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
@@ -57,7 +65,7 @@ const ProductsIndexPage = () => {
   } = useQuery<ProductWithOffers[]>({
     queryKey: ["products-with-offers"],
     queryFn: () => getProductsWithOffers(supabase),
-    staleTime: 30_000,
+    staleTime: 60000,
     enabled: !!supabase,
   });
 
@@ -65,14 +73,7 @@ const ProductsIndexPage = () => {
     SupplierMinimal[]
   >({
     queryKey: ["suppliers-minimal"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("supplier")
-        .select("id, name, phone")
-        .order("name", { ascending: true });
-      if (error) throw error;
-      return data || [];
-    },
+    queryFn: () => getSuppliersMinimal(supabase),
     staleTime: 60000,
   });
 
@@ -127,7 +128,7 @@ const ProductsIndexPage = () => {
       render: (_: any, record: ProductWithOffers) => (
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Image
-            src={record.main_photo||""}
+            src={record.main_photo || ""}
             fallback={placeholder.src}
             alt={record.name}
             width={64}
@@ -219,12 +220,7 @@ const ProductsIndexPage = () => {
             : null,
         main_photo: values.main_photo || null,
       };
-      const { data, error } = await supabase
-        .from("product")
-        .insert([payload])
-        .select();
-      if (error) throw error;
-      return data;
+      return createNewProduct(supabase, payload);
     },
     onSuccess: async () => {
       message.success("Producto creado exitosamente");
@@ -250,13 +246,7 @@ const ProductsIndexPage = () => {
             : null,
         main_photo: values.main_photo || null,
       };
-      const { data, error } = await supabase
-        .from("product")
-        .update(payload)
-        .eq("id", editingProduct.id)
-        .select();
-      if (error) throw error;
-      return data;
+      return updateProduct(supabase, editingProduct.id, payload);
     },
     onSuccess: async () => {
       message.success("Producto actualizado");
@@ -316,7 +306,9 @@ const ProductsIndexPage = () => {
         }
       }
 
-      const finalIds = formOffers.map((o:any) => o.id).filter(Boolean) as string[];
+      const finalIds = formOffers
+        .map((o: any) => o.id)
+        .filter(Boolean) as string[];
       let toDelete = originalOfferIds.filter((id) => !finalIds.includes(id));
 
       // Preverificación de dependencias antes de eliminar
@@ -349,14 +341,14 @@ const ProductsIndexPage = () => {
       }
 
       // Inserciones
-      const inserts = formOffers.filter((o:any) => !o.id);
+      const inserts = formOffers.filter((o: any) => !o.id);
       if (inserts.length) {
         const { error } = await supabase.from("offer").insert(inserts);
         if (error) throw error;
       }
 
       // Actualizaciones (una por una) — sin cambiar supplier_id
-      const updates = formOffers.filter((o:any) => !!o.id);
+      const updates = formOffers.filter((o: any) => !!o.id);
       for (const u of updates) {
         const { error } = await supabase
           .from("offer")
@@ -608,7 +600,7 @@ const ProductsIndexPage = () => {
                                 ]);
                               const usedSupplierIds = new Set(
                                 allOffers
-                                  .map((o:any, idx:number) =>
+                                  .map((o: any, idx: number) =>
                                     idx !== name ? o?.supplier_id : undefined
                                   )
                                   .filter(Boolean)
