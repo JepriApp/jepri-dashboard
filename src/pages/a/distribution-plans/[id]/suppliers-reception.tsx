@@ -25,9 +25,11 @@ import { useAuthStore } from "@/store/auth.store";
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
+  InfoCircleOutlined,
   StopOutlined,
 } from "@ant-design/icons";
-import { renderPurchaseOrderStatusTag } from "@/constants/labels";
+import { renderPurchaseOrderStateInfo, renderPurchaseOrderStatusTag } from "@/constants/labels";
+import AsyncButton from "@/components/pure/AsyncButton";
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;
@@ -346,6 +348,7 @@ const SuppliersRecepction = () => {
                   {group.supplier_name}
                 </Title>
                 {renderPurchaseOrderStatusTag(group.status)}
+                {renderPurchaseOrderStateInfo(group.status)}
               </Space>
               <Text type="secondary">{group.purchase_code || "—"}</Text>
             </Space>
@@ -364,6 +367,7 @@ const SuppliersRecepction = () => {
           styles={{ body: { padding: 0 } }}
         >
           {(() => {
+            const isPublished = group.status === "published";
             const isEditable = group.status === "accepted";
             const isFinal = ["received", "cancelled", "rejected"].includes(
               group.status || ""
@@ -593,7 +597,20 @@ const SuppliersRecepction = () => {
                       autoSize={{ minRows: 2, maxRows: 6 }}
                       disabled={updateNotesMutation.isPending || !isEditable}
                     />
-
+                    {isPublished ? (
+                      <AsyncButton
+                        onClick={() => {
+                          updatePurchaseOrderStatusMutation.mutate({
+                            purchase_order_id: group.id,
+                            newStatus: "accepted",
+                          });
+                        }}
+                        type="primary"
+                        disabled={savingById}
+                      >
+                        Aceptar en nombre del proveedor
+                      </AsyncButton>
+                    ) : null}
                     {isEditable ? (
                       <Dropdown.Button
                         menu={{

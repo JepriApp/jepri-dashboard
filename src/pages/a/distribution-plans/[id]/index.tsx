@@ -286,6 +286,14 @@ const PlanEditorPage = () => {
         .update({ status: nextStatus })
         .eq("id", String(planId));
       if (error) throw error;
+      if (nextStatus === "preparing") {
+        // Actualizar estado de todas las órdenes a "published"
+        const { error: updateError } = await supabase
+          .from("purchase_order")
+          .update({ status: "published" })
+          .eq("distribution_plan_id", planId);
+        if (updateError) throw updateError;
+      }
       message.success("Estado del plan actualizado");
       setStatusModalOpen(false);
       await refetch();

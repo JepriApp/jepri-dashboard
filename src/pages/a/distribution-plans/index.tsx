@@ -85,7 +85,7 @@ const DistributionPlansPage = () => {
       </Space>
       <Table
         loading={isLoading}
-        dataSource={data}
+        dataSource={data.toReversed()}
         columns={columns as any}
         rowKey="id"
       />

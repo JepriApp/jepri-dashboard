@@ -246,9 +246,7 @@ const Index = () => {
       width: 280,
       render: (_: any, record: SupplierRow) => (
         <Space>
-          <Button onClick={() => openOffersDrawer(record)}>
-            Ver catálogo
-          </Button>
+          <Button onClick={() => openOffersDrawer(record)}>Ver catálogo</Button>
           <Button onClick={() => openEditModal(record)}>
             Editar proveedor
           </Button>
@@ -370,14 +368,65 @@ const Index = () => {
 
   // Nuevo: mutación para crear proveedor (crea auth y luego supplier)
   const createSupplierMutation = useMutation({
-    mutationFn: async (values: any) => {
-      const payload = {
-        name: values.name,
-        contact: values.contact || null,
-        phone: values.phone || null,
-      };
-      const { error } = await supabase.from("supplier").insert([payload]);
-      if (error) throw error;
+    mutationFn: async ({
+      name,
+      contact,
+      phone,
+    }: {
+      name: string;
+      contact: string;
+      phone: string;
+    }) => {
+      const { data: createdUser, error: createErr } =
+        await supabase.auth.signUp({
+          phone,
+          password: "default-password-jepri-1234",
+          options: {
+            channel: "sms",
+          },
+        });
+      if (createErr) {
+        throw new Error(
+          `No se pudo crear el usuario Auth (teléfono): ${createErr.message}`
+        );
+      }
+      const userId = createdUser?.user?.id;
+      if (!userId) {
+        throw new Error("No se obtuvo el ID del usuario creado en Auth.");
+      }
+
+      // 2) Actualizar el perfil (el trigger ya creó profiles con rol 'customer')
+      const { error: profileErr } = await supabase
+        .from("profiles")
+        .update({
+          role: "supplier",
+          name,
+          phone,
+        })
+        .eq("id", userId);
+      if (profileErr) {
+        throw new Error(
+          `No se pudo actualizar el perfil: ${profileErr.message}`
+        );
+      }
+
+      // 3) Crear el registro en supplier
+      const { data: supplierRow, error: supplierErr } = await supabase
+        .from("supplier")
+        .insert({
+          user_id: userId,
+          name,
+          contact: contact,
+          phone,
+          bank_accounts: [], // mínimo viable
+        })
+        .select("id")
+        .single();
+      if (supplierErr) {
+        throw new Error(`No se pudo crear el supplier: ${supplierErr.message}`);
+      }
+
+      return { userId: userId, supplierId: supplierRow.id };
     },
     onSuccess: async () => {
       message.success("Proveedor creado");
