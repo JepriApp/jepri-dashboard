@@ -1,3 +1,4 @@
+import PurchaseOrderStatusTag from "@/app/protected/components/PurchaseOrderStatusTag";
 import { formatPriceAccounting } from "@/lib/formatPrice";
 import { createClient } from "@/lib/supabase/client";
 import { useQuery } from "@tanstack/react-query";
@@ -136,7 +137,15 @@ const PurchaseOrdersTable = ({ id }: { id: string }) => {
       title: "Estado",
       dataIndex: "status",
       key: "status",
-      render: (status: string) => <Tag>{status}</Tag>,
+      render: (
+        status:
+          | "created"
+          | "published"
+          | "accepted"
+          | "received"
+          | "cancelled"
+          | "rejected"
+      ) => <PurchaseOrderStatusTag status={status} />,
     },
     {
       title: "Total estimado",

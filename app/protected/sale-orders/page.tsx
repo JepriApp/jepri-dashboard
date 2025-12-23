@@ -19,6 +19,7 @@ import dayjs from "dayjs";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { formatPriceAccounting } from "@/lib/formatPrice";
+import SaleOrderStatusTag from "../components/SaleOrderStatusTag";
 
 // Página enfocada en: seleccionar órdenes y crear el distribution plan
 const { Text } = Typography;
@@ -395,7 +396,9 @@ const Index = () => {
       title: "Estado",
       dataIndex: "status",
       key: "status",
-      render: (status: SaleOrder["status"]) => <Tag>{status}</Tag>,
+      render: (status: SaleOrder["status"]) => (
+        <SaleOrderStatusTag status={status} />
+      ),
     },
     {
       title: "Items",

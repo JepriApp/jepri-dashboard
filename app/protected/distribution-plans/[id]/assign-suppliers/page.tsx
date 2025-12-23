@@ -1,13 +1,9 @@
 import { Layout, Space } from "antd";
+import { Suspense } from "react";
 import SaleOrderFilter from "./components/SaleOrderFilter";
 import SaleOrderTable from "./components/SaleOrderTable";
 
-export default async function Page({
-  params,
-}: {
-  params: Promise<{ id: string }>
-}) {
-  const { id: planId } = await params
+async function AssignSuppliersContent({ planId }: { planId: string }) {
   if (!planId) {
     return null;
   }
@@ -30,5 +26,19 @@ export default async function Page({
         ><SaleOrderTable id={planId}></SaleOrderTable></Layout>
       </Layout>
     </Layout>
+  );
+}
+
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}) {
+  const { id: planId } = await params;
+  
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <AssignSuppliersContent planId={planId} />
+    </Suspense>
   );
 }

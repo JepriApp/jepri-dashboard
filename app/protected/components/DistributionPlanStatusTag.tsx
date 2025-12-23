@@ -1,9 +1,12 @@
+import { TruckOutlined } from "@ant-design/icons";
 import { Tag } from "antd";
-
-const label: Record<
-  "planned" | "preparing" | "in_progress" | "completed" | "cancelled",
-  string
-> = {
+type statuses =
+  | "planned"
+  | "preparing"
+  | "in_progress"
+  | "completed"
+  | "cancelled";
+const label: Record<statuses, string> = {
   planned: "Planeado",
   preparing: "En preparación",
   in_progress: "En progreso",
@@ -11,10 +14,7 @@ const label: Record<
   cancelled: "Cancelado",
 };
 
-const color: Record<
-  "planned" | "preparing" | "in_progress" | "completed" | "cancelled",
-  string
-> = {
+const color: Record<statuses, string> = {
   planned: "gray",
   preparing: "orange",
   in_progress: "blue",
@@ -22,15 +22,15 @@ const color: Record<
   cancelled: "red",
 };
 
-const DistributionPlanStatusTag = ({
-  status,
-}: {
-  status: "planned" | "preparing" | "in_progress" | "completed" | "cancelled";
-}) => {
+const DistributionPlanStatusTag = ({ status }: { status: statuses }) => {
   if (!label[status]) {
     return <Tag>{status}</Tag>;
   }
-  return <Tag color={color[status]}>{label[status]}</Tag>;
+  return (
+    <Tag color={color[status]} icon={<TruckOutlined />}>
+      {label[status]}
+    </Tag>
+  );
 };
 
 export default DistributionPlanStatusTag;

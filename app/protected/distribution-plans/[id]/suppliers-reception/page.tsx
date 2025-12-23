@@ -5,12 +5,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, Space, Table, TableColumnsType, Typography } from "antd";
 import dayjs from "dayjs";
 import { useParams } from "next/navigation";
-import PurchaseOrderStatusTag from "./components/PurchaseOrderStatusTag";
 import PurchaseOrderStatusInfo from "./components/PurchaseOrderStatusInfo";
 import PurchaseItemActualPriceForm from "./components/PurchaseItemActualPriceForm";
 import PurchaseItemReceivedQtyForm from "./components/PurchaseItemReceivedQtyForm";
 import PurchaseOrderNotesForm from "./components/PurchaseOrderNotesForm";
 import UpdatePurchaseOrderStatusButton from "./components/UpdatePurchaseOrderStatusButton";
+import PurchaseOrderStatusTag from "@/app/protected/components/PurchaseOrderStatusTag";
 type PurchaseItem = {
   id: string;
   quantity: number;
@@ -116,7 +116,7 @@ const Page = () => {
                   <Typography.Title level={5} style={{ margin: 0 }}>
                     {group.supplier.name}
                   </Typography.Title>
-                  <PurchaseOrderStatusTag status={group.status as string} />
+                  <PurchaseOrderStatusTag status={group.status} />
                 </Space>
                 <Typography.Text type="secondary">
                   {group.purchase_code || "—"}

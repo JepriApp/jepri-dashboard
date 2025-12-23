@@ -227,7 +227,7 @@ const SaleOrderTable = ({ id }: { id: string }) => {
                           : undefined, */
                     }}
                   >
-                    <Space wrap split="·" key={fullfiment?.id}>
+                    <Space wrap separator="·" key={fullfiment?.id}>
                       {label.map((e) => (
                         <Typography.Text key={e}>{e}</Typography.Text>
                       ))}

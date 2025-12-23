@@ -1,4 +1,5 @@
 "use client";
+import SaleOrderStatusTag from "@/app/protected/components/SaleOrderStatusTag";
 import { formatPriceAccounting } from "@/lib/formatPrice";
 import { createClient } from "@/lib/supabase/client";
 import { useQuery } from "@tanstack/react-query";
@@ -118,7 +119,7 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
       title: "Estado",
       dataIndex: "status",
       key: "status",
-      render: (status) => <Tag>{status}</Tag>,
+      render: (status) => <SaleOrderStatusTag status={status} />,
     },
     {
       title: "Subtotal",
