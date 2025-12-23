@@ -2,6 +2,7 @@
 import { Table, Tag, Space } from "antd";
 import dayjs from "dayjs";
 import Link from "next/link";
+import DistributionPlanStatusTag from "../../components/DistributionPlanStatusTag";
 
 export type DistributionPlanRow = {
   id: string;
@@ -33,7 +34,9 @@ export default function DistributionPlansTable({
       title: "Estado",
       dataIndex: "status",
       key: "status",
-      render: (s: string) => <Tag>{s}</Tag>,
+      render: (
+        s: "planned" | "preparing" | "in_progress" | "completed" | "cancelled"
+      ) => <DistributionPlanStatusTag status={s} />,
     },
     {
       title: "Notas",

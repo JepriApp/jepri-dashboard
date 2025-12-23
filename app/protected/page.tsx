@@ -2,31 +2,65 @@ import { InfoIcon } from "lucide-react";
 import { FetchDataSteps } from "@/components/tutorial/fetch-data-steps";
 import { Suspense } from "react";
 import { UserDetails } from "./components/UserDetails";
+import { Card, Layout, Tag, Typography } from "antd";
+import { createClient } from "@/lib/supabase/server";
+import Link from "next/link";
+import { ArrowRightOutlined } from "@ant-design/icons";
+import DistributionPlanStatusTag from "./components/DistributionPlanStatusTag";
 
+export default async function ProtectedPage() {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("distribution_plan")
+    .select("id, plan_code, plan_date, status, notes")
+    .order("plan_date", { ascending: true })
+    .in("status", ["in_progress", "preparing"]);
 
+  if (error) throw error;
 
-export default function ProtectedPage() {
   return (
-    <div className="flex-1 w-full flex flex-col gap-12">
-      <div className="w-full">
-        <div className="bg-accent text-sm p-3 px-5 rounded-md text-foreground flex gap-3 items-center">
-          <InfoIcon size="16" strokeWidth={2} />
-          This is a protected page that you can only see as an authenticated
-          user
+    <Layout
+      style={{
+        padding: "16px",
+        width: "100%",
+      }}
+    >
+      <Card
+        style={{ width: "fit-content", overflow: "auto" }}
+        title="Planes activos"
+      >
+        <div style={{ display: "inline-flex", gap: "8px", flexWrap: "wrap" }}>
+          {data && data.length > 0
+            ? data.map((plan) => {
+                return (
+                  <Card
+                    title={
+                      <div style={{ display: "inline-flex", gap: "8px" }}>
+                        <h4>{plan.plan_date}</h4>
+                        <p>~</p>
+                        <p>{plan.plan_code}</p>
+                      </div>
+                    }
+                    key={plan.id}
+                  >
+                    <DistributionPlanStatusTag status={plan.status} />
+                    <p>{plan.notes}</p>
+                    <Link
+                      href={`/protected/distribution-plans/${plan.id}`}
+                      style={{
+                        marginTop: "8px",
+                        display: "flex",
+                        justifyContent: "end",
+                      }}
+                    >
+                      Ir al editor <ArrowRightOutlined />
+                    </Link>
+                  </Card>
+                );
+              })
+            : null}
         </div>
-      </div>
-      <div className="flex flex-col gap-2 items-start">
-        <h2 className="font-bold text-2xl mb-4">Your user details</h2>
-        <pre className="text-xs font-mono p-3 rounded border max-h-32 overflow-auto">
-          <Suspense>
-            <UserDetails />
-          </Suspense>
-        </pre>
-      </div>
-      <div>
-        <h2 className="font-bold text-2xl mb-4">Next steps</h2>
-        <FetchDataSteps />
-      </div>
-    </div>
+      </Card>
+    </Layout>
   );
 }

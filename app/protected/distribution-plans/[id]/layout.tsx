@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, Space, Tag, Layout } from "antd";
 import { redirect, useParams, usePathname } from "next/navigation";
 import React from "react";
+import DistributionPlanStatusTag from "../../components/DistributionPlanStatusTag";
 
 export default function DistributionPlanEditorLayout({
   children,
@@ -77,7 +78,7 @@ export default function DistributionPlanEditorLayout({
           <Space separator="~">
             <p>Plan {data?.plan?.plan_code}</p>
             <p>{data?.plan?.plan_date}</p>
-            <Tag>{data?.plan?.status}</Tag>
+            <DistributionPlanStatusTag status={data?.plan?.status!} />
           </Space>
         }
         tabList={lateralMenuItems}

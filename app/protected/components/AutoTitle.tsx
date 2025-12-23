@@ -4,7 +4,7 @@ import { Typography } from "antd";
 import { usePathname, useSearchParams } from "next/navigation";
 
 const titles: Record<string, string> = {
-  protected: "Bienvenido ${a}",
+  protected: "Bienvenido",
   // Pedidos
   "protected/sale-orders": "Pedidos",
   "protected/sale-orders/create": "Crear pedido",

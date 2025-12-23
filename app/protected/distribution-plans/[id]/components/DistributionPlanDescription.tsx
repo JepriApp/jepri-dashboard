@@ -1,4 +1,5 @@
 "use client";
+import DistributionPlanStatusTag from "@/app/protected/components/DistributionPlanStatusTag";
 import { createClient } from "@/lib/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { Descriptions, Tag } from "antd";
@@ -48,7 +49,7 @@ function DistributionPlanDescription({ id }: { id: string }) {
         {plan_date ? dayjs(plan_date).format("YYYY-MM-DD") : "-"}
       </Descriptions.Item>
       <Descriptions.Item label="Estado">
-        <Tag color="blue">{status}</Tag>
+        <DistributionPlanStatusTag status={status} />
       </Descriptions.Item>
       <Descriptions.Item label="Coordinador">
         {operator?.name ?? "-"}
