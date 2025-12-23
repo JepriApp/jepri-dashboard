@@ -18,7 +18,7 @@ const CreateProduct = ({ onSubmit }: { onSubmit: () => void }) => {
     mutationFn: async (values: NewProduct) => {
       const payload = {
         name: (values.name || "").trim(),
-        unit: values.unit,
+        unit: values.unit as "lb" | "kg" | "unidad" | "atado",
         description: values.description || null,
         reference_price:
           values.reference_price !== undefined &&

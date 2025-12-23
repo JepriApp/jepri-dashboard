@@ -1,4 +1,4 @@
-'use client'
+"use client";
 
 import { useMemo, useState } from "react";
 import {
@@ -37,24 +37,27 @@ type EditableItem = {
 export interface SaleOrder {
   id: string;
   customer_id: string;
-  order_date: string;
-  delivery_date: string | null;
+  created_at: string | null;
   status:
     | "pending"
     | "processing"
     | "out_for_delivery"
     | "delivered"
     | "cancelled";
-  service_fee: number;
-  delivery_charge: number;
-  distribution_plan_code?: string;
+  order_code: string | null;
+  order_seq: number | null;
+  service_fee: number | null;
+  delivery_fee: number | null;
   notes: string | null;
-  order_code?: string;
-  order_seq?: number;
+
+  order_date: string | null;
+  delivery_date: string | null;
+  delivery_charge: number;
+  distribution_plan_code: string | null;
   total?: number;
   user?: {
     name: string;
-    email: string;
+    phone: string;
   };
   items?: SaleItem[];
 }
@@ -69,15 +72,15 @@ export interface SaleItem {
 export interface Product {
   id: string;
   name: string;
-  description: string;
+  description: string | null;
   unit: string;
-  main_photo: string;
-  reference_price: number;
+  main_photo: string | null;
+  reference_price: number | null;
 }
 const Index = () => {
-    const supabase = createClient();
+  const supabase = createClient();
   const queryClient = useQueryClient();
-  const { data: orders = [], isLoading } = useQuery<SaleOrder[]>({
+  const { data: orders = [], isLoading } = useQuery({
     queryKey: ["saleOrders"],
     queryFn: async () => {
       try {
@@ -94,12 +97,13 @@ const Index = () => {
         service_fee,
         delivery_fee,
         notes,
-        customer:customer_id (
+        customer:customer!customer_id (
           id,
           user_id,
-          name
+          name,
+          phone
         ),
-        distribution_plan:distribution_plan_id (
+        distribution_plan:distribution_plan!distribution_plan_id (
           id,
           plan_date,
           plan_code
@@ -108,7 +112,7 @@ const Index = () => {
           id,
           product_id,
           required_quantity,
-          product:product_id (
+          product:product!product_id (
             id,
             name,
             description,
@@ -126,7 +130,7 @@ const Index = () => {
           throw error;
         }
 
-        const adaptedData: SaleOrder[] =
+        const adaptedData =
           (data || []).map((order) => {
             const items = (order.sale_item || []).map((item) => ({
               id: item.id,
@@ -147,6 +151,7 @@ const Index = () => {
             return {
               id: order.id,
               customer_id: order.customer_id,
+              created_at: order.created_at,
               order_date: order.created_at,
               delivery_date: order?.distribution_plan?.plan_date ?? null,
               distribution_plan_code:
@@ -155,12 +160,13 @@ const Index = () => {
               order_code: order.order_code,
               order_seq: order.order_seq,
               total,
-              service_fee: order.service_fee,
-              delivery_charge: order.delivery_fee,
+              service_fee: order.service_fee ?? 0,
+              delivery_fee: order.delivery_fee ?? 0,
+              delivery_charge: order.delivery_fee ?? 0,
               notes: order.notes,
               user: {
                 name: order.customer?.name ?? "Sin nombre",
-                email: "Sin email",
+                phone: order.customer?.phone ?? "Sin email",
               },
               items,
             };
@@ -325,7 +331,7 @@ const Index = () => {
         const { error } = await supabase
           .from("sale_item")
           .delete()
-          .in("id", deletes);
+          .in("id", deletes.map(String));
         if (error) throw error;
       }
 
@@ -336,7 +342,7 @@ const Index = () => {
         const { error } = await supabase
           .from("sale_item")
           .update({ required_quantity: it.quantity })
-          .eq("id", it.id!);
+          .eq("id", String(it.id));
         if (error) throw error;
       }
 
@@ -345,7 +351,7 @@ const Index = () => {
         const { error } = await supabase.from("sale_item").insert([
           {
             sale_order_id: selectedOrder.id,
-            product_id: it.product_id!,
+            product_id: String(it.product_id),
             required_quantity: it.quantity,
           },
         ]);
@@ -381,7 +387,7 @@ const Index = () => {
       render: (name: string, record: SaleOrder) => (
         <Space wrap>
           <Text>{name}</Text>
-          <Text type="secondary">{record.user?.email}</Text>
+          <Text type="secondary">{record.user?.phone}</Text>
         </Space>
       ),
     },
@@ -475,13 +481,18 @@ const Index = () => {
                     title: "Producto",
                     dataIndex: ["product", "name"],
                     key: "product_name",
+                    render: (v: number, record: any) => (
+                      <>
+                        {record.product?.name || "—"}{" "}
+                        <Tag>{record.product?.unit || ""} </Tag>
+                      </>
+                    ),
                   },
                   {
                     title: "Cant./Unidad",
                     dataIndex: "quantity",
                     key: "quantity",
-                    render: (v: number, record: any) =>
-                      `${v.toFixed(2)} ${record.product?.unit || ""}`,
+                    render: (v: number, record: any) => v.toFixed(2),
                   },
                   {
                     title: "Unitario",
@@ -651,4 +662,3 @@ const Index = () => {
 };
 
 export default Index;
-

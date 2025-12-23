@@ -75,13 +75,13 @@ const OfferBySupplierDrawer = ({
             ? removedOffersByProduct[o.product_id]
             : undefined;
         const base: {
-          product_id: string | null;
+          product_id: string;
           price: number;
           available: boolean;
           supplier_id: string;
           id?: string;
         } = {
-          product_id: o.product_id,
+          product_id: o.product_id ?? "",
           price: Number(o.price ?? 0),
           available: Boolean(o.available),
           supplier_id: offersEditingSupplier.id,
@@ -200,6 +200,7 @@ const OfferBySupplierDrawer = ({
         const productObj = Array.isArray(o.product) ? o.product[0] : o.product;
         return {
           ...o,
+          available: Boolean(o.available),
           product: productObj || null,
         };
       }),
