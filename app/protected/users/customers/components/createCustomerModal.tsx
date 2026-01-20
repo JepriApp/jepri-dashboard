@@ -1,24 +1,28 @@
 "use client";
 import { createClient } from "@/lib/supabase/client";
 import { useMutation } from "@tanstack/react-query";
-import { Button, Form, Input, message, Modal } from "antd";
+import { Button, Form, Input, message, Modal, Select } from "antd";
 import React, { useState } from "react";
-interface createSupplierValues {
+
+interface CreateCustomerValues {
   name: string;
   contact: string;
   phone: string;
+  identification_type: "CC" | "NIT" | "PPT" | "PEP";
+  identification_number: string;
+
 }
-const CreateSupplierModal = ({
+const CreateCustomerModal = ({
   onSuccess,
 }: {
-  onSuccess?: () => Promise<void>;
-} = {}) => {
+  onSuccess: () => Promise<void>;
+}) => {
   const [createOpen, setCreateOpen] = useState(false);
-  const [createForm] = Form.useForm<createSupplierValues>();
+  const [createForm] = Form.useForm<CreateCustomerValues>();
   const supabase = createClient();
 
-  const createSupplierMutation = useMutation({
-    mutationFn: async ({ name, contact, phone }: createSupplierValues) => {
+  const createCustomerMutation = useMutation({
+    mutationFn: async ({ name, contact, phone, identification_type, identification_number }: CreateCustomerValues) => {
       // 1) Crear el usuario en Auth solo con teléfono
       const { data: createdUser, error: createErr } =
         await supabase.auth.signUp({
@@ -30,7 +34,7 @@ const CreateSupplierModal = ({
         });
       if (createErr) {
         throw new Error(
-          `No se pudo crear el usuario Auth (teléfono): ${createErr.message}`
+          `No se pudo crear el usuario Auth (teléfono): ${createErr.message}`,
         );
       }
       const userId = createdUser?.user?.id;
@@ -42,34 +46,35 @@ const CreateSupplierModal = ({
       const { error: profileErr } = await supabase
         .from("profiles")
         .update({
-          role: "supplier",
+          role: "customer",
           name,
           phone,
         })
         .eq("id", userId);
       if (profileErr) {
         throw new Error(
-          `No se pudo actualizar el perfil: ${profileErr.message}`
+          `No se pudo actualizar el perfil: ${profileErr.message}`,
         );
       }
 
-      // 3) Crear el registro en supplier
-      const { data: supplierRow, error: supplierErr } = await supabase
-        .from("supplier")
+      // 3) Crear el registro en customer
+      const { data: customerRow, error: customerErr } = await supabase
+        .from("customer")
         .insert({
           user_id: userId,
           name,
-          contact: contact,
+          contact,
           phone,
-          bank_accounts: [], // mínimo viable
+          identification_type,
+          identification_number,
         })
         .select("id")
         .single();
-      if (supplierErr) {
-        throw new Error(`No se pudo crear el supplier: ${supplierErr.message}`);
+      if (customerErr) {
+        throw new Error(`No se pudo crear el customer: ${customerErr.message}`);
       }
 
-      return { userId: userId, supplierId: supplierRow.id };
+      return { userId: userId, customerId: customerRow.id };
       /*       const payload = {
         name: values.name,
         contact: values.contact || null,
@@ -79,7 +84,7 @@ const CreateSupplierModal = ({
       if (error) throw error; */
     },
     onSuccess: async () => {
-      message.success("Proveedor creado");
+      message.success("Cliente creado");
       setCreateOpen(false);
       createForm.resetFields();
       await onSuccess?.();
@@ -91,17 +96,17 @@ const CreateSupplierModal = ({
         typeof err?.message === "string" &&
         err.message.includes("duplicate key")
           ? "El email ya está en uso. Usa otro email."
-          : err?.message || "Error al crear proveedor";
+          : err?.message || "Error al crear cliente";
       message.error(msg, 20);
     },
   });
   return (
     <>
       <Button type="primary" onClick={() => setCreateOpen(true)}>
-        Crear proveedor
+        Crear cliente
       </Button>
       <Modal
-        title="Crear proveedor"
+        title="Crear cliente"
         open={createOpen}
         onCancel={() => {
           setCreateOpen(false);
@@ -109,12 +114,12 @@ const CreateSupplierModal = ({
         }}
         onOk={() => createForm.submit()}
         okText="Crear"
-        confirmLoading={createSupplierMutation.isPending}
+        confirmLoading={createCustomerMutation.isPending}
       >
-        <Form
+        <Form<CreateCustomerValues>
           form={createForm}
           layout="vertical"
-          onFinish={(values) => createSupplierMutation.mutate(values)}
+          onFinish={(values) => createCustomerMutation.mutate(values)}
           initialValues={{
             phone: "+57",
           }}
@@ -126,13 +131,13 @@ const CreateSupplierModal = ({
               { required: true, message: "Ingresa el nombre del negocio" },
             ]}
           >
-            <Input placeholder="Nombre del proveedor" />
+            <Input placeholder="Nombre del cliente" />
           </Form.Item>
           <Form.Item
             name="contact"
             label="Contacto"
             rules={[
-              { required: true, message: "Ingresa el nombre del proveedor" },
+              { required: true, message: "Ingresa el nombre del cliente" },
             ]}
           >
             <Input placeholder="Persona de contacto" />
@@ -141,7 +146,7 @@ const CreateSupplierModal = ({
             name="phone"
             label="Teléfono"
             rules={[
-              { required: true, message: "Ingresa el nombre del proveedor" },
+              { required: true, message: "Ingresa el teléfono del cliente" },
               {
                 pattern: new RegExp(/^\+\d{1,3}\d{1,14}$/),
                 message:
@@ -151,10 +156,36 @@ const CreateSupplierModal = ({
           >
             <Input placeholder="Teléfono" />
           </Form.Item>
+          <Form.Item
+            name="identification_type"
+            label="Tipo de documento"
+            rules={[
+              { required: true, message: "Selecciona el tipo de documento" },
+            ]}
+          >
+            <Select
+              placeholder="Tipo de documento"
+              options={[
+                { label: "CC", value: "CC" },
+                { label: "NIT", value: "NIT" },
+                { label: "PPT", value: "PPT" },
+                { label: "PEP", value: "PEP" },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            name="identification_number"
+            label="Número de documento"
+            rules={[
+              { required: true, message: "Ingresa el número de documento" },
+            ]}
+          >
+            <Input placeholder="Número de documento" />
+          </Form.Item>
         </Form>
       </Modal>
     </>
   );
 };
 
-export default CreateSupplierModal;
+export default CreateCustomerModal;
