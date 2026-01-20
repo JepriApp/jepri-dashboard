@@ -5,6 +5,7 @@ import { Button, message } from "antd";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { formatPriceAccounting } from "@/lib/formatPrice";
+import dayjs from "dayjs";
 
 const DownloadSupplierOrdersPDF = ({ planId }: { planId: string }) => {
   const supabase = createClient();
@@ -51,7 +52,7 @@ const DownloadSupplierOrdersPDF = ({ planId }: { planId: string }) => {
               )
             )
           )
-        `
+        `,
         )
         .eq("id", planId)
         .single();
@@ -91,7 +92,7 @@ const DownloadSupplierOrdersPDF = ({ planId }: { planId: string }) => {
           `Plan: ${planData.plan_code} - ${planData.plan_date}`,
           105,
           yPosition,
-          { align: "center" }
+          { align: "center" },
         );
         yPosition += 15;
 
@@ -103,7 +104,11 @@ const DownloadSupplierOrdersPDF = ({ planId }: { planId: string }) => {
         doc.setFontSize(11);
         doc.text(`Nombre: ${supplier.name}`, 20, yPosition);
         yPosition += 6;
-        doc.text(`Orden de Compra: ${purchaseOrder.purchase_code}`, 20, yPosition);
+        doc.text(
+          `Orden de Compra: ${purchaseOrder.purchase_code}`,
+          20,
+          yPosition,
+        );
         yPosition += 6;
         if (supplier.contact) {
           doc.text(`Contacto: ${supplier.contact}`, 20, yPosition);
@@ -128,7 +133,8 @@ const DownloadSupplierOrdersPDF = ({ planId }: { planId: string }) => {
             }
 
             itemsBySaleOrder[saleOrderCode].push({
-              producto: purchaseItem.offer?.product?.name || "Producto no especificado",
+              producto:
+                purchaseItem.offer?.product?.name || "Producto no especificado",
               cantidad: purchaseItem.quantity || 0,
               unidad: purchaseItem.offer?.product?.unit || "",
               precioUnitario: purchaseItem.offer?.price || 0,
@@ -146,10 +152,10 @@ const DownloadSupplierOrdersPDF = ({ planId }: { planId: string }) => {
           // Generar tabla por cada pedido (orden de venta)
           Object.entries(itemsBySaleOrder).forEach(([saleOrderCode, items]) => {
             doc.setFontSize(12);
-            doc.setFont(undefined, "bold");
+            doc.setFont("helvetica", "bold");
             doc.text(`Pedido: ${saleOrderCode}`, 20, yPosition);
             yPosition += 5;
-            doc.setFont(undefined, "normal");
+            doc.setFont("helvetica", "normal");
 
             const tableData = items.map((item) => [
               item.producto,
@@ -158,7 +164,10 @@ const DownloadSupplierOrdersPDF = ({ planId }: { planId: string }) => {
               formatPriceAccounting(item.subtotal),
             ]);
 
-            const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
+            const subtotal = items.reduce(
+              (sum, item) => sum + item.subtotal,
+              0,
+            );
 
             autoTable(doc, {
               startY: yPosition,
@@ -191,17 +200,20 @@ const DownloadSupplierOrdersPDF = ({ planId }: { planId: string }) => {
             .reduce((sum: number, item: any) => sum + item.subtotal, 0);
 
           doc.setFontSize(14);
-          doc.setFont(undefined, "bold");
+          doc.setFont("helvetica", "bold");
           doc.text(
             `TOTAL ORDEN: ${formatPriceAccounting(totalGeneral)}`,
             20,
-            yPosition
+            yPosition,
           );
+          doc.setFont("helvetica", "normal");
         }
       });
 
       // Descargar PDF
-      doc.save(`ordenes-proveedores-${planData.plan_code}-${Date.now()}.pdf`);
+      doc.save(
+        `ordenes-proveedores-${planData.plan_code}-${dayjs().format("YYYYMMDD")}.pdf`,
+      );
       message.success({
         content: "PDF generado exitosamente",
         key: "pdf-generation",
@@ -216,11 +228,7 @@ const DownloadSupplierOrdersPDF = ({ planId }: { planId: string }) => {
   };
 
   return (
-    <Button
-      type="primary"
-      icon={<DownloadOutlined />}
-      onClick={generatePDF}
-    >
+    <Button type="primary" icon={<DownloadOutlined />} onClick={generatePDF}>
       Descargar pedidos PDF
     </Button>
   );
