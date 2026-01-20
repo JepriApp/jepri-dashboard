@@ -229,7 +229,7 @@ const DownloadSupplierOrdersPDF = ({ planId }: { planId: string }) => {
 
   return (
     <Button type="primary" icon={<DownloadOutlined />} onClick={generatePDF}>
-      Descargar pedidos PDF
+      Descargar PDF
     </Button>
   );
 };

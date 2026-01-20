@@ -2,7 +2,7 @@ import { Layout, Space } from "antd";
 import { Suspense } from "react";
 import SaleOrderFilter from "./components/SaleOrderFilter";
 import SaleOrderTable from "./components/SaleOrderTable";
-import DownloadSupplierOrdersPDF from "./components/DownloadSupplierOrdersPDF";
+import SupplierOrdersDrawer from "./components/SupplierOrdersDrawer";
 
 async function AssignSuppliersContent({ planId }: { planId: string }) {
   if (!planId) {
@@ -13,7 +13,7 @@ async function AssignSuppliersContent({ planId }: { planId: string }) {
       <Space
         style={{ marginBottom: "16px", flexDirection: "row-reverse" }}
       >
-        <DownloadSupplierOrdersPDF planId={planId} />
+        <SupplierOrdersDrawer planId={planId} />
       </Space>
 
       <Layout hasSider style={{ backgroundColor: "transparent" }}>
