@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/client";
 import { HomeOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import { Card, Space, Tag, Layout } from "antd";
-import { redirect, useParams, usePathname } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import React from "react";
 import DistributionPlanStatusTag from "../../components/DistributionPlanStatusTag";
 
@@ -14,6 +14,7 @@ export default function DistributionPlanEditorLayout({
 }>) {
   const params = useParams();
   const path = usePathname();
+  const router = useRouter();
   const planId = params.id as string | undefined;
   const supabase = createClient();
   const { data } = useQuery({
@@ -84,7 +85,7 @@ export default function DistributionPlanEditorLayout({
         tabList={lateralMenuItems}
         activeTabKey={availableKeys.includes(activeKey) ? activeKey : "/"}
         onTabChange={(key) =>
-          redirect(`/protected/distribution-plans/${planId}/${key}`)
+          router.push(`/protected/distribution-plans/${planId}/${key}`)
         }
       >
         {children}

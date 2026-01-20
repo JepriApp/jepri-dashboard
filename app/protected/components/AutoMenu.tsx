@@ -61,14 +61,14 @@ export const AutoMenu = (props: MenuProps) => {
               children: undefined,
             },
             {
-              key: `/users/operators`,
-              label: <Link href="/users/operators">Operadores</Link>,
+              key: `/protected/users/operators`,
+              label: <Link href="/protected/users/operators">Operadores</Link>,
               children: undefined,
               disabled: true,
             },
             {
-              key: `/users/admins`,
-              label: <Link href="/users/admins">Administradores</Link>,
+              key: `/protected/users/admins`,
+              label: <Link href="/protected/users/admins">Administradores</Link>,
               children: undefined,
               disabled: true,
             },

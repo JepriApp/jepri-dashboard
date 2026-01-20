@@ -1,7 +1,7 @@
 "use client";
 import { Button, Space, Divider } from "antd";
 import { ArrowDownOutlined, PlusOutlined } from "@ant-design/icons";
-import { redirect, useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import ModifyPlanStatus from "./components/ModifyPlanStatus";
 import DistributionPlanStatistic from "./components/DistributionPlanStatistic";
 import DistributionPlanDescription from "./components/DistributionPlanDescription";
@@ -11,6 +11,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 const PlanEditorPage = () => {
   const params = useParams();
+  const router = useRouter();
   const planId = params.id as string | undefined;
   const queryClient = useQueryClient();
   if (!planId) {
@@ -44,7 +45,7 @@ const PlanEditorPage = () => {
       >
         <Button
           onClick={() =>
-            redirect(`/protected/sale-orders/create?planId=${planId}`)
+            router.push(`/protected/sale-orders/create?planId=${planId}`)
           }
           icon={<PlusOutlined />}
         >
@@ -63,7 +64,7 @@ const PlanEditorPage = () => {
       >
         <Button
           onClick={() =>
-            redirect(`/protected/distribution-plans/${planId}/assign-suppliers`)
+            router.push(`/protected/distribution-plans/${planId}/assign-suppliers`)
           }
           icon={<ArrowDownOutlined />}
         >
