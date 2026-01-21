@@ -54,7 +54,7 @@ const PlanEditorPage = () => {
       </Space>
       <SaleOrdersTable id={planId} />
 
-      <Divider>Órdenes de compra</Divider>
+      <Divider>Compras</Divider>
       <Space
         style={{
           marginBottom: 16,

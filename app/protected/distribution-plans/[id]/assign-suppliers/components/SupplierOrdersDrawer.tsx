@@ -1,20 +1,11 @@
 "use client";
 import { createClient } from "@/lib/supabase/client";
-import { CopyOutlined, FileTextOutlined } from "@ant-design/icons";
+import { FilePdfOutlined, FileTextOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Button,
-  Drawer,
-  Card,
-  Space,
-  Typography,
-  Divider,
-  message,
-  Spin,
-} from "antd";
+import { Button, Drawer, Card, Space, Typography, Divider, Spin } from "antd";
 import { useState } from "react";
-import { formatPriceAccounting } from "@/lib/formatPrice";
 import DownloadSupplierOrdersPDF from "./DownloadSupplierOrdersPDF";
+import CopyOrderForWhatsapp from "./CopyOrderForWhatsapp";
 
 const { Title, Text } = Typography;
 
@@ -85,7 +76,7 @@ const SupplierOrdersDrawer = ({ planId }: { planId: string }) => {
               )
             )
           )
-        `
+        `,
         )
         .eq("id", planId)
         .single();
@@ -109,14 +100,12 @@ const SupplierOrdersDrawer = ({ planId }: { planId: string }) => {
 
             itemsBySaleOrder[saleOrderCode].push({
               producto:
-                purchaseItem.offer?.product?.name ||
-                "Producto no especificado",
+                purchaseItem.offer?.product?.name || "Producto no especificado",
               cantidad: purchaseItem.quantity || 0,
               unidad: purchaseItem.offer?.product?.unit || "",
               precioUnitario: purchaseItem.offer?.price || 0,
               subtotal:
-                (purchaseItem.quantity || 0) *
-                (purchaseItem.offer?.price || 0),
+                (purchaseItem.quantity || 0) * (purchaseItem.offer?.price || 0),
             });
           });
         });
@@ -126,10 +115,13 @@ const SupplierOrdersDrawer = ({ planId }: { planId: string }) => {
             saleOrderCode,
             products,
             subtotal: products.reduce((sum, item) => sum + item.subtotal, 0),
-          })
+          }),
         );
 
-        const totalGeneral = items.reduce((sum, item) => sum + item.subtotal, 0);
+        const totalGeneral = items.reduce(
+          (sum, item) => sum + item.subtotal,
+          0,
+        );
 
         suppliersData.push({
           supplier: purchaseOrder.supplier,
@@ -140,50 +132,12 @@ const SupplierOrdersDrawer = ({ planId }: { planId: string }) => {
       });
 
       return {
-        planCode: planData.plan_code,
+        planCode: planData.plan_code || "",
         planDate: planData.plan_date,
         suppliers: suppliersData,
       };
     },
   });
-
-  const copySupplierToWhatsApp = async (supplierData: SupplierOrderData) => {
-    try {
-      let text = `🛒 *JEPRI - ORDEN DE COMPRA*\n\n`;
-      text += `📋 Plan: ${data?.planCode} - ${data?.planDate}\n\n`;
-      text += `👤 *PROVEEDOR*\n`;
-      text += `• Nombre: ${supplierData.supplier.name}\n`;
-      text += `• Orden: ${supplierData.purchaseCode}\n`;
-      if (supplierData.supplier.contact)
-        text += `• Contacto: ${supplierData.supplier.contact}\n`;
-      if (supplierData.supplier.phone)
-        text += `• Teléfono: ${supplierData.supplier.phone}\n`;
-      text += `\n`;
-
-      supplierData.items.forEach((order) => {
-        text += `📦 *Pedido: ${order.saleOrderCode}*\n`;
-        text += `─────────────────────────\n`;
-
-        order.products.forEach((item) => {
-          text += `• ${item.producto}\n`;
-          text += `  ${item.cantidad} ${item.unidad} × ${formatPriceAccounting(item.precioUnitario)} = ${formatPriceAccounting(item.subtotal)}\n`;
-        });
-
-        text += `\n💵 Subtotal: *${formatPriceAccounting(order.subtotal)}*\n\n`;
-      });
-
-      text += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-      text += `💰 *TOTAL ORDEN: ${formatPriceAccounting(supplierData.totalGeneral)}*\n`;
-
-      await navigator.clipboard.writeText(text);
-      message.success(
-        `Orden de ${supplierData.supplier.name} copiada al portapapeles`
-      );
-    } catch (error) {
-      console.error("Error copying to clipboard:", error);
-      message.error("Error al copiar al portapapeles");
-    }
-  };
 
   return (
     <>
@@ -218,35 +172,41 @@ const SupplierOrdersDrawer = ({ planId }: { planId: string }) => {
                 key={index}
                 size="small"
                 title={
-                  <Space orientation="vertical">
+                  <>
                     <Text strong>{supplierData.supplier.name}</Text>
                     <Text type="secondary">
-                      Orden: {supplierData.purchaseCode}
+                      {" "}
+                      Orden {supplierData.purchaseCode}
                     </Text>
-                  </Space>
+                  </>
                 }
                 extra={
-                  <Button
-                    type="primary"
-                    size="small"
-                    icon={<CopyOutlined />}
-                    onClick={() => copySupplierToWhatsApp(supplierData)}
-                  >
-                    Copiar WhatsApp
-                  </Button>
+                  <Space>
+                    <CopyOrderForWhatsapp
+                      supplierData={supplierData}
+                      planCode={data.planCode}
+                      planDate={data.planDate}
+                    />
+                    <Button size="small" icon={<FilePdfOutlined />}>
+                      Descargar PDF
+                    </Button>
+                  </Space>
                 }
               >
-                <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
-                  {supplierData.supplier.contact && (
-                    <Text type="secondary">
-                      Contacto: {supplierData.supplier.contact}
-                    </Text>
-                  )}
-                  {supplierData.supplier.phone && (
-                    <Text type="secondary">
-                      Teléfono: {supplierData.supplier.phone}
-                    </Text>
-                  )}
+                <Space orientation="vertical" style={{ width: "100%" }}>
+                  <div>
+                    {supplierData.supplier.contact && (
+                      <Text type="secondary">
+                        Contacto: {supplierData.supplier.contact}
+                        {"  /  "}
+                      </Text>
+                    )}
+                    {supplierData.supplier.phone && (
+                      <Text type="secondary">
+                        Teléfono: {supplierData.supplier.phone}
+                      </Text>
+                    )}
+                  </div>
 
                   <Divider style={{ margin: "8px 0" }} />
 
@@ -255,63 +215,25 @@ const SupplierOrdersDrawer = ({ planId }: { planId: string }) => {
                       <Title level={5} style={{ marginBottom: 8 }}>
                         Pedido: {order.saleOrderCode}
                       </Title>
-                      <Space orientation="vertical" size="small" style={{ width: "100%" }}>
+                      <ul style={{ width: "100%" }}>
                         {order.products.map((product, productIndex) => (
-                          <div
+                          <li
                             key={productIndex}
                             style={{
                               display: "flex",
                               justifyContent: "space-between",
-                              padding: "4px 0",
+                              padding: "0",
                             }}
                           >
                             <Text>
                               {product.producto} - {product.cantidad}{" "}
                               {product.unidad}
                             </Text>
-                            <Text>
-                              {formatPriceAccounting(product.precioUnitario)} ={" "}
-                              <Text strong>
-                                {formatPriceAccounting(product.subtotal)}
-                              </Text>
-                            </Text>
-                          </div>
+                          </li>
                         ))}
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            padding: "8px 0",
-                            borderTop: "1px solid #f0f0f0",
-                          }}
-                        >
-                          <Text strong>Subtotal:</Text>
-                          <Text strong>
-                            {formatPriceAccounting(order.subtotal)}
-                          </Text>
-                        </div>
-                      </Space>
+                      </ul>
                     </div>
                   ))}
-
-                  <Divider style={{ margin: "8px 0" }} />
-
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      padding: "8px",
-                      backgroundColor: "#f0f0f0",
-                      borderRadius: "4px",
-                    }}
-                  >
-                    <Title level={4} style={{ margin: 0 }}>
-                      TOTAL ORDEN:
-                    </Title>
-                    <Title level={4} style={{ margin: 0 }}>
-                      {formatPriceAccounting(supplierData.totalGeneral)}
-                    </Title>
-                  </div>
                 </Space>
               </Card>
             ))}

@@ -4,7 +4,6 @@ import { DownloadOutlined } from "@ant-design/icons";
 import { Button, message } from "antd";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { formatPriceAccounting } from "@/lib/formatPrice";
 import dayjs from "dayjs";
 
 const DownloadSupplierOrdersPDF = ({ planId }: { planId: string }) => {
@@ -38,7 +37,8 @@ const DownloadSupplierOrdersPDF = ({ planId }: { planId: string }) => {
                 price,
                 product: product_id(
                   name,
-                  unit
+                  unit,
+                  main_photo
                 )
               ),
               fulfillments: fulfillment(
@@ -140,6 +140,7 @@ const DownloadSupplierOrdersPDF = ({ planId }: { planId: string }) => {
               precioUnitario: purchaseItem.offer?.price || 0,
               subtotal:
                 (purchaseItem.quantity || 0) * (purchaseItem.offer?.price || 0),
+              foto: purchaseItem.offer?.product?.main_photo || null,
             });
           });
         });
@@ -158,54 +159,75 @@ const DownloadSupplierOrdersPDF = ({ planId }: { planId: string }) => {
             doc.setFont("helvetica", "normal");
 
             const tableData = items.map((item) => [
+              "", // Espacio para la imagen
               item.producto,
               `${item.cantidad} ${item.unidad}`,
-              formatPriceAccounting(item.precioUnitario),
-              formatPriceAccounting(item.subtotal),
             ]);
-
-            const subtotal = items.reduce(
-              (sum, item) => sum + item.subtotal,
-              0,
-            );
 
             autoTable(doc, {
               startY: yPosition,
-              head: [["Producto", "Cantidad", "Precio Unit.", "Subtotal"]],
+              head: [["Foto", "Producto", "Cantidad"]],
               body: tableData,
-              foot: [["", "", "SUBTOTAL:", formatPriceAccounting(subtotal)]],
               theme: "grid",
               headStyles: {
                 fillColor: [52, 152, 219],
                 textColor: 255,
                 fontStyle: "bold",
               },
-              footStyles: {
-                fillColor: [240, 240, 240],
-                textColor: 0,
-                fontStyle: "bold",
-              },
               styles: {
                 fontSize: 9,
+                minCellHeight: 15,
+              },
+              columnStyles: {
+                0: { cellWidth: 20, halign: "center", valign: "middle" },
+                1: { cellWidth: "auto" },
+                2: { cellWidth: 30 },
               },
               margin: { left: 20, right: 20 },
+              didDrawCell: (data) => {
+                if (data.section === "body" && data.column.index === 0) {
+                  const item = items[data.row.index];
+                  const imgSize = 12;
+                  const x = data.cell.x + (data.cell.width - imgSize) / 2;
+                  const y = data.cell.y + (data.cell.height - imgSize) / 2;
+                  
+                  if (item.foto) {
+                    try {
+                      doc.addImage(item.foto, "JPEG", x, y, imgSize, imgSize);
+                    } catch (error) {
+                      console.error("Error adding image:", error);
+                      // Dibujar fallback si falla la carga de imagen
+                      doc.setFillColor(220, 220, 220);
+                      doc.rect(x, y, imgSize, imgSize, "F");
+                      doc.setFontSize(6);
+                      doc.setTextColor(100, 100, 100);
+                      doc.text("?", x + imgSize / 2, y + imgSize / 2 + 1.5, {
+                        align: "center",
+                      });
+                      doc.setTextColor(0, 0, 0);
+                    }
+                  } else {
+                    // Fallback cuando no hay foto
+                    doc.setFillColor(240, 240, 240);
+                    doc.rect(x, y, imgSize, imgSize, "F");
+                    doc.setDrawColor(200, 200, 200);
+                    doc.rect(x, y, imgSize, imgSize, "S");
+                    doc.setFontSize(8);
+                    doc.setTextColor(150, 150, 150);
+                    doc.text("📷", x + imgSize / 2, y + imgSize / 2 + 2, {
+                      align: "center",
+                    });
+                    doc.setTextColor(0, 0, 0);
+                  }
+                }
+              },
             });
 
             yPosition = (doc as any).lastAutoTable.finalY + 10;
           });
 
-          // Total general del proveedor
-          const totalGeneral = Object.values(itemsBySaleOrder)
-            .flat()
-            .reduce((sum: number, item: any) => sum + item.subtotal, 0);
-
           doc.setFontSize(14);
           doc.setFont("helvetica", "bold");
-          doc.text(
-            `TOTAL ORDEN: ${formatPriceAccounting(totalGeneral)}`,
-            20,
-            yPosition,
-          );
           doc.setFont("helvetica", "normal");
         }
       });
@@ -229,7 +251,7 @@ const DownloadSupplierOrdersPDF = ({ planId }: { planId: string }) => {
 
   return (
     <Button type="primary" icon={<DownloadOutlined />} onClick={generatePDF}>
-      Descargar PDF
+      Descargar consolidado PDF
     </Button>
   );
 };
