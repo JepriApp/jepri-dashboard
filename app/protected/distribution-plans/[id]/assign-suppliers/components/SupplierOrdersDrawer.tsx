@@ -2,10 +2,11 @@
 import { createClient } from "@/lib/supabase/client";
 import { FilePdfOutlined, FileTextOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
-import { Button, Drawer, Card, Space, Typography, Divider, Spin } from "antd";
+import { Button, Drawer, Card, Space, Typography, Divider, Spin, theme } from "antd";
 import { useState } from "react";
 import DownloadSupplierOrdersPDF from "./DownloadSupplierOrdersPDF";
 import CopyOrderForWhatsapp from "./CopyOrderForWhatsapp";
+import DownloadSingleSupplierPDF from "./DownloadSingleSupplierPDF";
 
 const { Title, Text } = Typography;
 
@@ -34,7 +35,7 @@ interface SupplierOrderData {
 const SupplierOrdersDrawer = ({ planId }: { planId: string }) => {
   const [open, setOpen] = useState(false);
   const supabase = createClient();
-
+  const { token } = theme.useToken();
   const { data, isLoading } = useQuery({
     queryKey: ["distribution-plan", "supplier-orders-drawer", planId],
     enabled: open,
@@ -152,7 +153,7 @@ const SupplierOrdersDrawer = ({ planId }: { planId: string }) => {
       <Drawer
         title="Órdenes de Proveedores"
         placement="right"
-        width={720}
+        size={720}
         onClose={() => setOpen(false)}
         open={open}
         extra={
@@ -171,6 +172,11 @@ const SupplierOrdersDrawer = ({ planId }: { planId: string }) => {
               <Card
                 key={index}
                 size="small"
+                styles={{
+                  header: {
+                    backgroundColor: token.colorPrimaryBg,
+                  },
+                }}
                 title={
                   <>
                     <Text strong>{supplierData.supplier.name}</Text>
@@ -187,9 +193,12 @@ const SupplierOrdersDrawer = ({ planId }: { planId: string }) => {
                       planCode={data.planCode}
                       planDate={data.planDate}
                     />
-                    <Button size="small" icon={<FilePdfOutlined />}>
-                      Descargar PDF
-                    </Button>
+                    <DownloadSingleSupplierPDF
+                      planId={planId}
+                      supplierData={supplierData}
+                      planCode={data.planCode}
+                      planDate={data.planDate}
+                    />
                   </Space>
                 }
               >
