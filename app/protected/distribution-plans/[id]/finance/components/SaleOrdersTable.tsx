@@ -13,9 +13,11 @@ import {
   Space,
   InputNumber,
   Form,
+  Button,
 } from "antd";
 import React from "react";
 import SaleOrderDeliveryFeeForm from "./SaleOrderDeliveryFeeForm";
+import DownloadFinanceExcel from "./DownloadFinanceExcel";
 
 interface SaleOrder {
   id: string;
@@ -110,7 +112,7 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
           ),
           service_fee,
           delivery_fee
-  `
+  `,
         )
         .eq("distribution_plan_id", id);
       if (error) {
@@ -124,14 +126,14 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
       const itemServiceFee = saleItem.fulfillment.reduce(
         (fAcc, fulfillment) => {
           const quantity = Number(
-            fulfillment.purchase_item.received_quantity || 0
+            fulfillment.purchase_item.received_quantity || 0,
           );
           const unitCost = Number(fulfillment.purchase_item.actual_price || 0);
           const serviceFeeAmount =
             quantity * unitCost * (serviceFeePercentage / 100);
           return fAcc + serviceFeeAmount;
         },
-        0
+        0,
       );
       return acc + itemServiceFee;
     }, 0);
@@ -143,7 +145,7 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
     const itemsTotal = order.sale_items.reduce((acc, saleItem) => {
       const itemTotal = saleItem.fulfillment.reduce((fAcc, fulfillment) => {
         const quantity = Number(
-          fulfillment.purchase_item.received_quantity || 0
+          fulfillment.purchase_item.received_quantity || 0,
         );
         const unitPrice =
           Number(fulfillment.purchase_item.actual_price || 0) *
@@ -217,20 +219,27 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
 
   return (
     <>
-      <Form.Item label="Comisión por venta">
-        <InputNumber
-          value={serviceFeePercentage}
-          onChange={(val) => setServiceFeePercentage(val ?? 0)}
-          style={{ width: 120 }}
-          min={0}
-          max={100}
-          precision={1}
-          prefix="%"
+      <Space>
+        <Form.Item label="Comisión por venta">
+          <InputNumber
+            value={serviceFeePercentage}
+            onChange={(val) => setServiceFeePercentage(val ?? 0)}
+            style={{ width: 120 }}
+            min={0}
+            max={100}
+            precision={1}
+            prefix="%"
+          />
+        </Form.Item>
+        <DownloadFinanceExcel
+          data={data}
+          serviceFeePercentage={serviceFeePercentage}
+          planId={id}
         />
-      </Form.Item>
+      </Space>
       <Table
         dataSource={data.sort((a, b) =>
-          (a.order_code || "").localeCompare(b.order_code || "")
+          (a.order_code || "").localeCompare(b.order_code || ""),
         )}
         style={{ overflow: "auto" }}
         columns={columns}
@@ -268,7 +277,7 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
                   actualPrice: fulfillment.purchase_item.actual_price,
                   quantity_delivered:
                     fulfillment.purchase_item.received_quantity,
-                }))
+                })),
               )}
               rowKey="id"
               pagination={false}
@@ -340,7 +349,7 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
                   dataIndex: ["actualPrice"],
                   render: (v) =>
                     formatPriceAccounting(
-                      Number(v * (1 + serviceFeePercentage / 100) || 0)
+                      Number(v * (1 + serviceFeePercentage / 100) || 0),
                     ),
                 },
                 {
@@ -350,7 +359,7 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
                     const subtotal =
                       Number(it.quantity_delivered || 0) *
                       Number(
-                        it.actualPrice * (1 + serviceFeePercentage / 100) || 0
+                        it.actualPrice * (1 + serviceFeePercentage / 100) || 0,
                       );
                     return formatPriceAccounting(subtotal);
                   },
