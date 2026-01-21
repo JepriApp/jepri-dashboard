@@ -2,7 +2,7 @@
 import { formatPriceAccounting } from "@/lib/formatPrice";
 import { createClient } from "@/lib/supabase/client";
 import { useQuery } from "@tanstack/react-query";
-import { Card, Space, Table, TableColumnsType, Typography } from "antd";
+import { Button, Card, Space, Table, TableColumnsType, Typography } from "antd";
 import dayjs from "dayjs";
 import { useParams } from "next/navigation";
 import PurchaseOrderStatusInfo from "./components/PurchaseOrderStatusInfo";
@@ -11,6 +11,7 @@ import PurchaseItemReceivedQtyForm from "./components/PurchaseItemReceivedQtyFor
 import PurchaseOrderNotesForm from "./components/PurchaseOrderNotesForm";
 import UpdatePurchaseOrderStatusButton from "./components/UpdatePurchaseOrderStatusButton";
 import PurchaseOrderStatusTag from "@/app/protected/components/PurchaseOrderStatusTag";
+import { DownloadOutlined, FileExcelOutlined } from "@ant-design/icons";
 type PurchaseItem = {
   id: string;
   quantity: number;
@@ -25,6 +26,15 @@ type PurchaseItem = {
       unit: string;
     };
   };
+  fullfillments: {
+    id: string;
+    sale_item: {
+      id: string;
+      sale_order: {
+        order_code: string;
+      };
+    };
+  }[];
 };
 type PurchaseOrder = {
   id: string;
@@ -86,9 +96,18 @@ const Page = () => {
                 name,
                 unit
               )
+            ),
+            fullfillments: fulfillment (
+              id,
+              sale_item: sale_item_id (
+                id,
+                sale_order: sale_order_id (
+                  order_code
+                )
+              )
             )
           )
-        `
+        `,
         )
         .eq("distribution_plan_id", planId);
 
@@ -101,10 +120,13 @@ const Page = () => {
   if (isPending) return "Loading...";
   if (error || !planId) return "An error has occurred: " + error?.message;
   return (
-    <>
+    <Space orientation="vertical" size={24} style={{ width: "100%" }}>
+      <Space style={{ display: "flex", flexDirection: "row-reverse" }}>
+        <Button icon={<DownloadOutlined />}>Descargar Excel</Button>
+      </Space>
       {data
         .sort((a, b) =>
-          (a.purchase_code || "").localeCompare(b.purchase_code || "")
+          (a.purchase_code || "").localeCompare(b.purchase_code || ""),
         )
         .map((group) => (
           <Card
@@ -119,21 +141,20 @@ const Page = () => {
                   <PurchaseOrderStatusTag status={group.status} />
                 </Space>
                 <Typography.Text type="secondary">
-                  {group.purchase_code || "—"}
+                  Código de compra: {group.purchase_code || "—"}
                 </Typography.Text>
-                <PurchaseOrderStatusInfo status={group.status as string} />
               </Space>
             }
             extra={
-              <div style={{ textAlign: "right" }}>
-                <br />
+              <Space orientation="vertical" align="end" size={4} wrap>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   Última actualización: {group.updated_by_name?.name || "—"}{" "}
                   {group.updated_at
                     ? dayjs(group.updated_at).format("YYYY-MM-DD HH:mm A")
                     : "—"}
                 </Typography.Text>
-              </div>
+                <PurchaseOrderStatusInfo status={group.status as string} />
+              </Space>
             }
             styles={{ body: { padding: 0 } }}
           >
@@ -141,7 +162,7 @@ const Page = () => {
               const isPublished = group.status === "published";
               const isEditable = group.status === "accepted";
               const isFinal = ["received", "cancelled", "rejected"].includes(
-                group.status || ""
+                group.status || "",
               );
 
               const groupColumns: TableColumnsType<PurchaseItem> = [
@@ -149,8 +170,16 @@ const Page = () => {
                   title: "Producto",
                   dataIndex: "product_name",
                   key: "product_name",
-                  render: (v: string | null, record) =>
-                    `${record.offer.product.name} x ${record.offer.product.unit}`,
+                  render: (v: string | null, record) => (
+                    <Space orientation="horizontal" size={8} wrap>
+                      <div>{`${record.offer.product.name} x ${record.offer.product.unit}`}</div>
+                      <Typography.Text type="secondary">
+                        {record.fullfillments
+                          ?.map((f) => f.sale_item.sale_order.order_code)
+                          .join(", ")}
+                      </Typography.Text>
+                    </Space>
+                  ),
                 },
                 {
                   title: "Precio",
@@ -205,7 +234,7 @@ const Page = () => {
                 <Table
                   bordered
                   dataSource={group.items.sort((a, b) =>
-                    a.offer.product.name.localeCompare(b.offer.product.name)
+                    a.offer.product.name.localeCompare(b.offer.product.name),
                   )}
                   columns={groupColumns}
                   rowKey="id"
@@ -235,7 +264,7 @@ const Page = () => {
             })()}
           </Card>
         ))}
-    </>
+    </Space>
   );
 };
 

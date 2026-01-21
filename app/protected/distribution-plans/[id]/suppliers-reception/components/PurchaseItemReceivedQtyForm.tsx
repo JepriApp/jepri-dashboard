@@ -84,7 +84,7 @@ const PurchaseItemReceivedQtyForm = ({
       form={form}
       onFinish={handleSubmit}
     >
-      <Form.Item name="received_quantity">
+      <Form.Item name="received_quantity" noStyle>
         <InputNumber
           disabled={updateActualPriceMutation.isPending || disabled}
           min={0}

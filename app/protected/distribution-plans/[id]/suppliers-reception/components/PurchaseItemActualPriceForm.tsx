@@ -84,7 +84,7 @@ const PurchaseItemActualPriceForm = ({
       form={form}
       onFinish={handleSubmit}
     >
-      <Form.Item name="actual_price">
+      <Form.Item name="actual_price" noStyle>
         <InputNumber
           disabled={updateActualPriceMutation.isPending || disabled}
           min={0}
