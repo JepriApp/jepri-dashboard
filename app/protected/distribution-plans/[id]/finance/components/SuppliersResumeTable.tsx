@@ -2,7 +2,7 @@
 import { formatPriceAccounting } from "@/lib/formatPrice";
 import { createClient } from "@/lib/supabase/client";
 import { useQuery } from "@tanstack/react-query";
-import { Table, Tag, Space } from "antd";
+import { Table, Tag, Space, Typography } from "antd";
 import React from "react";
 import DownloadSuppliersFinanceExcel from "./DownloadSuppliersFinanceExcel";
 
@@ -20,6 +20,15 @@ type PurchaseItem = {
       siigo_id: string | null;
     };
   };
+  fullfillments: {
+    id: string;
+    sale_item: {
+      id: string;
+      sale_order: {
+        order_code: string;
+      };
+    };
+  }[];
 };
 
 type PurchaseOrder = {
@@ -65,9 +74,18 @@ const SuppliersResumeTable = ({ id }: { id: string }) => {
                 unit,
                 siigo_id
               )
+            ),
+            fullfillments: fulfillment (
+              id,
+              sale_item: sale_item_id (
+                id,
+                sale_order: sale_order_id (
+                  order_code
+                )
+              )
             )
           )
-        `
+        `,
         )
         .eq("distribution_plan_id", id)
         .order("created_at", { ascending: true });
@@ -75,7 +93,7 @@ const SuppliersResumeTable = ({ id }: { id: string }) => {
       return data as unknown as PurchaseOrder[];
     },
   });
-    const poColumns = [
+  const poColumns = [
     {
       title: "# Órden de compra",
       dataIndex: "purchase_code",
@@ -106,7 +124,7 @@ const SuppliersResumeTable = ({ id }: { id: string }) => {
             sum +
             Number(it.received_quantity || 0) *
               Number(it.actual_price ?? it.offer?.price ?? 0),
-          0
+          0,
         );
         return formatPriceAccounting(total);
       },
@@ -114,7 +132,8 @@ const SuppliersResumeTable = ({ id }: { id: string }) => {
     {
       title: "Items",
       key: "po_items_count",
-      render: (_: unknown, record: PurchaseOrder) => record.purchase_item?.length ?? 0,
+      render: (_: unknown, record: PurchaseOrder) =>
+        record.purchase_item?.length ?? 0,
     },
   ];
   if (isPending) return "Loading...";
@@ -130,14 +149,13 @@ const SuppliersResumeTable = ({ id }: { id: string }) => {
         rowKey="id"
         style={{ overflow: "auto" }}
         expandable={{
-        expandedRowRender: (po: PurchaseOrder) => (
-          <Table
-            dataSource={po.purchase_item || []}
-            rowKey="id"
-            pagination={false}
-            size="small"
-            columns={
-              [
+          expandedRowRender: (po: PurchaseOrder) => (
+            <Table
+              dataSource={po.purchase_item || []}
+              rowKey="id"
+              pagination={false}
+              size="small"
+              columns={[
                 {
                   title: "Siigo ID",
                   dataIndex: ["offer", "product", "siigo_id"],
@@ -149,23 +167,27 @@ const SuppliersResumeTable = ({ id }: { id: string }) => {
                   render: (_: unknown, it: PurchaseItem) => (
                     <>
                       {it?.offer?.product?.name}{" "}
-                      <Tag>
-                        {it?.offer?.product?.unit ?? ""}
-                      </Tag>
+                      <Tag>{it?.offer?.product?.unit ?? ""}</Tag>
+                      <Typography.Text type="secondary">
+                        {it.fullfillments
+                          ?.map((f) => f.sale_item.sale_order.order_code)
+                          .join(", ")}
+                      </Typography.Text>
                     </>
                   ),
                 },
                 {
                   title: "Cantidad",
                   key: "quantity_unit",
-                  render: (_: unknown, it: PurchaseItem) => Number(it.received_quantity || 0),
+                  render: (_: unknown, it: PurchaseItem) =>
+                    Number(it.received_quantity || 0),
                 },
                 {
                   title: "Precio",
                   key: "price",
                   render: (_: unknown, it: PurchaseItem) =>
                     formatPriceAccounting(
-                      Number(it.actual_price ?? it.offer?.price ?? 0)
+                      Number(it.actual_price ?? it.offer?.price ?? 0),
                     ),
                 },
                 {
@@ -174,15 +196,14 @@ const SuppliersResumeTable = ({ id }: { id: string }) => {
                   render: (_: unknown, it: PurchaseItem) =>
                     formatPriceAccounting(
                       Number(it.received_quantity || 0) *
-                        Number(it.actual_price ?? it.offer?.price ?? 0)
+                        Number(it.actual_price ?? it.offer?.price ?? 0),
                     ),
                 },
-              ]
-            }
-          />
-        ),
-      }}
-    />
+              ]}
+            />
+          ),
+        }}
+      />
     </Space>
   );
 };
