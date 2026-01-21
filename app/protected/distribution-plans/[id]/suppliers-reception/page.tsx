@@ -121,9 +121,6 @@ const Page = () => {
   if (error || !planId) return "An error has occurred: " + error?.message;
   return (
     <Space orientation="vertical" size={24} style={{ width: "100%" }}>
-      <Space style={{ display: "flex", flexDirection: "row-reverse" }}>
-        <Button icon={<DownloadOutlined />}>Descargar Excel</Button>
-      </Space>
       {data
         .sort((a, b) =>
           (a.purchase_code || "").localeCompare(b.purchase_code || ""),

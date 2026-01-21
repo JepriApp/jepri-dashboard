@@ -17,7 +17,7 @@ import {
 } from "antd";
 import React from "react";
 import SaleOrderDeliveryFeeForm from "./SaleOrderDeliveryFeeForm";
-import DownloadFinanceExcel from "./DownloadFinanceExcel";
+import DownloadFinanceExcel from "./DownloadCustomersFinanceExcel";
 
 interface SaleOrder {
   id: string;
@@ -219,7 +219,13 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
 
   return (
     <>
-      <Space>
+      <Space
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "start",
+        }}
+      >
         <Form.Item label="Comisión por venta">
           <InputNumber
             value={serviceFeePercentage}

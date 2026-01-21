@@ -280,7 +280,7 @@ const DownloadFinanceExcel = ({
       onClick={generateExcel}
       loading={loading}
     >
-      Descargar XLS consolidado
+      Descargar Excel
     </Button>
   );
 };
