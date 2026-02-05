@@ -3,11 +3,13 @@ import { createClient } from "@/lib/supabase/client";
 import { useMutation } from "@tanstack/react-query";
 import { Button, Form, Input, InputNumber, message, Modal, Select } from "antd";
 import React, { useState } from "react";
+type ProductUnit = "lb" | "kg" | "unidad" | "atado";
 interface NewProduct {
   name: string;
-  unit: string;
+  unit: ProductUnit;
   description?: string;
   reference_price?: number;
+  siigo_id: string;
   main_photo?: string;
 }
 const CreateProduct = ({ onSubmit }: { onSubmit: () => void }) => {
@@ -25,7 +27,8 @@ const CreateProduct = ({ onSubmit }: { onSubmit: () => void }) => {
           values.reference_price !== null
             ? Number(values.reference_price)
             : null,
-        main_photo: values.main_photo || null,
+        main_photo: values.main_photo || null,        
+        siigo_id: (values.siigo_id || "").trim(),
       };
       const { data, error } = await supabase
         .from("product")
@@ -80,9 +83,15 @@ const CreateProduct = ({ onSubmit }: { onSubmit: () => void }) => {
               options={[
                 { value: "lb", label: "lb" },
                 { value: "kg", label: "kg" },
-                { value: "atado", label: "atado" },
+                { value: "unidad", label: "unidad" },
               ]}
             />
+          </Form.Item>
+          <Form.Item
+            name="siigo_id"
+            label="Id en Siigo"
+          >
+            <Input placeholder="Id en Siigo" />
           </Form.Item>
           <Form.Item name="reference_price" label="Precio de referencia">
             <InputNumber min={0} style={{ width: "100%" }} placeholder="0.00" />

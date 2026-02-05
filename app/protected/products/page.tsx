@@ -50,6 +50,7 @@ export type ProductWithOffers = {
   reference_price?: number | null;
   main_photo?: string | null;
   offers?: OfferWithSupplier[];
+  siigo_id: string;
 };
 
 const ProductsIndexPage = () => {
@@ -115,6 +116,7 @@ const ProductsIndexPage = () => {
       reference_price: record.reference_price ?? undefined,
       description: record.description ?? "",
       main_photo: record.main_photo ?? "",
+      siigo_id: record.siigo_id ?? "",
     });
     setEditOpen(true);
   };
@@ -245,6 +247,7 @@ const ProductsIndexPage = () => {
             ? Number(values.reference_price)
             : null,
         main_photo: values.main_photo || null,
+        siigo_id: (values.siigo_id || "").trim(),
       };
       const { data, error } = await supabase
         .from("product")
@@ -431,6 +434,9 @@ const ProductsIndexPage = () => {
                 { value: "atado", label: "atado" },
               ]}
             />
+          </Form.Item>
+          <Form.Item name="siigo_id" label="Id en Siigo">
+            <Input  />
           </Form.Item>
           <Form.Item name="reference_price" label="Precio de referencia">
             <InputNumber min={0} style={{ width: "100%" }} placeholder="0.00" />

@@ -3,7 +3,7 @@
 
 import React, { Suspense } from 'react'
 import { AntdRegistry } from '@ant-design/nextjs-registry'
-import { ConfigProvider } from 'antd'
+import { App, ConfigProvider } from 'antd'
 import esES from 'antd/locale/es_ES'
 
 // Componente interno que usa Ant Design
@@ -19,7 +19,9 @@ function AntdContent({ children }: { children: React.ReactNode }) {
           },
         }}
       >
-        {children}
+        <App>
+          {children}
+        </App>
       </ConfigProvider>
     </AntdRegistry>
   )
