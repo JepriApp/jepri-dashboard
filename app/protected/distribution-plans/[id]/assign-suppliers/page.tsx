@@ -1,5 +1,6 @@
 import { Layout, Space } from "antd";
 import { Suspense } from "react";
+import AutoassignButton from "./components/AutoassignButton";
 import SaleOrderFilter from "./components/SaleOrderFilter";
 import SaleOrderTable from "./components/SaleOrderTable";
 import SupplierOrdersDrawer from "./components/SupplierOrdersDrawer";
@@ -14,6 +15,7 @@ async function AssignSuppliersContent({ planId }: { planId: string }) {
         style={{ marginBottom: "16px", flexDirection: "row-reverse" }}
       >
         <SupplierOrdersDrawer planId={planId} />
+        <AutoassignButton planId={planId} />
       </Space>
 
       <Layout hasSider style={{ backgroundColor: "transparent" }}>

@@ -97,7 +97,7 @@ const AsignSupplierDrawer = ({
               purchase_order_id
             )
           )
-        `
+        `,
         )
         .eq("id", saleItemId)
         .single();
@@ -114,7 +114,7 @@ const AsignSupplierDrawer = ({
               id,
               name
             )
-            `
+            `,
         )
         .eq("product_id", saleItemData?.product.id);
       if (offerError) {
@@ -135,7 +135,7 @@ const AsignSupplierDrawer = ({
       assignments: data?.offers.map((o) => ({
         quantity:
           data.saleItem.fulfillments.find(
-            (f) => f.purchase_items.offer_id === o.id
+            (f) => f.purchase_items.offer_id === o.id,
           )?.purchase_items.quantity || 0,
         offerId: o.id,
       })),
@@ -155,7 +155,7 @@ const AsignSupplierDrawer = ({
 
     // Buscar en los fulfillments si existe un purchase_item con este offer_id
     const fulfillment = data?.saleItem.fulfillments.find(
-      (f) => f.purchase_items.offer_id === offer.id
+      (f) => f.purchase_items.offer_id === offer.id,
     );
 
     if (fulfillment) {
@@ -183,7 +183,7 @@ const AsignSupplierDrawer = ({
 
       if (!user?.id)
         throw new Error(
-          "Usuario no autenticado: no se puede crear/actualizar órdenes de compra"
+          "Usuario no autenticado: no se puede crear/actualizar órdenes de compra",
         );
       const { data: adminData, error: adminError } = await supabase
         .from("profiles")
@@ -368,7 +368,7 @@ const AsignSupplierDrawer = ({
 
   const assignedQty = currentAssignments?.reduce(
     (acc, cur) => acc + Number(cur.quantity || 0),
-    0
+    0,
   );
   const required_quantity = data ? data.saleItem.required_quantity : 0;
   const remainingQty = required_quantity - assignedQty;
@@ -457,7 +457,7 @@ const AsignSupplierDrawer = ({
             <Form
               form={form}
               layout="horizontal"
-              style={{ maxWidth: "none" }}
+              style={{ maxWidth: "none", marginBottom: 24 }}
               requiredMark={false}
               initialValues={getInitialValues(data)}
             >
@@ -495,7 +495,7 @@ const AsignSupplierDrawer = ({
                                 <Typography.Text type="secondary">
                                   Precio:{" "}
                                   {formatPriceAccounting(
-                                    Number(data.offers[field.name]?.price || 0)
+                                    Number(data.offers[field.name]?.price || 0),
                                   )}
                                 </Typography.Text>
                               </div>
@@ -523,7 +523,7 @@ const AsignSupplierDrawer = ({
                                     };
                                   }
                                   return { ...a, quantity: 0 };
-                                }
+                                },
                               );
                               form.setFieldsValue({ assignments: newValues });
                             }}
@@ -538,14 +538,16 @@ const AsignSupplierDrawer = ({
                 )}
               </Form.List>
             </Form>
-            <Button
-              type="primary"
-              onClick={handleSaveAssignments}
-              loading={saveAssignmentsMutation.isPending}
-              block
-            >
-              Guardar
-            </Button>
+            {data.offers.length !== 0 && (
+              <Button
+                type="primary"
+                onClick={handleSaveAssignments}
+                loading={saveAssignmentsMutation.isPending}
+                block
+              >
+                Guardar
+              </Button>
+            )}
             {data.offers.length === 0 && (
               <CreateNewOfferButton
                 productId={data.saleItem.product.id}
