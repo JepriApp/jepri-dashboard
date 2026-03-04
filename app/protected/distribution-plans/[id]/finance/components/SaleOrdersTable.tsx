@@ -2,7 +2,7 @@
 import { formatPriceAccounting } from "@/lib/formatPrice";
 import { createClient } from "@/lib/supabase/client";
 import { WarningOutlined } from "@ant-design/icons";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Table,
   Typography,
@@ -18,6 +18,7 @@ import {
 import React from "react";
 import SaleOrderDeliveryFeeForm from "./SaleOrderDeliveryFeeForm";
 import DownloadFinanceExcel from "./DownloadCustomersFinanceExcel";
+import DistributionPlanServiceFeePercentageForm from "./DistributionPlanServiceFeePercentageForm";
 
 interface SaleOrder {
   id: string;
@@ -68,8 +69,22 @@ interface SaleOrder {
 }
 const SaleOrdersTable = ({ id }: { id: string }) => {
   const supabase = createClient();
+  const queryClient = useQueryClient();
   const { token } = theme.useToken();
-  const [serviceFeePercentage, setServiceFeePercentage] = React.useState(24);
+  const distributionPlan = useQuery({
+    queryKey: ["finance", "distribution_plan", "serviceFeePercentage", id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("distribution_plan")
+        .select(`service_fee_percentage`)
+        .eq("id", id)
+        .single();
+      if (error) {
+        throw error;
+      }
+      return data;
+    },
+  });
   const { isPending, error, data, refetch } = useQuery<SaleOrder[]>({
     queryKey: ["finance", "components", "sale-order-table", id],
     queryFn: async () => {
@@ -121,6 +136,8 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
       return data as unknown as SaleOrder[];
     },
   });
+  const serviceFeePercentage =
+    distributionPlan.data?.service_fee_percentage || 0;
   const calculateServiceFee = (order: SaleOrder) => {
     const serviceFee = order.sale_items.reduce((acc, saleItem) => {
       const itemServiceFee = saleItem.fulfillment.reduce(
@@ -216,7 +233,16 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
         formatPriceAccounting(getTotal(record)),
     },
   ];
-
+  const handleServiceFeePercentageUpdateOnSuccess = () => {
+    queryClient.invalidateQueries({
+      queryKey: ["finance", "distribution_plan", "serviceFeePercentage", id],
+      exact: true,
+    });
+    queryClient.invalidateQueries({
+      queryKey: ["distribution-plan", "components", "statistic", id],
+      exact: true,
+    });
+  };
   return (
     <>
       <Space
@@ -226,17 +252,11 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
           alignItems: "start",
         }}
       >
-        <Form.Item label="Comisión por venta">
-          <InputNumber
-            value={serviceFeePercentage}
-            onChange={(val) => setServiceFeePercentage(val ?? 0)}
-            style={{ width: 120 }}
-            min={0}
-            max={100}
-            precision={1}
-            prefix="%"
-          />
-        </Form.Item>
+        <DistributionPlanServiceFeePercentageForm
+          id={id}
+          disabled={false}
+          onSuccess={handleServiceFeePercentageUpdateOnSuccess}
+        />
         <DownloadFinanceExcel
           data={data}
           serviceFeePercentage={serviceFeePercentage}

@@ -9,26 +9,38 @@ const DistributionPlanStatistic = ({ id }: { id: string }) => {
   const { isPending, error, data } = useQuery({
     queryKey: ["distribution-plan", "components", "statistic", id],
     queryFn: async () => {
+      // Obtener comision del plan
+      const { data: distributionPlan, error: distributionPlanError } =
+        await supabase
+          .from("distribution_plan")
+          .select("id, service_fee_percentage")
+          .eq("id", id)
+          .single();
+      if (distributionPlanError) throw distributionPlanError;
+
       // Obtener órdenes de venta con delivery_fee
       const { data: saleOrders, error: saleOrdersError } = await supabase
         .from("sale_order")
         .select("id, delivery_fee")
         .eq("distribution_plan_id", id);
-      
+
       if (saleOrdersError) throw saleOrdersError;
 
       const sale_order_count = saleOrders?.length || 0;
 
       // Obtener costo por transporte (suma de delivery_fee de sale_orders)
-      const total_delivery_fee = saleOrders?.reduce(
-        (sum, order) => sum + (order.delivery_fee ?? 0),
-        0
-      ) || 0;
+      const total_delivery_fee =
+        saleOrders?.reduce(
+          (sum, order) => sum + (order.delivery_fee ?? 0),
+          0,
+        ) || 0;
 
       // Obtener costo por compra (suma de actual_price de purchase_items)
-      const { data: purchaseOrders, error: purchaseOrdersError } = await supabase
-        .from("purchase_order")
-        .select(`
+      const { data: purchaseOrders, error: purchaseOrdersError } =
+        await supabase
+          .from("purchase_order")
+          .select(
+            `
           id,
           purchase_items: purchase_item(
             id,
@@ -38,28 +50,33 @@ const DistributionPlanStatistic = ({ id }: { id: string }) => {
               price
             )
           )
-        `)
-        .eq("distribution_plan_id", id);
-      
+        `,
+          )
+          .eq("distribution_plan_id", id);
+
       if (purchaseOrdersError) throw purchaseOrdersError;
 
       // Calcular el costo total de compra (cantidad * precio de la oferta)
-      const total_cost = purchaseOrders?.reduce((sum, po) => {
-        const poCost = po.purchase_items?.reduce((itemSum, pi) => {
-          const itemCost = (pi.quantity ?? 0) * (pi.offer?.price ?? 0);
-          return itemSum + itemCost;
+      const expected_total_cost =
+        purchaseOrders?.reduce((sum, po) => {
+          const poCost =
+            po.purchase_items?.reduce((itemSum, pi) => {
+              const itemCost = (pi.quantity ?? 0) * (pi.offer?.price ?? 0);
+              return itemSum + itemCost;
+            }, 0) || 0;
+          return sum + poCost;
         }, 0) || 0;
-        return sum + poCost;
-      }, 0) || 0;
 
       // Comisión total es el 24% de la venta (que es el costo de compra)
-      const total_earning = total_cost * 0.24;
+      const expected_total_earning =
+        expected_total_cost * (distributionPlan.service_fee_percentage / 100);
 
       return {
         sale_order_count,
-        total_cost,
-        total_earning,
+        expected_total_cost,
+        expected_total_earning,
         total_delivery_fee,
+        service_fee_percentage: distributionPlan.service_fee_percentage,
       };
     },
   });
@@ -67,9 +84,10 @@ const DistributionPlanStatistic = ({ id }: { id: string }) => {
   if (error) return "An error has occurred: " + error.message;
   const {
     sale_order_count = 0,
-    total_cost = 0,
-    total_earning = 0,
+    expected_total_cost = 0,
+    expected_total_earning = 0,
     total_delivery_fee = 0,
+    service_fee_percentage = 0,
   } = data;
   return (
     <Space size="large" wrap>
@@ -78,8 +96,8 @@ const DistributionPlanStatistic = ({ id }: { id: string }) => {
       </Card>
       <Card variant="outlined">
         <Statistic
-          title="Costo por compra"
-          value={total_cost ?? 0}
+          title="Costo por compras esperado"
+          value={expected_total_cost ?? 0}
           formatter={(val) => formatPriceAccounting(Number(val))}
         />
       </Card>
@@ -92,8 +110,8 @@ const DistributionPlanStatistic = ({ id }: { id: string }) => {
       </Card>
       <Card variant="outlined">
         <Statistic
-          title="Comision total"
-          value={total_earning ?? 0}
+          title={`Comision total esperada (${service_fee_percentage}%)`}
+          value={expected_total_earning ?? 0}
           formatter={(val) => formatPriceAccounting(Number(val))}
         />
       </Card>

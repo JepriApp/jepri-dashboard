@@ -106,6 +106,7 @@ export type Database = {
           plan_code: string | null
           plan_date: string
           plan_seq: number | null
+          service_fee_percentage: number
           status: Database["public"]["Enums"]["distribution_plan_status"]
           updated_at: string | null
         }
@@ -118,6 +119,7 @@ export type Database = {
           plan_code?: string | null
           plan_date: string
           plan_seq?: number | null
+          service_fee_percentage?: number
           status?: Database["public"]["Enums"]["distribution_plan_status"]
           updated_at?: string | null
         }
@@ -130,6 +132,7 @@ export type Database = {
           plan_code?: string | null
           plan_date?: string
           plan_seq?: number | null
+          service_fee_percentage?: number
           status?: Database["public"]["Enums"]["distribution_plan_status"]
           updated_at?: string | null
         }
@@ -484,6 +487,7 @@ export type Database = {
           order_code: string | null
           order_seq: number | null
           service_fee: number | null
+          service_fee_percentage: number | null
           status: Database["public"]["Enums"]["sale_order_status"]
         }
         Insert: {
@@ -498,6 +502,7 @@ export type Database = {
           order_code?: string | null
           order_seq?: number | null
           service_fee?: number | null
+          service_fee_percentage?: number | null
           status?: Database["public"]["Enums"]["sale_order_status"]
         }
         Update: {
@@ -512,6 +517,7 @@ export type Database = {
           order_code?: string | null
           order_seq?: number | null
           service_fee?: number | null
+          service_fee_percentage?: number | null
           status?: Database["public"]["Enums"]["sale_order_status"]
         }
         Relationships: [
