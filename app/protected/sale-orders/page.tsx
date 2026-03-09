@@ -122,7 +122,7 @@ const Index = () => {
             reference_price
           )
         )
-      `
+      `,
           )
           .order("created_at", { ascending: false });
 
@@ -144,7 +144,7 @@ const Index = () => {
             const itemsTotal = items.reduce(
               (sum: number, it: any) =>
                 sum + (it.unit_price || 0) * (it.quantity || 0),
-              0
+              0,
             );
             const total =
               itemsTotal + (order.service_fee ?? 0) + (order.delivery_fee ?? 0);
@@ -215,7 +215,7 @@ const Index = () => {
         unit_price: it.unit_price,
         product: it.product,
         isNew: false,
-      }))
+      })),
     );
     setToDeleteIds([]);
     setEditModalOpen(true);
@@ -249,8 +249,8 @@ const Index = () => {
     }
     setEditableItems((prev) =>
       prev.filter((it) =>
-        row.id ? it.id !== row.id : it.tempId !== row.tempId
-      )
+        row.id ? it.id !== row.id : it.tempId !== row.tempId,
+      ),
     );
   };
 
@@ -260,7 +260,7 @@ const Index = () => {
   const updateItemQuantity = (row: EditableItem, value: number) => {
     const v = Number(value || 0);
     setEditableItems((prev) =>
-      prev.map((it) => (isSameRow(it, row) ? { ...it, quantity: v } : it))
+      prev.map((it) => (isSameRow(it, row) ? { ...it, quantity: v } : it)),
     );
   };
 
@@ -280,8 +280,8 @@ const Index = () => {
                 product: p,
                 unit_price: p?.reference_price ?? 0,
               }
-            : it
-        )
+            : it,
+        ),
       );
       setToDeleteIds((prev) => prev.filter((id) => id !== resurrectId));
       setRemovedByProductId((prev) => {
@@ -299,8 +299,8 @@ const Index = () => {
                 product: p,
                 unit_price: p?.reference_price ?? 0,
               }
-            : it
-        )
+            : it,
+        ),
       );
     }
   };
@@ -320,7 +320,7 @@ const Index = () => {
     setSaving(true);
     try {
       const updates = editableItems.filter(
-        (it) => it.id && originalQuantitiesMap.get(it.id!) !== it.quantity
+        (it) => it.id && originalQuantitiesMap.get(it.id!) !== it.quantity,
       );
       const inserts = editableItems.filter((it) => !it.id && it.product_id);
       const deletes = toDeleteIds;
@@ -432,11 +432,13 @@ const Index = () => {
     {
       title: "Acciones",
       key: "actions",
-      render: (_: any, record: SaleOrder) => (
-        <Button size="small" onClick={() => openEditModal(record)}>
-          Modificar pedido
-        </Button>
-      ),
+      render: (_: any, record: SaleOrder) =>
+        record.status !== "cancelled" &&
+        record.status !== "delivered" && (
+          <Button size="small" onClick={() => openEditModal(record)}>
+            Modificar pedido
+          </Button>
+        ),
     },
   ];
 
@@ -510,7 +512,7 @@ const Index = () => {
                     render: (t: number | undefined, record: any) =>
                       formatPriceAccounting(
                         (record.unit_price || 0) *
-                          (record.quantity || 0).toFixed(2)
+                          (record.quantity || 0).toFixed(2),
                       ),
                   },
                 ] as any
@@ -580,9 +582,9 @@ const Index = () => {
                               it.product_id != null &&
                               (row.id
                                 ? it.id !== row.id
-                                : it.tempId !== row.tempId)
+                                : it.tempId !== row.tempId),
                           )
-                          .map((it) => it.product_id as number)
+                          .map((it) => it.product_id as number),
                       );
                       return (products || [])
                         .filter((p: any) => !usedIds.has(p.id))
@@ -617,7 +619,7 @@ const Index = () => {
               key: "subtotal",
               render: (_: any, row: EditableItem) =>
                 formatPriceAccounting(
-                  (row.unit_price || 0) * (row.quantity || 0)
+                  (row.unit_price || 0) * (row.quantity || 0),
                 ),
             },
             {
@@ -652,10 +654,10 @@ const Index = () => {
             {formatPriceAccounting(
               (editableItems || []).reduce(
                 (s, it) => s + (it.unit_price || 0) * (it.quantity || 0),
-                0
+                0,
               ) +
                 (selectedOrder?.service_fee || 0) +
-                (selectedOrder?.delivery_charge || 0)
+                (selectedOrder?.delivery_charge || 0),
             )}
           </Text>
         </div>
