@@ -11,8 +11,6 @@ const CreateSaleOrderButton = ({ id }: { id: string }) => {
   const { isPending, error, data } = useQuery({
     queryKey: [
       "distribution-plan",
-      "components",
-      "create-sale-order-button",
       id,
     ],
     queryFn: async () => {

@@ -21,9 +21,7 @@ const PurchaseItemReceivedQtyForm = ({
   const distributionPlanQuery = useQuery({
     queryKey: [
       "distribution-plan",
-      "components",
-      "purchase-item-received-quantity-form",
-      purchaseItemId,
+      planId,
     ],
     queryFn: async () => {
       const { data, error } = await supabase

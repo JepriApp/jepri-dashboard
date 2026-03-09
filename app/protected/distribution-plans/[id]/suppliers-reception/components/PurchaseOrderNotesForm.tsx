@@ -20,8 +20,6 @@ const PurchaseOrderNotesForm = ({
   const distributionPlanQuery = useQuery({
     queryKey: [
       "distribution-plan",
-      "components",
-      "purchase-order-notes-form",
       planId,
     ],
     queryFn: async () => {

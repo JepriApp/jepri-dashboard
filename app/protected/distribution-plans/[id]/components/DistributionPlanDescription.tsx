@@ -8,6 +8,28 @@ import DistributionPlanNotesForm from "./DistributionPlanNotesForm";
 
 function DistributionPlanDescription({ id }: { id: string }) {
   const supabase = createClient();
+    const distributionPlanStatusQuery = useQuery({
+      queryKey: [
+        "distribution-plan",
+        id,
+      ],
+      queryFn: async () => {
+        const { data, error } = await supabase
+          .from("distribution_plan")
+          .select(
+            `
+            id,
+            status
+          `,
+          )
+          .eq("id", id)
+          .single();
+        if (error) {
+          throw error;
+        }
+        return data;
+      },
+    });
   const { isPending, error, data } = useQuery({
     queryKey: ["distribution-plan", "components", "description", id],
     queryFn: async () => {
@@ -18,7 +40,6 @@ function DistributionPlanDescription({ id }: { id: string }) {
           id,
           plan_code,
           plan_date,
-          status,
           operator:operator_id (
             id,
             name
@@ -34,9 +55,9 @@ function DistributionPlanDescription({ id }: { id: string }) {
       return data;
     },
   });
-  if (isPending) return "Loading...";
-  if (error) return "An error has occurred: " + error.message;
-  const { plan_code, plan_date, status /* , operator, cutoff_at */ } =
+  if (isPending||distributionPlanStatusQuery.isPending) return "Loading...";
+  if (error||distributionPlanStatusQuery.error) return "An error has occurred: " + error?.message;
+  const { plan_code, plan_date /* , operator, cutoff_at */ } =
     data ?? {};
   return (
     <Descriptions
@@ -49,7 +70,7 @@ function DistributionPlanDescription({ id }: { id: string }) {
         {plan_date ? dayjs(plan_date).format("YYYY-MM-DD") : "-"}
       </Descriptions.Item>
       <Descriptions.Item label="Estado">
-        <DistributionPlanStatusTag status={status} />
+        <DistributionPlanStatusTag status={distributionPlanStatusQuery.data.status} />
       </Descriptions.Item>
       {/* <Descriptions.Item label="Coordinador">
         {operator?.name ?? "-"}

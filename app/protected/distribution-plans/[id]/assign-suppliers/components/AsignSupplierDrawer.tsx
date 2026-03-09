@@ -61,8 +61,6 @@ const AsignSupplierDrawer = ({
   const distributionPlanQuery = useQuery({
     queryKey: [
       "distribution-plan",
-      "components",
-      "create-sale-order-button",
       planId,
     ],
     queryFn: async () => {

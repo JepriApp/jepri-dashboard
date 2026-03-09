@@ -23,8 +23,6 @@ const SaleOrderDeliveryFeeForm = ({
   const distributionPlanQuery = useQuery({
     queryKey: [
       "distribution-plan",
-      "components",
-      "sale-order-delivery-fee-form",
       planId,
     ],
     queryFn: async () => {

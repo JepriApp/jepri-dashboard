@@ -80,8 +80,6 @@ const ModifyPlanStatus = ({
   const { isPending, error, data } = useQuery({
     queryKey: [
       "distribution-plan",
-      "components",
-      "modify-plan-status-button",
       id,
     ],
     queryFn: async () => {

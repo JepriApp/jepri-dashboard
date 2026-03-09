@@ -28,7 +28,7 @@ const AutoassignButton = ({
   const supabase = createClient();
   const queryClient = useQueryClient();
   const distributionPlanQuery = useQuery({
-    queryKey: ["auto-assignments", "distribution-plan", planId],
+    queryKey: ["distribution-plan", planId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("distribution_plan")

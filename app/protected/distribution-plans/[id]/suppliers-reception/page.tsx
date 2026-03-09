@@ -61,8 +61,6 @@ const Page = () => {
   const distributionPlanQuery = useQuery({
     queryKey: [
       "distribution-plan",
-      "components",
-      "purchase-item-actual-price-form",
       planId,
     ],
     queryFn: async () => {

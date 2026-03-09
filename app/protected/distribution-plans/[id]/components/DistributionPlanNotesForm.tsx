@@ -7,6 +7,25 @@ const PurchaseOrderNotesForm = ({ planId }: { planId: string }) => {
   const supabase = createClient();
   const [form] = Form.useForm();
   const { message } = App.useApp();
+  const distributionPlanStatusQuery = useQuery({
+    queryKey: ["distribution-plan", planId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("distribution_plan")
+        .select(
+          `
+            id,
+            status
+          `,
+        )
+        .eq("id", planId)
+        .single();
+      if (error) {
+        throw error;
+      }
+      return data;
+    },
+  });
   const { data, error, isPending } = useQuery({
     queryKey: [
       "distribution-plan",
@@ -20,7 +39,6 @@ const PurchaseOrderNotesForm = ({ planId }: { planId: string }) => {
         .select(
           `
             id,
-            status,
             notes
           `,
         )
@@ -71,9 +89,12 @@ const PurchaseOrderNotesForm = ({ planId }: { planId: string }) => {
     }
   };
 
-  if (isPending) return "Loading...";
+  if (isPending||distributionPlanStatusQuery.isPending) return "Loading...";
   if (error) return "An error has occurred: " + error?.message;
-  if (data?.status === "cancelled" || data?.status === "completed") {
+  if (
+    distributionPlanStatusQuery.data?.status === "cancelled" ||
+    distributionPlanStatusQuery.data?.status === "completed"
+  ) {
     return <Typography.Text>{data.notes}</Typography.Text>;
   }
   return (

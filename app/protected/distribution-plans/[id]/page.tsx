@@ -32,7 +32,7 @@ const PlanEditorPage = () => {
           id={planId}
           onSuccess={() =>
             queryClient.invalidateQueries({
-              queryKey: ["distribution-plan", "components"],
+              queryKey: ["distribution-plan", planId],
             })
           }
         />
