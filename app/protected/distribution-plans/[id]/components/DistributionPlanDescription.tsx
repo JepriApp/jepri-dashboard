@@ -2,8 +2,9 @@
 import DistributionPlanStatusTag from "@/app/protected/components/DistributionPlanStatusTag";
 import { createClient } from "@/lib/supabase/client";
 import { useQuery } from "@tanstack/react-query";
-import { Descriptions, Tag } from "antd";
+import { Descriptions } from "antd";
 import dayjs from "dayjs";
+import DistributionPlanNotesForm from "./DistributionPlanNotesForm";
 
 function DistributionPlanDescription({ id }: { id: string }) {
   const supabase = createClient();
@@ -22,9 +23,8 @@ function DistributionPlanDescription({ id }: { id: string }) {
             id,
             name
           ),
-          cutoff_at,
-          notes
-        `
+          cutoff_at
+        `,
         )
         .eq("id", id)
         .single();
@@ -36,7 +36,7 @@ function DistributionPlanDescription({ id }: { id: string }) {
   });
   if (isPending) return "Loading...";
   if (error) return "An error has occurred: " + error.message;
-  const { plan_code, plan_date, status, operator, cutoff_at, notes } =
+  const { plan_code, plan_date, status /* , operator, cutoff_at */ } =
     data ?? {};
   return (
     <Descriptions
@@ -51,13 +51,15 @@ function DistributionPlanDescription({ id }: { id: string }) {
       <Descriptions.Item label="Estado">
         <DistributionPlanStatusTag status={status} />
       </Descriptions.Item>
-      <Descriptions.Item label="Coordinador">
+      {/* <Descriptions.Item label="Coordinador">
         {operator?.name ?? "-"}
       </Descriptions.Item>
       <Descriptions.Item label="Corte">
         {cutoff_at ? dayjs(cutoff_at).format("YYYY-MM-DD HH:mm") : "-"}
+      </Descriptions.Item> */}
+      <Descriptions.Item label="Notas">
+        <DistributionPlanNotesForm planId={id} />
       </Descriptions.Item>
-      <Descriptions.Item label="Notas">{notes ?? "-"}</Descriptions.Item>
     </Descriptions>
   );
 }

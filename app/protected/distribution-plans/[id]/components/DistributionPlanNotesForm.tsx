@@ -3,25 +3,15 @@ import { createClient } from "@/lib/supabase/client";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { App, Form, Input, Typography } from "antd";
 
-interface PurchaseOrder {
-  id: string;
-  notes: string | null;
-}
-const PurchaseOrderNotesForm = ({
-  purchaseOrderId,
-  planId,
-}: {
-  purchaseOrderId: string;
-  planId: string;
-}) => {
+const PurchaseOrderNotesForm = ({ planId }: { planId: string }) => {
   const supabase = createClient();
   const [form] = Form.useForm();
   const { message } = App.useApp();
-  const distributionPlanQuery = useQuery({
+  const { data, error, isPending } = useQuery({
     queryKey: [
       "distribution-plan",
       "components",
-      "purchase-order-notes-form",
+      "distribution-plan-notes-form",
       planId,
     ],
     queryFn: async () => {
@@ -30,7 +20,8 @@ const PurchaseOrderNotesForm = ({
         .select(
           `
             id,
-            status
+            status,
+            notes
           `,
         )
         .eq("id", planId)
@@ -41,45 +32,22 @@ const PurchaseOrderNotesForm = ({
       return data;
     },
   });
-  const { data, error, isPending } = useQuery<PurchaseOrder>({
-    queryKey: [
-      "suppliers-reception",
-      "components",
-      "purchase-order-notes-form",
-      { purchaseOrderId: purchaseOrderId },
-    ],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("purchase_order")
-        .select(
-          `
-          id,
-          notes
-        `,
-        )
-        .eq("id", purchaseOrderId)
-        .single();
-      if (error) {
-        throw error;
-      }
-      return data;
-    },
-  });
+
   const updateNotesMutation = useMutation({
     mutationFn: async ({
-      purchaseOrderId,
+      planId,
       newNotes,
     }: {
-      purchaseOrderId: string;
+      planId: string;
       newNotes: string | null;
     }) => {
       const { data, error } = await supabase
-        .from("purchase_order")
+        .from("distribution_plan")
         .update({
           notes: newNotes ?? null,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", purchaseOrderId)
+        .eq("id", planId)
         .select()
         .single();
       if (error) throw error;
@@ -97,19 +65,15 @@ const PurchaseOrderNotesForm = ({
   const handleSubmit = (values: { notes: string | null }) => {
     if (form.isFieldTouched("notes")) {
       updateNotesMutation.mutateAsync({
-        purchaseOrderId: purchaseOrderId,
+        planId: planId,
         newNotes: values.notes,
       });
     }
   };
 
-  if (isPending || distributionPlanQuery.isPending) return "Loading...";
-  if (error || distributionPlanQuery.error)
-    return "An error has occurred: " + error?.message;
-  if (
-    distributionPlanQuery.data?.status === "cancelled" ||
-    distributionPlanQuery.data?.status === "completed"
-  ) {
+  if (isPending) return "Loading...";
+  if (error) return "An error has occurred: " + error?.message;
+  if (data?.status === "cancelled" || data?.status === "completed") {
     return <Typography.Text>{data.notes}</Typography.Text>;
   }
   return (
@@ -132,7 +96,7 @@ const PurchaseOrderNotesForm = ({
               form.submit();
             }
           }}
-          placeholder="Notas de la orden (opcional)"
+          placeholder="Notas del plan (opcional)"
         />
       </Form.Item>
     </Form>
