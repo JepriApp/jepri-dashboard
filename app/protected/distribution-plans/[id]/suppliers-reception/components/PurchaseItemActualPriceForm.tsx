@@ -1,27 +1,53 @@
 "use client";
 import { createClient } from "@/lib/supabase/client";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Form, InputNumber, message } from "antd";
+import { Form, InputNumber, message, Typography } from "antd";
 
 interface PurchaseItem {
   id: string;
   actual_price: number | null;
 }
 const PurchaseItemActualPriceForm = ({
-  id,
+  purchaseItemId,
+  planId,
   disabled,
 }: {
-  id: string;
+  purchaseItemId: string;
+  planId: string;
   disabled: boolean;
 }) => {
   const supabase = createClient();
   const [form] = Form.useForm();
+  const distributionPlanQuery = useQuery({
+    queryKey: [
+      "distribution-plan",
+      "components",
+      "purchase-item-actual-price-form",
+      purchaseItemId,
+    ],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("distribution_plan")
+        .select(
+          `
+            id,
+            status
+          `,
+        )
+        .eq("id", planId)
+        .single();
+      if (error) {
+        throw error;
+      }
+      return data;
+    },
+  });
   const { data, error, isPending } = useQuery<PurchaseItem>({
     queryKey: [
       "suppliers-reception",
       "components",
       "purchase-item-actual-price-form",
-      { purchaseItemId: id },
+      { purchaseItemId },
     ],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -30,9 +56,9 @@ const PurchaseItemActualPriceForm = ({
           `
           id,
           actual_price
-        `
+        `,
         )
-        .eq("id", id)
+        .eq("id", purchaseItemId)
         .single();
       if (error) {
         throw error;
@@ -69,13 +95,23 @@ const PurchaseItemActualPriceForm = ({
   const handleSubmit = (values: { actual_price: number }) => {
     if (form.isFieldTouched("actual_price")) {
       updateActualPriceMutation.mutateAsync({
-        purchaseItemId: id,
+        purchaseItemId: purchaseItemId,
         newPrice: values.actual_price,
       });
     }
   };
+  const isComponentDisabled =
+    distributionPlanQuery.data?.status !== "in_progress";
+
   if (isPending) return "Loading...";
   if (error) return "An error has occurred: " + error.message;
+  if (isComponentDisabled) {
+    return data.actual_price ? (
+      <Typography.Text>$ {data.actual_price}</Typography.Text>
+    ) : (
+      <Typography.Text type="secondary">No info</Typography.Text>
+    );
+  }
   return (
     <Form
       initialValues={{

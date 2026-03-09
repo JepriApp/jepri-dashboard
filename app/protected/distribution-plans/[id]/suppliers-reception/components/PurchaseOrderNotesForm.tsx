@@ -1,27 +1,52 @@
 "use client";
 import { createClient } from "@/lib/supabase/client";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Form, Input, message } from "antd";
+import { App, Form, Input, Typography } from "antd";
 
 interface PurchaseOrder {
   id: string;
   notes: string | null;
 }
 const PurchaseOrderNotesForm = ({
-  id,
-  disabled,
+  purchaseOrderId,
+  planId,
 }: {
-  id: string;
-  disabled: boolean;
+  purchaseOrderId: string;
+  planId: string;
 }) => {
   const supabase = createClient();
   const [form] = Form.useForm();
+  const { message } = App.useApp();
+  const distributionPlanQuery = useQuery({
+    queryKey: [
+      "distribution-plan",
+      "components",
+      "purchase-item-actual-price-form",
+      planId,
+    ],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("distribution_plan")
+        .select(
+          `
+            id,
+            status
+          `,
+        )
+        .eq("id", planId)
+        .single();
+      if (error) {
+        throw error;
+      }
+      return data;
+    },
+  });
   const { data, error, isPending } = useQuery<PurchaseOrder>({
     queryKey: [
       "suppliers-reception",
       "components",
       "purchase-order-notes-form",
-      { purchaseOrderId: id },
+      { purchaseOrderId: purchaseOrderId },
     ],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -30,9 +55,9 @@ const PurchaseOrderNotesForm = ({
           `
           id,
           notes
-        `
+        `,
         )
-        .eq("id", id)
+        .eq("id", purchaseOrderId)
         .single();
       if (error) {
         throw error;
@@ -72,14 +97,21 @@ const PurchaseOrderNotesForm = ({
   const handleSubmit = (values: { notes: string | null }) => {
     if (form.isFieldTouched("notes")) {
       updateNotesMutation.mutateAsync({
-        purchaseOrderId: id,
+        purchaseOrderId: purchaseOrderId,
         newNotes: values.notes,
       });
     }
   };
 
-  if (isPending) return "Loading...";
-  if (error) return "An error has occurred: " + error.message;
+  if (isPending || distributionPlanQuery.isPending) return "Loading...";
+  if (error || distributionPlanQuery.error)
+    return "An error has occurred: " + error?.message;
+  if (
+    distributionPlanQuery.data?.status === "cancelled" ||
+    distributionPlanQuery.data?.status === "completed"
+  ) {
+    return <Typography.Text>{data.notes}</Typography.Text>;
+  }
   return (
     <Form
       initialValues={{
@@ -91,7 +123,7 @@ const PurchaseOrderNotesForm = ({
     >
       <Form.Item name="notes" noStyle>
         <Input.TextArea
-          disabled={updateNotesMutation.isPending || disabled}
+          disabled={updateNotesMutation.isPending}
           onBlur={() => {
             form.submit();
           }}

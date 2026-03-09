@@ -156,7 +156,7 @@ const CalendarCreateMultiplePlansPage = () => {
             onMouseLeave={() => setHoveredDate(null)}
             onClick={(e) => {
               e.stopPropagation();
-              if (plan?.id) redirect(`/a/distribution-plans/${plan.id}`);
+              if (plan?.id) redirect(`/protected/distribution-plans/${plan.id}`);
             }}
           >
             {`Plan${plan?.plan_code ? ` ${plan.plan_code}` : ""}`}

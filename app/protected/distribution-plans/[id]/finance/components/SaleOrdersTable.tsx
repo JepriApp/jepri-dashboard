@@ -10,12 +10,7 @@ import {
   Tag,
   Tooltip,
   theme,
-  Space,
-  InputNumber,
-  Form,
-  Button,
-} from "antd";
-import React from "react";
+  Space} from "antd";
 import SaleOrderDeliveryFeeForm from "./SaleOrderDeliveryFeeForm";
 import DownloadFinanceExcel from "./DownloadCustomersFinanceExcel";
 import DistributionPlanServiceFeePercentageForm from "./DistributionPlanServiceFeePercentageForm";
@@ -216,7 +211,8 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
           <br />
           Domicilio:{" "}
           <SaleOrderDeliveryFeeForm
-            id={record.id}
+            saleOrderId={record.id}
+            planId={id}
             disabled={false}
             onSuccess={async () => {
               await refetch();

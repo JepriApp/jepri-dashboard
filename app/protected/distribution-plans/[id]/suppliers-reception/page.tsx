@@ -2,7 +2,7 @@
 import { formatPriceAccounting } from "@/lib/formatPrice";
 import { createClient } from "@/lib/supabase/client";
 import { useQuery } from "@tanstack/react-query";
-import { Button, Card, Space, Table, TableColumnsType, Typography } from "antd";
+import { Card, Space, Table, TableColumnsType, Typography } from "antd";
 import dayjs from "dayjs";
 import { useParams } from "next/navigation";
 import PurchaseOrderStatusInfo from "./components/PurchaseOrderStatusInfo";
@@ -11,7 +11,7 @@ import PurchaseItemReceivedQtyForm from "./components/PurchaseItemReceivedQtyFor
 import PurchaseOrderNotesForm from "./components/PurchaseOrderNotesForm";
 import UpdatePurchaseOrderStatusButton from "./components/UpdatePurchaseOrderStatusButton";
 import PurchaseOrderStatusTag from "@/app/protected/components/PurchaseOrderStatusTag";
-import { DownloadOutlined, FileExcelOutlined } from "@ant-design/icons";
+
 type PurchaseItem = {
   id: string;
   quantity: number;
@@ -58,6 +58,30 @@ type PurchaseOrder = {
 const Page = () => {
   const { id: planId } = useParams() as { id: string };
   const supabase = createClient();
+  const distributionPlanQuery = useQuery({
+    queryKey: [
+      "distribution-plan",
+      "components",
+      "purchase-item-actual-price-form",
+      planId,
+    ],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("distribution_plan")
+        .select(
+          `
+            id,
+            status
+          `,
+        )
+        .eq("id", planId)
+        .single();
+      if (error) {
+        throw error;
+      }
+      return data;
+    },
+  });
   const { data, isPending, error, refetch } = useQuery<PurchaseOrder[]>({
     queryKey: [
       "suppliers-reception",
@@ -196,8 +220,9 @@ const Page = () => {
                       key: "actual_price",
                       render: (v: number | null, row: PurchaseItem) => (
                         <PurchaseItemActualPriceForm
-                          id={row.id}
+                          purchaseItemId={row.id}
                           disabled={!isEditable}
+                          planId={planId}
                         />
                       ),
                     },
@@ -218,8 +243,9 @@ const Page = () => {
                       key: "received_quantity",
                       render: (v: number | null, row: PurchaseItem) => (
                         <PurchaseItemReceivedQtyForm
-                          id={row.id}
+                          purchaseItemId={row.id}
                           disabled={!isEditable}
+                          planId={planId}
                         />
                       ),
                     },
@@ -241,19 +267,23 @@ const Page = () => {
                       style={{ display: "flex", gap: 8, justifyContent: "end" }}
                     >
                       <PurchaseOrderNotesForm
-                        id={group.id}
-                        disabled={!isEditable}
+                        purchaseOrderId={group.id}
+                        planId={planId}
                       />
-                      <UpdatePurchaseOrderStatusButton
-                        isCreated={group.status === "created"}
-                        isPublished={isPublished}
-                        isEditable={isEditable}
-                        isFinal={isFinal}
-                        id={group.id}
-                        onSuccess={async () => {
-                          await refetch();
-                        }}
-                      />
+                      {distributionPlanQuery.data?.status !== "in_progress" ? (
+                        <></>
+                      ) : (
+                        <UpdatePurchaseOrderStatusButton
+                          isCreated={group.status === "created"}
+                          isPublished={isPublished}
+                          isEditable={isEditable}
+                          isFinal={isFinal}
+                          id={group.id}
+                          onSuccess={async () => {
+                            await refetch();
+                          }}
+                        />
+                      )}
                     </div>
                   )}
                 />

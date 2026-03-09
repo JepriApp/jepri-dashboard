@@ -9,6 +9,7 @@ import {
   Divider,
   message,
   Result,
+  App,
 } from "antd";
 import dayjs from "dayjs";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -16,7 +17,6 @@ import { PlusOutlined, MinusCircleOutlined } from "@ant-design/icons";
 import { createClient } from "@/lib/supabase/client";
 import { redirect, useSearchParams } from "next/navigation";
 import { listCustomers } from "../../users/customers/services/listCustomers";
-import modal from "antd/es/modal";
 
 interface CustomerOption {
   id: string;
@@ -40,6 +40,7 @@ const CreateSaleOrderPage = () => {
   const userInfo = supabase.auth.getUser();
   const query = useSearchParams();
   const planId = query.get("planId");
+  const { modal } = App.useApp();
   const [form] = Form.useForm<CreateSaleOrderForm>();
   const { data: customers = [], isLoading: loadingCustomers } = useQuery<
     CustomerOption[]
@@ -56,13 +57,11 @@ const CreateSaleOrderPage = () => {
   const { data: plans = [], isLoading: loadingPlans } = useQuery({
     queryKey: ["distributionPlansNearest"],
     queryFn: async () => {
-      const today = dayjs().format("YYYY-MM-DD");
       const { data, error } = await supabase
         .from("distribution_plan")
         .select(`id, plan_date, plan_code, status`)
-        .gte("plan_date", today)
-        .order("plan_date", { ascending: true })
-        .limit(10);
+        .not("status", "in", "(completed,cancelled)")
+        .order("plan_date", { ascending: true });
       if (error) throw error;
       return data || [];
     },
@@ -248,7 +247,7 @@ const CreateSaleOrderPage = () => {
               ...plans.map((p) => ({
                 value: p.id,
                 label: `Plan #${p.plan_code} - ${dayjs(p.plan_date).format(
-                  "YYYY-MM-DD"
+                  "YYYY-MM-DD",
                 )}`,
               })),
             ]}
@@ -266,7 +265,7 @@ const CreateSaleOrderPage = () => {
               validator: async (_, items: CreateSaleOrderForm["items"]) => {
                 if (!items || items.length === 0) {
                   return Promise.reject(
-                    new Error("Añade al menos un producto")
+                    new Error("Añade al menos un producto"),
                   );
                 }
                 const ids = (items || [])
@@ -275,7 +274,7 @@ const CreateSaleOrderPage = () => {
                 const unique = new Set(ids);
                 if (ids.length !== unique.size) {
                   return Promise.reject(
-                    new Error("Evita productos repetidos en la orden")
+                    new Error("Evita productos repetidos en la orden"),
                   );
                 }
               },
@@ -299,13 +298,12 @@ const CreateSaleOrderPage = () => {
                     shouldUpdate={(prev, curr) => prev.items !== curr.items}
                   >
                     {() => {
-                      const filteredOptions = products
-                        ?.map((p) => ({
-                          value: p.id,
-                          label: `${p.name} (${
-                            p.unit
-                          }) · $${p.reference_price?.toFixed(2)}`,
-                        }));
+                      const filteredOptions = products?.map((p) => ({
+                        value: p.id,
+                        label: `${p.name} (${
+                          p.unit
+                        }) · $${p.reference_price?.toFixed(2)}`,
+                      }));
                       return (
                         <Form.Item
                           style={{ flex: 1 }}
@@ -332,9 +330,7 @@ const CreateSaleOrderPage = () => {
                   <Form.Item
                     style={{ width: 180 }}
                     name={[field.name, "quantity"]}
-                    rules={[
-                      { required: true, message: "Ingresa cantidad" },
-                    ]}
+                    rules={[{ required: true, message: "Ingresa cantidad" }]}
                   >
                     <InputNumber
                       min={0.1}
@@ -374,7 +370,7 @@ const CreateSaleOrderPage = () => {
                 redirect(
                   planId
                     ? `/protected/distribution-plans/${planId}`
-                    : "/protected/sale-orders/"
+                    : "/protected/sale-orders/",
                 )
               }
             >

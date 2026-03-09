@@ -20,7 +20,7 @@ const PLAN_STATUSES_ORDER: (
 
 const isNewStatusValid = (
   currentStatus: string,
-  newStatus: string
+  newStatus: string,
 ): boolean => {
   const validTransitions: Record<string, string[]> = {
     planned: ["preparing", "cancelled"],
@@ -36,8 +36,8 @@ const getNextStateDescription = (nextState: string): React.ReactNode => {
   switch (nextState) {
     case "preparing":
       <ul style={{ marginTop: 8 }}>
-        <li>✔ Se notificará a los proveedores sobre sus órdenes asignadas</li>
-        <li>✖ No se aceptarán mas pedidos desde la aplicación</li>
+        {/* <li>✔ Se notificará a los proveedores sobre sus órdenes asignadas</li>
+        <li>✖ No se aceptarán mas pedidos desde la aplicación</li> */}
         <li>✖ No podrás volver al estado anterior</li>
       </ul>;
     case "in_progress":
@@ -51,12 +51,12 @@ const getNextStateDescription = (nextState: string): React.ReactNode => {
       return (
         <ul style={{ marginTop: 8 }}>
           <li>
-            ✔ Se marcarán las órdenes de compra como &quot;completadas&quot;
+            ✔ Se marcarán los pedidos de los clientes como &quot;completados&quot;
           </li>
-          <li>✔ Se actualizarán los precios mostrados en la app</li>
-          <li>✔ Se actualizarán las ofertas de los vendedores</li>
+          {/* <li>✔ Se actualizarán los precios mostrados en la app</li>
+          <li>✔ Se actualizarán las ofertas de los vendedores</li> */}
           <li>
-            ✔ No podrás modificar el porcentaje de comisión de este plan, ni los
+            ✖ No podrás modificar el porcentaje de comisión de este plan, ni los
             costos de envío
           </li>
           <li>✖ No podrás hacer más cambios en este plan de distribución</li>
@@ -91,7 +91,7 @@ const ModifyPlanStatus = ({
           `
           id,
           status
-        `
+        `,
         )
         .eq("id", id)
         .single();
@@ -101,7 +101,7 @@ const ModifyPlanStatus = ({
       return data;
     },
   });
-
+  const isComponentDisabled = data?.status==='completed'||data?.status==='cancelled'
   const openStatusModal = () => {
     setStatusModalOpen(true);
   };
@@ -118,29 +118,45 @@ const ModifyPlanStatus = ({
     }) => {
       if (!isNewStatusValid(data?.status as string, status)) {
         throw new Error(
-          "El nuevo estado no es válido según la lógica de negocio."
+          "El nuevo estado no es válido según la lógica de negocio.",
         );
       }
       const { data: d_plan_data, error } = await supabase
         .from("distribution_plan")
         .update({ status: status })
         .eq("id", String(id))
-        .select()
+        .select(`service_fee_percentage`)
         .single();
       if (error) {
         throw error;
       }
       if (status === "preparing") {
         // Actualizar estado de todas las órdenes a "published"
-        const { error: updateError } = await supabase
+        const { error: error1 } = await supabase
           .from("purchase_order")
           .update({ status: "published" })
           .eq("distribution_plan_id", id);
-        if (updateError) throw updateError;
+        if (error1) throw error1;
       }
       if (status === "in_progress") {
       }
       if (status === "completed") {
+        // Actualizar estado de todas las órdenes de venta como completadas "delivered"
+        // Guardar porcentaje de comision usado
+        const { error: error3 } = await supabase
+          .from("sale_order")
+          .update({
+            status: "delivered",
+            service_fee_percentage: d_plan_data.service_fee_percentage,
+          })
+          .eq("distribution_plan_id", id);
+        if (error3) throw error3;
+        //TODO: Actualizar precios de referencia de las ofertas usadas,
+        //Debes crear una nueva oferta y deshabilitar las anterior (o siempre usar la mas reciente que este disponible)
+        //Tambien se debe revisar TODOS los lugares donde se use la entidad offer para que tenga en cuenta que hay todo un historico de offers
+
+        //TODO: Actualizar precios visibles de los productos en la aplicación
+        //El Precio viene a ser el promedio de los precios ofrecidos en la ultima operacion para ese producto en especifico
       }
       if (status === "cancelled") {
       }
@@ -172,7 +188,9 @@ const ModifyPlanStatus = ({
 
   return (
     <>
-      <Button onClick={openStatusModal}>Editar estado del plan</Button>
+      <Button onClick={openStatusModal} disabled={isComponentDisabled}>
+        Editar estado del plan
+      </Button>
       <Modal
         title={`Cambiar estado a "${nextState}"`}
         open={statusModalOpen}

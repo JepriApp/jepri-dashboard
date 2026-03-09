@@ -58,6 +58,30 @@ const AsignSupplierDrawer = ({
 }) => {
   const [open, setOpen] = useState(false);
   const supabase = createClient();
+  const distributionPlanQuery = useQuery({
+    queryKey: [
+      "distribution-plan",
+      "components",
+      "create-sale-order-button",
+      planId,
+    ],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("distribution_plan")
+        .select(
+          `
+            id,
+            status
+          `,
+        )
+        .eq("id", planId)
+        .single();
+      if (error) {
+        throw error;
+      }
+      return data;
+    },
+  });
   const { isPending, error, data, refetch } = useQuery<{
     saleItem: SaleItem;
     offers: Offer[];
@@ -376,9 +400,18 @@ const AsignSupplierDrawer = ({
     ?.map((a) => data?.offers.find((o) => o.id === a.offerId)?.supplier.id)
     .filter((id): id is string => !!id);
 
+  const isComponentDisabled =
+    distributionPlanQuery.data?.status === "completed" ||
+    distributionPlanQuery.data?.status === "cancelled";
+
   return (
     <>
-      <Button onClick={() => setOpen(true)} color="primary" variant="outlined">
+      <Button
+        onClick={() => setOpen(true)}
+        color="primary"
+        variant="outlined"
+        disabled={isComponentDisabled}
+      >
         Asignar
       </Button>
       <Drawer

@@ -1,14 +1,7 @@
 "use client";
 import { createClient } from "@/lib/supabase/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Button,
-  message,
-  Modal,
-  Table,
-  Tag,
-  Typography,
-} from "antd";
+import { Button, message, Modal, Table, Tag, Typography } from "antd";
 import { useState } from "react";
 import { formatPriceAccounting } from "@/lib/formatPrice";
 
@@ -34,8 +27,31 @@ const AutoassignButton = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const supabase = createClient();
   const queryClient = useQueryClient();
-
-  const { data: autoAssignments, isFetching, refetch } = useQuery<AutoAssignment[]>({
+  const distributionPlanQuery = useQuery({
+    queryKey: ["auto-assignments", "distribution-plan", planId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("distribution_plan")
+        .select(
+          `
+          id,
+          status
+        `,
+        )
+        .eq("id", planId)
+        .single();
+      if (error) {
+        throw error;
+      }
+      return data;
+    },
+  });
+  const {
+    data: autoAssignments,
+    isFetching,
+    refetch,
+    error,
+  } = useQuery<AutoAssignment[]>({
     queryKey: ["auto-assignments", planId],
     queryFn: async () => {
       // Obtener todos los sale_items del plan
@@ -61,7 +77,7 @@ const AutoassignButton = ({
               )
             )
           )
-        `
+        `,
         )
         .eq("distribution_plan_id", planId);
 
@@ -83,7 +99,7 @@ const AutoassignButton = ({
                 id,
                 name
               )
-            `
+            `,
             )
             .eq("product_id", saleItem.product.id);
 
@@ -92,11 +108,11 @@ const AutoassignButton = ({
           // Si hay exactamente una oferta
           if (offers && offers.length === 1) {
             const offer = offers[0];
-            
+
             // Calcular cantidad ya asignada
             const currentAssignedQuantity = saleItem.fulfillments.reduce(
               (sum: number, f: any) => sum + (f.purchase_items?.quantity || 0),
-              0
+              0,
             );
 
             // Solo incluir si la cantidad requerida no está completamente asignada
@@ -133,7 +149,7 @@ const AutoassignButton = ({
 
       if (!user?.id) {
         throw new Error(
-          "Usuario no autenticado: no se puede crear/actualizar órdenes de compra"
+          "Usuario no autenticado: no se puede crear/actualizar órdenes de compra",
         );
       }
 
@@ -147,8 +163,9 @@ const AutoassignButton = ({
 
       // Procesar cada asignación
       for (const assignment of assignments) {
-        const quantityToAssign = assignment.requiredQuantity - assignment.currentAssignedQuantity;
-        
+        const quantityToAssign =
+          assignment.requiredQuantity - assignment.currentAssignedQuantity;
+
         if (quantityToAssign <= 0) continue;
 
         // Buscar o crear purchase order para el proveedor
@@ -218,15 +235,20 @@ const AutoassignButton = ({
         duration: 2,
       });
       setIsModalOpen(false);
-      
+
       // Invalidar las queries relevantes
       await queryClient.invalidateQueries({
-        queryKey: ["distribution-plan", "components", "sale-order-table", planId],
+        queryKey: [
+          "distribution-plan",
+          "components",
+          "sale-order-table",
+          planId,
+        ],
       });
       await queryClient.invalidateQueries({
         queryKey: ["distribution-plan"],
       });
-      
+
       await onSuccess?.();
     },
     onError: (err: Error) => {
@@ -280,7 +302,10 @@ const AutoassignButton = ({
           </Typography.Text>
           <br />
           <Typography.Text type="success">
-            Por asignar: <strong>{record.requiredQuantity - record.currentAssignedQuantity}</strong>
+            Por asignar:{" "}
+            <strong>
+              {record.requiredQuantity - record.currentAssignedQuantity}
+            </strong>
           </Typography.Text>
         </div>
       ),
@@ -300,13 +325,19 @@ const AutoassignButton = ({
       ),
     },
   ];
-
+  const isComponentDisabled =
+    distributionPlanQuery.data?.status === "completed" ||
+    distributionPlanQuery.data?.status === "cancelled";
+  if (distributionPlanQuery.isPending) return "Loading...";
+  if (error || distributionPlanQuery.error)
+    return "An error has occurred: " + error?.message;
   return (
     <>
       <Button
         type="primary"
         onClick={handleOpenModal}
         loading={isFetching}
+        disabled={isComponentDisabled}
       >
         Autoasignar
       </Button>
@@ -329,8 +360,9 @@ const AutoassignButton = ({
         ) : autoAssignments && autoAssignments.length > 0 ? (
           <>
             <Typography.Paragraph>
-              Se encontraron <strong>{autoAssignments.length}</strong> producto(s) con un único proveedor disponible 
-              que se asignarán automáticamente:
+              Se encontraron <strong>{autoAssignments.length}</strong>{" "}
+              producto(s) con un único proveedor disponible que se asignarán
+              automáticamente:
             </Typography.Paragraph>
             <Table
               dataSource={autoAssignments}
@@ -340,12 +372,14 @@ const AutoassignButton = ({
               size="small"
             />
             <Typography.Paragraph type="secondary" style={{ marginTop: 16 }}>
-              Al confirmar, se crearán o actualizarán las órdenes de compra necesarias.
+              Al confirmar, se crearán o actualizarán las órdenes de compra
+              necesarias.
             </Typography.Paragraph>
           </>
         ) : (
           <Typography.Paragraph>
-            No se encontraron productos con un único proveedor disponible para autoasignar.
+            No se encontraron productos con un único proveedor disponible para
+            autoasignar.
           </Typography.Paragraph>
         )}
       </Modal>

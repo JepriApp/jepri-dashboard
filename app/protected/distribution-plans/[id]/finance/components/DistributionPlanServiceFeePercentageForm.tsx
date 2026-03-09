@@ -1,11 +1,12 @@
 "use client";
 import { createClient } from "@/lib/supabase/client";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Form, InputNumber, message } from "antd";
+import { Form, InputNumber, message, Typography } from "antd";
 
 interface DistributionPlan {
   id: string;
   service_fee_percentage: number;
+  status: "planned" | "preparing" | "in_progress" | "completed" | "cancelled";
 }
 const DistributionPlanServiceFeePercentageForm = ({
   id,
@@ -31,7 +32,8 @@ const DistributionPlanServiceFeePercentageForm = ({
         .select(
           `
           id,
-          service_fee_percentage
+          service_fee_percentage,
+          status
         `,
         )
         .eq("id", id)
@@ -80,6 +82,8 @@ const DistributionPlanServiceFeePercentageForm = ({
       });
     }
   };
+  const isComponentDisabled =
+    data?.status === "completed" || data?.status === "cancelled";
   if (isPending) return "Loading...";
   if (error) return "An error has occurred: " + error.message;
   return (
@@ -91,22 +95,26 @@ const DistributionPlanServiceFeePercentageForm = ({
       onFinish={handleSubmit}
     >
       <Form.Item name="service_fee_percentage" label="Comisión por venta">
-        <InputNumber
-          disabled={updateActualPriceMutation.isPending || disabled}
-          onBlur={() => {
-            form.submit();
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
+        {isComponentDisabled ? (
+          <Typography.Text>{data.service_fee_percentage} %</Typography.Text>
+        ) : (
+          <InputNumber
+            disabled={updateActualPriceMutation.isPending || disabled}
+            onBlur={() => {
               form.submit();
-            }
-          }}
-          style={{ width: 120 }}
-          min={0}
-          max={100}
-          precision={1}
-          prefix="%"
-        />
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                form.submit();
+              }
+            }}
+            style={{ width: 120 }}
+            min={0}
+            max={100}
+            precision={1}
+            suffix="%"
+          />
+        )}
       </Form.Item>
     </Form>
   );

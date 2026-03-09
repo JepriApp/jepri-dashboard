@@ -63,7 +63,7 @@ const UpdatePurchaseOrderStatusButton = ({
 
       if (!user?.id)
         throw new Error(
-          "Usuario no autenticado: no se puede crear/actualizar órdenes de compra"
+          "Usuario no autenticado: no se puede crear/actualizar órdenes de compra",
         );
       const { data: adminData, error: adminError } = await supabase
         .from("profiles")
@@ -148,7 +148,7 @@ const UpdatePurchaseOrderStatusButton = ({
         </AsyncButton>
       ) : null}
       {isEditable ? (
-        <>
+        <div>
           <Dropdown.Button
             menu={{
               items: [
@@ -180,6 +180,7 @@ const UpdatePurchaseOrderStatusButton = ({
             type="primary"
             disabled={updatePurchaseOrderStatusMutation.isPending}
             style={{ justifyContent: "end" }}
+            trigger={["click"]}
           >
             <CheckCircleOutlined /> Completar recibo
           </Dropdown.Button>
@@ -236,7 +237,7 @@ const UpdatePurchaseOrderStatusButton = ({
               style={{ marginTop: 16 }}
             />
           </Modal>
-        </>
+        </div>
       ) : null}
       {isFinal ? (
         <Button

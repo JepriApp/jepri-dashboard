@@ -1,27 +1,53 @@
 "use client";
 import { createClient } from "@/lib/supabase/client";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Form, InputNumber, message } from "antd";
+import { Form, InputNumber, message, Typography } from "antd";
 
 interface PurchaseItem {
   id: string;
   received_quantity: number | null;
 }
 const PurchaseItemReceivedQtyForm = ({
-  id,
+  purchaseItemId,
   disabled,
+  planId
 }: {
-  id: string;
+  purchaseItemId: string;
+  planId:string;
   disabled: boolean;
 }) => {
   const supabase = createClient();
   const [form] = Form.useForm();
+  const distributionPlanQuery = useQuery({
+    queryKey: [
+      "distribution-plan",
+      "components",
+      "purchase-item-received-quantity-form",
+      purchaseItemId,
+    ],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("distribution_plan")
+        .select(
+          `
+            id,
+            status
+          `,
+        )
+        .eq("id", planId)
+        .single();
+      if (error) {
+        throw error;
+      }
+      return data;
+    },
+  });
   const { data, error, isPending } = useQuery<PurchaseItem>({
     queryKey: [
       "suppliers-reception",
       "components",
       "purchase-item-received-qty-form",
-      { purchaseItemId: id },
+      { purchaseItemId: purchaseItemId },
     ],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -30,9 +56,9 @@ const PurchaseItemReceivedQtyForm = ({
           `
           id,
           received_quantity
-        `
+        `,
         )
-        .eq("id", id)
+        .eq("id", purchaseItemId)
         .single();
       if (error) {
         throw error;
@@ -69,13 +95,23 @@ const PurchaseItemReceivedQtyForm = ({
   const handleSubmit = (values: { received_quantity: number }) => {
     if (form.isFieldTouched("received_quantity")) {
       updateActualPriceMutation.mutateAsync({
-        purchaseItemId: id,
+        purchaseItemId: purchaseItemId,
         newQty: values.received_quantity,
       });
     }
   };
-  if (isPending) return "Loading...";
-  if (error) return "An error has occurred: " + error.message;
+  const isComponentDisabled =
+    distributionPlanQuery.data?.status !== "in_progress";
+  if (isPending || distributionPlanQuery.isPending) return "Loading...";
+  if (error || distributionPlanQuery.error)
+    return "An error has occurred: " + error?.message;
+  if (isComponentDisabled) {
+    return data.received_quantity ? (
+      <Typography.Text>{data.received_quantity}</Typography.Text>
+    ) : (
+      <Typography.Text type="secondary">No info</Typography.Text>
+    );
+  }
   return (
     <Form
       initialValues={{

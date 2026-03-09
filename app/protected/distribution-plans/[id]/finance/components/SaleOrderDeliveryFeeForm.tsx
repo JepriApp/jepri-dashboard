@@ -1,29 +1,55 @@
 "use client";
 import { createClient } from "@/lib/supabase/client";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Form, InputNumber, message } from "antd";
+import { Form, InputNumber, message, Typography } from "antd";
 
 interface SaleOrder {
   id: string;
   delivery_fee: number | null;
 }
 const SaleOrderDeliveryFeeForm = ({
-  id,
+  saleOrderId,
+  planId,
   disabled,
   onSuccess,
 }: {
-  id: string;
+  saleOrderId: string;
+  planId: string;
   disabled: boolean;
   onSuccess?: () => Promise<void>;
 }) => {
   const supabase = createClient();
   const [form] = Form.useForm();
+  const distributionPlanQuery = useQuery({
+    queryKey: [
+      "distribution-plan",
+      "components",
+      "sale-order-delivery-fee-form",
+      planId,
+    ],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("distribution_plan")
+        .select(
+          `
+            id,
+            status
+          `,
+        )
+        .eq("id", planId)
+        .single();
+      if (error) {
+        throw error;
+      }
+      return data;
+    },
+  });
   const { data, error, isPending } = useQuery<SaleOrder>({
     queryKey: [
       "finance",
       "components",
       "sale-order-delivery-fee-form",
-      { saleOrderId: id },
+      { saleOrderId: saleOrderId },
     ],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -32,9 +58,9 @@ const SaleOrderDeliveryFeeForm = ({
           `
           id,
           delivery_fee
-        `
+        `,
         )
-        .eq("id", id)
+        .eq("id", saleOrderId)
         .single();
       if (error) {
         throw error;
@@ -72,13 +98,22 @@ const SaleOrderDeliveryFeeForm = ({
   const handleSubmit = (values: { delivery_fee: number }) => {
     if (form.isFieldTouched("delivery_fee")) {
       updateMutation.mutateAsync({
-        saleOrderId: id,
+        saleOrderId: saleOrderId,
         newValue: values.delivery_fee,
       });
     }
   };
-  if (isPending) return "Loading...";
-  if (error) return "An error has occurred: " + error.message;
+
+  const isComponentDisabled =
+    distributionPlanQuery.data?.status === "completed" ||
+    distributionPlanQuery.data?.status === "cancelled";
+
+  if (isPending || distributionPlanQuery.isPending) return "Loading...";
+  if (error || distributionPlanQuery.error)
+    return "An error has occurred: " + error?.message;
+  if (isComponentDisabled) {
+    return <Typography.Text>$ {data.delivery_fee}</Typography.Text>;
+  }
   return (
     <Form
       initialValues={{

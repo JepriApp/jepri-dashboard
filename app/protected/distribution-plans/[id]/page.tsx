@@ -1,6 +1,6 @@
-"use client";
+"use client"
 import { Button, Space, Divider } from "antd";
-import { ArrowDownOutlined, PlusOutlined } from "@ant-design/icons";
+import { ArrowDownOutlined } from "@ant-design/icons";
 import { useParams, useRouter } from "next/navigation";
 import ModifyPlanStatus from "./components/ModifyPlanStatus";
 import DistributionPlanStatistic from "./components/DistributionPlanStatistic";
@@ -8,6 +8,7 @@ import DistributionPlanDescription from "./components/DistributionPlanDescriptio
 import SaleOrdersTable from "./components/SaleOrdersTable";
 import PurchaseOrdersTable from "./components/PurchaseOrdersTable";
 import { useQueryClient } from "@tanstack/react-query";
+import CreateSaleOrderButton from "./components/CreateSaleOrderButton";
 
 const PlanEditorPage = () => {
   const params = useParams();
@@ -30,7 +31,9 @@ const PlanEditorPage = () => {
         <ModifyPlanStatus
           id={planId}
           onSuccess={() =>
-            queryClient.invalidateQueries({ queryKey: ["distribution-plan", "components"] })
+            queryClient.invalidateQueries({
+              queryKey: ["distribution-plan", "components"],
+            })
           }
         />
       </Space>
@@ -43,14 +46,7 @@ const PlanEditorPage = () => {
           flexDirection: "row-reverse",
         }}
       >
-        <Button
-          onClick={() =>
-            router.push(`/protected/sale-orders/create?planId=${planId}`)
-          }
-          icon={<PlusOutlined />}
-        >
-          Agregar pedido
-        </Button>
+        <CreateSaleOrderButton id={planId} />
       </Space>
       <SaleOrdersTable id={planId} />
 
@@ -64,11 +60,13 @@ const PlanEditorPage = () => {
       >
         <Button
           onClick={() =>
-            router.push(`/protected/distribution-plans/${planId}/assign-suppliers`)
+            router.push(
+              `/protected/distribution-plans/${planId}/assign-suppliers`,
+            )
           }
           icon={<ArrowDownOutlined />}
         >
-          Asignar proveedores
+          Asignación de proveedores
         </Button>
       </Space>
       <PurchaseOrdersTable id={planId} />
