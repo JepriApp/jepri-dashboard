@@ -2,7 +2,7 @@
 import { createClient } from "@/lib/supabase/client";
 import { HomeOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
-import { Card, Space, Tag, Layout } from "antd";
+import { Card, Space, Layout } from "antd";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import React from "react";
 import DistributionPlanStatusTag from "../../components/DistributionPlanStatusTag";
@@ -79,7 +79,7 @@ export default function DistributionPlanEditorLayout({
           <Space separator="~">
             <p>Plan {data?.plan?.plan_code}</p>
             <p>{data?.plan?.plan_date}</p>
-            <DistributionPlanStatusTag status={data?.plan?.status!} />
+            <DistributionPlanStatusTag status={data?.plan?.status} />
           </Space>
         }
         tabList={lateralMenuItems}

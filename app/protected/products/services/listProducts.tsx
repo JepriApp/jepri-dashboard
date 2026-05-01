@@ -10,7 +10,7 @@ export async function listProducts(supabaseClient: SupabaseClient) {
     )
     .order("name", { ascending: true });
   if (error) throw error;
-  return (data || []).map((p) => ({
+  return (data || []).map((p) => ({  //BUG: Aqui se usa offer. Replantear el uso
     ...p,
     offers: (p.offers || []).map((o) => {
       const supplierObj = Array.isArray(o.supplier)

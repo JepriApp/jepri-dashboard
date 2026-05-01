@@ -11,6 +11,7 @@ import PurchaseItemReceivedQtyForm from "./components/PurchaseItemReceivedQtyFor
 import PurchaseOrderNotesForm from "./components/PurchaseOrderNotesForm";
 import UpdatePurchaseOrderStatusButton from "./components/UpdatePurchaseOrderStatusButton";
 import PurchaseOrderStatusTag from "@/app/protected/components/PurchaseOrderStatusTag";
+import ProductImage from "@/app/protected/components/ProductImage";
 
 type PurchaseItem = {
   id: string;
@@ -24,6 +25,7 @@ type PurchaseItem = {
       id: string;
       name: string;
       unit: string;
+      main_photo: string | null;
     };
   };
   fullfillments: {
@@ -59,10 +61,7 @@ const Page = () => {
   const { id: planId } = useParams() as { id: string };
   const supabase = createClient();
   const distributionPlanQuery = useQuery({
-    queryKey: [
-      "distribution-plan",
-      planId,
-    ],
+    queryKey: ["distribution-plan", planId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("distribution_plan")
@@ -116,7 +115,8 @@ const Page = () => {
               product:product_id (
                 id,
                 name,
-                unit
+                unit,
+                main_photo
               )
             ),
             fullfillments: fulfillment (
@@ -129,7 +129,7 @@ const Page = () => {
               )
             )
           )
-        `,
+        `
         )
         .eq("distribution_plan_id", planId);
 
@@ -172,7 +172,12 @@ const Page = () => {
                     ? dayjs(group.updated_at).format("YYYY-MM-DD HH:mm A")
                     : "—"}
                 </Typography.Text>
-                <PurchaseOrderStatusInfo status={group.status as string} />
+                {distributionPlanQuery.data?.status === "cancelled" ||
+                distributionPlanQuery.data?.status === "completed" ? (
+                  <></>
+                ) : (
+                  <PurchaseOrderStatusInfo status={group.status as string} />
+                )}
               </Space>
             }
             styles={{ body: { padding: 0 } }}
@@ -190,14 +195,21 @@ const Page = () => {
                   dataIndex: "product_name",
                   key: "product_name",
                   render: (v: string | null, record) => (
-                    <Space orientation="horizontal" size={8} wrap>
-                      <div>{`${record.offer.product.name} x ${record.offer.product.unit}`}</div>
-                      <Typography.Text type="secondary">
-                        {record.fullfillments
-                          ?.map((f) => f.sale_item.sale_order.order_code)
-                          .join(", ")}
-                      </Typography.Text>
-                    </Space>
+                    <div className="flex flex-row flex-wrap gap-2">
+                      <ProductImage
+                        source={record.offer.product.main_photo}
+                        name={record.offer.product.name}
+                        size="small"
+                      />
+                      <Space orientation="horizontal" size={8} wrap>
+                        <div>{`${record.offer.product.name} x ${record.offer.product.unit}`}</div>
+                        <Typography.Text type="secondary">
+                          {record.fullfillments
+                            ?.map((f) => f.sale_item.sale_order.order_code)
+                            .join(", ")}
+                        </Typography.Text>
+                      </Space>
+                    </div>
                   ),
                 },
                 {

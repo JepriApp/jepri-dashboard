@@ -178,6 +178,7 @@ const OfferBySupplierDrawer = ({
   });
   const openOffersDrawer = async (record: SupplierRow) => {
     // Fetch supplier offers
+     //BUG: Aqui se usa offer. Replantear el uso
     const { data: supplierOffers, error } = await supabase
       .from("offer")
       .select(

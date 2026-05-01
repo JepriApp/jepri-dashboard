@@ -20,6 +20,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { formatPriceAccounting } from "@/lib/formatPrice";
 import SaleOrderStatusTag from "../components/SaleOrderStatusTag";
+import ProductImage from "../components/ProductImage";
 
 // Página enfocada en: seleccionar órdenes y crear el distribution plan
 const { Text } = Typography;
@@ -487,10 +488,32 @@ const Index = () => {
                     dataIndex: ["product", "name"],
                     key: "product_name",
                     render: (v: number, record: any) => (
-                      <>
-                        {record.product?.name || "—"}{" "}
-                        <Tag>{record.product?.unit || ""} </Tag>
-                      </>
+                      <div
+                        style={{
+                          display: "grid",
+                          alignItems: "center",
+                          gap: 8,
+                          gridTemplateColumns: "50px 1fr",
+                        }}
+                      >
+                        <ProductImage
+                          productId={record.product.id}
+                          name={record.product?.name}
+                          size="small"
+                        />
+                        <Space orientation="vertical" size={0}>
+                          <Text
+                            strong
+                            style={{
+                              whiteSpace: "normal",
+                              wordBreak: "normal",
+                            }}
+                          >
+                            {record.product?.name}
+                          </Text>
+                          <Tag>{record.product?.unit || ""} </Tag>
+                        </Space>
+                      </div>
                     ),
                   },
                   {
@@ -562,6 +585,11 @@ const Index = () => {
               render: (_: any, row: EditableItem) =>
                 row.id ? (
                   <Space>
+                    <ProductImage
+                      productId={row.product!.id}
+                      name={row.product?.name}
+                      size="small"
+                    />
                     <Text>{row.product?.name || "—"}</Text>
                     <Text type="secondary">{row.product?.unit || ""}</Text>
                   </Space>

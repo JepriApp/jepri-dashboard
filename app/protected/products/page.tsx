@@ -29,6 +29,7 @@ import { listProducts } from "./services/listProducts";
 import { listSuppliers } from "../services/listSuppliers";
 import { formatPriceAccounting } from "@/lib/formatPrice";
 import CreateProduct from "./components/createProduct";
+import ProductImage from "../components/ProductImage";
 export type SupplierMinimal = {
   id: string;
   name: string;
@@ -48,7 +49,7 @@ export type ProductWithOffers = {
   description?: string | null;
   unit: string;
   reference_price?: number | null;
-  main_photo?: string | null;
+  main_photo: string | null;
   offers?: OfferWithSupplier[];
   siigo_id: string;
 };
@@ -85,7 +86,7 @@ const ProductsIndexPage = () => {
       return data;
     },
     staleTime: 30_000,
-  });
+  }); //BUG: Aqui se usa offer. Replantear el uso
 
   const { data: suppliers = [], isLoading: suppliersLoading } = useQuery<
     SupplierMinimal[]
@@ -104,7 +105,7 @@ const ProductsIndexPage = () => {
       q
         ? p.name.toLowerCase().includes(q) ||
           (p.description || "").toLowerCase().includes(q)
-        : true
+        : true,
     );
   }, [products, query]);
 
@@ -130,7 +131,7 @@ const ProductsIndexPage = () => {
       available: Boolean(o.available),
     }));
     setOriginalOfferIds(
-      initialItems.map((i) => i.id).filter(Boolean) as string[]
+      initialItems.map((i) => i.id).filter(Boolean) as string[],
     );
     const map: Record<string, string> = {};
     initialItems.forEach((i) => {
@@ -148,18 +149,15 @@ const ProductsIndexPage = () => {
       dataIndex: "name",
       key: "name",
       render: (name: string, record: ProductWithOffers) => (
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {record.main_photo ? (
-            <Image
-              src={record.main_photo || undefined}
-              alt={record.name}
-              width={64}
-              height={64}
-              style={{ objectFit: "cover" }}
-            />
-          ) : (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={false} />
-          )}
+        <div
+          style={{
+            display: "grid",
+            alignItems: "center",
+            gap: 8,
+            gridTemplateColumns: "1fr 1fr",
+          }}
+        >
+          <ProductImage source={record.main_photo} name={record.name} size="large" />
           <Space orientation="vertical" size={0}>
             <Text strong style={{ whiteSpace: "normal", wordBreak: "normal" }}>
               {record.name}
@@ -196,12 +194,12 @@ const ProductsIndexPage = () => {
       key: "offers",
       render: (_: unknown, record: ProductWithOffers) => {
         const offers = (record.offers || []).filter((o) =>
-          availableOnly ? o.available : true
+          availableOnly ? o.available : true,
         );
         if (offers.length === 0)
           return <Text type="secondary">Sin Catálogos</Text>;
         const offersSorted = [...offers].sort(
-          (a, b) => Number(a.price) - Number(b.price)
+          (a, b) => Number(a.price) - Number(b.price),
         );
         return (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -233,8 +231,6 @@ const ProductsIndexPage = () => {
       ),
     },
   ];
-
-
 
   const updateProductMutation = useMutation({
     mutationFn: async (values: any) => {
@@ -295,11 +291,11 @@ const ProductsIndexPage = () => {
         .map((o: any) => o.supplier_id)
         .filter(Boolean);
       const duplicates = supplierIds.filter(
-        (id: string, i: number) => supplierIds.indexOf(id) !== i
+        (id: string, i: number) => supplierIds.indexOf(id) !== i,
       );
       if (duplicates.length) {
         throw new Error(
-          "No se permiten proveedores duplicados en las catálogos"
+          "No se permiten proveedores duplicados en las catálogos",
         );
       }
 
@@ -309,7 +305,7 @@ const ProductsIndexPage = () => {
           const original = originalOffersMap[u.id as string];
           if (original && u.supplier_id !== original) {
             throw new Error(
-              "El proveedor de una catálogo existente es inmutable. Si necesitas cambiar el proveedor, crea una nueva catálogo y elimina la anterior (si no tiene asociaciones)."
+              "El proveedor de una catálogo existente es inmutable. Si necesitas cambiar el proveedor, crea una nueva catálogo y elimina la anterior (si no tiene asociaciones).",
             );
           }
         }
@@ -328,13 +324,13 @@ const ProductsIndexPage = () => {
           .in("offer_id", toDelete);
         if (usedErr) throw usedErr;
         const blockedIds = Array.from(
-          new Set((used || []).map((row: any) => row.offer_id))
+          new Set((used || []).map((row: any) => row.offer_id)),
         );
         if (blockedIds.length) {
           // No eliminar catálogos asociadas
           toDelete = toDelete.filter((id) => !blockedIds.includes(id));
           message.warning(
-            `Se omitió la eliminación de ${blockedIds.length} catálogo(s) porque están asociadas a órdenes de compra.`
+            `Se omitió la eliminación de ${blockedIds.length} catálogo(s) porque están asociadas a órdenes de compra.`,
           );
         }
       }
@@ -436,16 +432,13 @@ const ProductsIndexPage = () => {
             />
           </Form.Item>
           <Form.Item name="siigo_id" label="Id en Siigo">
-            <Input  />
+            <Input />
           </Form.Item>
           <Form.Item name="reference_price" label="Precio de referencia">
             <InputNumber min={0} style={{ width: "100%" }} placeholder="0.00" />
           </Form.Item>
           <Form.Item name="description" label="Descripción">
             <Input.TextArea rows={3} placeholder="Descripción del producto" />
-          </Form.Item>
-          <Form.Item name="main_photo" label="Foto principal (URL)">
-            <Input placeholder="https://..." />
           </Form.Item>
         </Form>
       </Modal>
@@ -502,7 +495,7 @@ const ProductsIndexPage = () => {
                     title={
                       offersForm.getFieldValue(["offers", name, "id"])
                         ? "Catálogo existente"
-                        : "Nueva catálogo"
+                        : "Nuevo catálogo"
                     }
                   >
                     {/* Hidden id to keep track of existing offers */}
@@ -573,15 +566,15 @@ const ProductsIndexPage = () => {
                               const usedSupplierIds = new Set(
                                 allOffers
                                   .map((o: any, idx: number) =>
-                                    idx !== name ? o?.supplier_id : undefined
+                                    idx !== name ? o?.supplier_id : undefined,
                                   )
-                                  .filter(Boolean)
+                                  .filter(Boolean),
                               );
                               return suppliers
                                 .filter(
                                   (s) =>
                                     !usedSupplierIds.has(s.id) ||
-                                    s.id === currentSupplierId
+                                    s.id === currentSupplierId,
                                 )
                                 .map((s) => ({ value: s.id, label: s.name }));
                             })()}

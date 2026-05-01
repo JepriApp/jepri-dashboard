@@ -22,7 +22,8 @@ const color: Record<statuses, string> = {
   cancelled: "red",
 };
 
-const DistributionPlanStatusTag = ({ status }: { status: statuses }) => {
+const DistributionPlanStatusTag = ({ status }: { status?: statuses }) => {
+  if (!status) return null;
   if (!label[status]) {
     return <Tag>{status}</Tag>;
   }

@@ -1,10 +1,10 @@
+import ProductImage from "@/app/protected/components/ProductImage";
 import PurchaseOrderStatusTag from "@/app/protected/components/PurchaseOrderStatusTag";
 import { formatPriceAccounting } from "@/lib/formatPrice";
 import { createClient } from "@/lib/supabase/client";
 import { useQuery } from "@tanstack/react-query";
-import { Table, Typography, Tag, Empty } from "antd";
+import { Table, Typography } from "antd";
 import { ColumnsType } from "antd/es/table";
-import Image from "next/image";
 interface PurchaseOrder {
   id: string;
   status:
@@ -144,7 +144,7 @@ const PurchaseOrdersTable = ({ id }: { id: string }) => {
           | "accepted"
           | "received"
           | "cancelled"
-          | "rejected"
+          | "rejected",
       ) => <PurchaseOrderStatusTag status={status} />,
     },
     {
@@ -157,7 +157,7 @@ const PurchaseOrdersTable = ({ id }: { id: string }) => {
             sum +
             Number(it.quantity || 0) *
               Number(it.actual_price ?? it.offer?.price ?? 0),
-          0
+          0,
         );
         return formatPriceAccounting(total);
       },
@@ -186,24 +186,16 @@ const PurchaseOrdersTable = ({ id }: { id: string }) => {
                 title: "Producto",
                 key: "product_name",
                 render: (_, it) => {
+                  const product = it.offer.product;
                   return (
                     <div
                       style={{ display: "flex", alignItems: "center", gap: 8 }}
                     >
-                      {it?.offer?.product?.main_photo ? (
-                        <Image
-                          src={it?.offer?.product?.main_photo || ""}
-                          alt={it?.offer?.product?.name || "Producto"}
-                          width={50}
-                          height={50}
-                        />
-                      ) : (
-                        <Empty
-                          image={Empty.PRESENTED_IMAGE_SIMPLE}
-                          description={false}
-                          style={{ margin: 0 }}
-                        />
-                      )}
+                      <ProductImage
+                        source={product.main_photo}
+                        name={product.name}
+                        size="small"
+                      />
                       <div>
                         <Typography.Text>
                           {it?.offer?.product?.name}
@@ -234,7 +226,7 @@ const PurchaseOrdersTable = ({ id }: { id: string }) => {
                 key: "price",
                 render: (_, it) =>
                   formatPriceAccounting(
-                    Number(it.actual_price ?? it.offer?.price ?? 0)
+                    Number(it.actual_price ?? it.offer?.price ?? 0),
                   ),
               },
               {
@@ -243,7 +235,7 @@ const PurchaseOrdersTable = ({ id }: { id: string }) => {
                 render: (_, it) =>
                   formatPriceAccounting(
                     Number(it.quantity || 0) *
-                      Number(it.actual_price ?? it.offer?.price ?? 0)
+                      Number(it.actual_price ?? it.offer?.price ?? 0),
                   ),
               },
             ]}

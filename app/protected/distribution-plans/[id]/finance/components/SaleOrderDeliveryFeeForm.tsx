@@ -120,7 +120,7 @@ const SaleOrderDeliveryFeeForm = ({
       form={form}
       onFinish={handleSubmit}
     >
-      <Form.Item name="delivery_fee">
+      <Form.Item name="delivery_fee" noStyle>
         <InputNumber
           disabled={updateMutation.isPending || disabled}
           min={0}

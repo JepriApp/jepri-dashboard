@@ -13,6 +13,7 @@ import {
 } from "antd";
 import { useSearchParams } from "next/navigation";
 import AsignSupplierDrawer from "./AsignSupplierDrawer";
+import ProductImage from "@/app/protected/components/ProductImage";
 
 interface SaleItem {
   id: string;
@@ -23,6 +24,7 @@ interface SaleItem {
     id: string;
     name: string;
     unit: "lb" | "kg" | "unidad" | "atado";
+    main_photo: string | null;
   };
   fulfillments: {
     id: string;
@@ -75,7 +77,8 @@ const SaleOrderTable = ({ id }: { id: string }) => {
             product: product_id(
                 id,
                 name,
-                unit
+                unit,
+                main_photo
                 ),
             fulfillments: fulfillment(
                 id,
@@ -110,7 +113,7 @@ const SaleOrderTable = ({ id }: { id: string }) => {
           sale_order_code: order.order_code,
           sale_order_id: order.id,
           customer: order.customer,
-        }))
+        })),
       );
       return mappedData as unknown as SaleItem[];
     },
@@ -147,31 +150,38 @@ const SaleOrderTable = ({ id }: { id: string }) => {
         const requiredQty = record.required_quantity;
         const assignedQty = record.fulfillments?.reduce(
           (sum: number, f) => sum + Number(f?.purchase_items?.quantity || 0),
-          0
+          0,
         );
         const percent =
           requiredQty > 0 ? Math.round((assignedQty / requiredQty) * 100) : 0;
         const overAssigned = percent > 100;
         const displayPercent = Math.min(percent, 100);
         return (
-          <div>
-            <Typography.Text> {record.product?.name} </Typography.Text>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                flexWrap: "wrap",
-                justifyContent: "flex-start",
-              }}
-            >
-              <Progress
-                percent={displayPercent}
-                strokeColor={overAssigned ? token.colorWarning : undefined}
-                style={{ width: 120, marginRight: 4 }}
-              />
-              <Typography.Text type="secondary">
-                {`${assignedQty}/${requiredQty} ${record.product?.unit}`}
-              </Typography.Text>
+          <div className="flex flex-row flex-wrap gap-1">
+            <ProductImage
+              source={record.product.main_photo}
+              name={record.product?.name}
+              size="small"
+            />
+            <div>
+              <Typography.Text> {record.product?.name} </Typography.Text>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  justifyContent: "flex-start",
+                }}
+              >
+                <Progress
+                  percent={displayPercent}
+                  strokeColor={overAssigned ? token.colorWarning : undefined}
+                  style={{ width: 120, marginRight: 4 }}
+                />
+                <Typography.Text type="secondary">
+                  {`${assignedQty}/${requiredQty} ${record.product?.unit}`}
+                </Typography.Text>
+              </div>
             </div>
           </div>
         );
@@ -195,7 +205,7 @@ const SaleOrderTable = ({ id }: { id: string }) => {
                 const qty = Number(fullfiment?.purchase_items?.quantity || 0);
                 const unit = record?.product?.unit ?? "";
                 const offerPrice = Number(
-                  fullfiment?.purchase_items?.offer?.price || 0
+                  fullfiment?.purchase_items?.offer?.price || 0,
                 );
                 const label = [
                   supplier,

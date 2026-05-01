@@ -99,9 +99,6 @@ const CreateProduct = ({ onSubmit }: { onSubmit: () => void }) => {
           <Form.Item name="description" label="Descripción">
             <Input.TextArea rows={3} placeholder="Descripción del producto" />
           </Form.Item>
-          <Form.Item name="main_photo" label="Foto principal (URL)">
-            <Input placeholder="https://..." />
-          </Form.Item>
         </Form>
       </Modal>
     </>

@@ -101,7 +101,7 @@ const DownloadSupplierOrdersPDF = ({ planId }: { planId: string }) => {
         doc.text("Proveedor:", 20, yPosition);
         yPosition += 7;
 
-        doc.setFontSize(11);
+        doc.setFontSize(12);
         doc.text(`Nombre: ${supplier.name}`, 20, yPosition);
         yPosition += 6;
         doc.text(
@@ -147,7 +147,7 @@ const DownloadSupplierOrdersPDF = ({ planId }: { planId: string }) => {
 
         // Si no hay items
         if (Object.keys(itemsBySaleOrder).length === 0) {
-          doc.setFontSize(11);
+          doc.setFontSize(12);
           doc.text("No hay productos asignados en esta orden.", 20, yPosition);
         } else {
           // Generar tabla por cada pedido (orden de venta)
@@ -164,6 +164,9 @@ const DownloadSupplierOrdersPDF = ({ planId }: { planId: string }) => {
               `${item.cantidad} ${item.unidad}`,
             ]);
 
+            const imgWidth = 24 * 1.84; // ≈ 44.16
+            const imgHeight = 24;
+
             autoTable(doc, {
               startY: yPosition,
               head: [["Foto", "Producto", "Cantidad"]],
@@ -173,13 +176,18 @@ const DownloadSupplierOrdersPDF = ({ planId }: { planId: string }) => {
                 fillColor: [52, 152, 219],
                 textColor: 255,
                 fontStyle: "bold",
+                minCellHeight: 8,
               },
               styles: {
-                fontSize: 9,
-                minCellHeight: 15,
+                fontSize: 12,
+                minCellHeight: imgHeight + 4,
               },
               columnStyles: {
-                0: { cellWidth: 20, halign: "center", valign: "middle" },
+                0: {
+                  cellWidth: imgWidth + 4,
+                  halign: "center",
+                  valign: "middle",
+                },
                 1: { cellWidth: "auto" },
                 2: { cellWidth: 30 },
               },
@@ -187,34 +195,38 @@ const DownloadSupplierOrdersPDF = ({ planId }: { planId: string }) => {
               didDrawCell: (data) => {
                 if (data.section === "body" && data.column.index === 0) {
                   const item = items[data.row.index];
-                  const imgSize = 12;
-                  const x = data.cell.x + (data.cell.width - imgSize) / 2;
-                  const y = data.cell.y + (data.cell.height - imgSize) / 2;
-                  
-                  if (item.foto) {
+                  const x = data.cell.x + (data.cell.width - imgWidth) / 2;
+                  const y = data.cell.y + (data.cell.height - imgHeight) / 2;
+
+                  if (!!item?.foto) {
                     try {
-                      doc.addImage(item.foto, "JPEG", x, y, imgSize, imgSize);
+                      doc.addImage(
+                        item.foto,
+                        "JPEG",
+                        x,
+                        y,
+                        imgWidth,
+                        imgHeight,
+                      );
                     } catch (error) {
                       console.error("Error adding image:", error);
-                      // Dibujar fallback si falla la carga de imagen
                       doc.setFillColor(220, 220, 220);
-                      doc.rect(x, y, imgSize, imgSize, "F");
+                      doc.rect(x, y, imgWidth, imgHeight, "F");
                       doc.setFontSize(6);
                       doc.setTextColor(100, 100, 100);
-                      doc.text("?", x + imgSize / 2, y + imgSize / 2 + 1.5, {
+                      doc.text("?", x + imgWidth / 2, y + imgHeight / 2 + 1.5, {
                         align: "center",
                       });
                       doc.setTextColor(0, 0, 0);
                     }
                   } else {
-                    // Fallback cuando no hay foto
                     doc.setFillColor(240, 240, 240);
-                    doc.rect(x, y, imgSize, imgSize, "F");
+                    doc.rect(x, y, imgWidth, imgHeight, "F");
                     doc.setDrawColor(200, 200, 200);
-                    doc.rect(x, y, imgSize, imgSize, "S");
+                    doc.rect(x, y, imgWidth, imgHeight, "S");
                     doc.setFontSize(8);
                     doc.setTextColor(150, 150, 150);
-                    doc.text("📷", x + imgSize / 2, y + imgSize / 2 + 2, {
+                    doc.text("📷", x + imgWidth / 2, y + imgHeight / 2 + 2, {
                       align: "center",
                     });
                     doc.setTextColor(0, 0, 0);

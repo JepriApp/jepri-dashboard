@@ -12,9 +12,9 @@ import {
   Tag,
   Typography,
 } from "antd";
-import Image from "next/image";
 import { useState } from "react";
 import CreateNewOfferButton from "./CreateNewOfferButton";
+import ProductImage from "@/app/protected/components/ProductImage";
 
 interface SaleItem {
   id: string;
@@ -59,10 +59,7 @@ const AsignSupplierDrawer = ({
   const [open, setOpen] = useState(false);
   const supabase = createClient();
   const distributionPlanQuery = useQuery({
-    queryKey: [
-      "distribution-plan",
-      planId,
-    ],
+    queryKey: ["distribution-plan", planId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("distribution_plan")
@@ -443,11 +440,10 @@ const AsignSupplierDrawer = ({
             gap: "0.5rem",
           }}
         >
-          <Image
-            src={data.saleItem.product.main_photo || "/images/logo.png"}
-            alt={data.saleItem.product.name || "Producto sin nombre"}
-            width={100}
-            height={100}
+          <ProductImage
+            source={data.saleItem.product?.main_photo}
+            name={data.saleItem.product.name}
+            size="large"
           />
           <div>
             <Typography.Title level={4}>

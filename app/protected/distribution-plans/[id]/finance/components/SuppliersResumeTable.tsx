@@ -139,7 +139,7 @@ const SuppliersResumeTable = ({ id }: { id: string }) => {
   if (isPending) return "Loading...";
   if (error) return "An error has occurred: " + error.message;
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Space style={{ display: "flex", flexDirection: "row-reverse" }}>
         <DownloadSuppliersFinanceExcel data={data} planId={id} />
       </Space>

@@ -1,9 +1,10 @@
 "use client";
+import ProductImage from "@/app/protected/components/ProductImage";
 import SaleOrderStatusTag from "@/app/protected/components/SaleOrderStatusTag";
 import { formatPriceAccounting } from "@/lib/formatPrice";
 import { createClient } from "@/lib/supabase/client";
 import { useQuery } from "@tanstack/react-query";
-import { Table, Typography, Tag, TableColumnsType } from "antd";
+import { Table, Typography, TableColumnsType } from "antd";
 interface SaleOrder {
   id: string;
   order_code: string | null;
@@ -34,6 +35,7 @@ interface SaleOrder {
       reference_price: number;
       name: string;
       unit: string;
+      main_photo: string;
     };
   }[];
 }
@@ -60,7 +62,8 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
               id,
               reference_price,
               name,
-              unit
+              unit,
+              main_photo
             )
           ),
           service_fee,
@@ -77,7 +80,7 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
             acc +
             Number(item.required_quantity || 0) *
               Number(item.products?.reference_price || 0),
-          0
+          0,
         );
         const total =
           subtotal +
@@ -168,6 +171,31 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
                 title: "Producto",
                 dataIndex: ["products", "name"],
                 key: "product_name",
+                render: (_, it) => {
+                  const product = it.products;
+                  return (
+                    <div
+                      style={{
+                        display: "grid",
+                        alignItems: "center",
+                        gap: 8,
+                        gridTemplateColumns: "80px 1fr",
+                      }}
+                    >
+                      <ProductImage
+                        source={product.main_photo}
+                        name={product.name}
+                        size="small"
+                      />
+                      <Typography.Text
+                        strong
+                        style={{ whiteSpace: "normal", wordBreak: "normal" }}
+                      >
+                        {product.name}
+                      </Typography.Text>
+                    </div>
+                  );
+                },
               },
               {
                 title: "Cant./Unidad",
