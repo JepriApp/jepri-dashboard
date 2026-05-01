@@ -123,7 +123,7 @@ const Index = () => {
             reference_price
           )
         )
-      `,
+      `
           )
           .order("created_at", { ascending: false });
 
@@ -497,7 +497,7 @@ const Index = () => {
                         }}
                       >
                         <ProductImage
-                          productId={record.product.id}
+                          source={record.product.main_photo}
                           name={record.product?.name}
                           size="small"
                         />
@@ -586,7 +586,7 @@ const Index = () => {
                 row.id ? (
                   <Space>
                     <ProductImage
-                      productId={row.product!.id}
+                      source={row.product?.main_photo || null}
                       name={row.product?.name}
                       size="small"
                     />
