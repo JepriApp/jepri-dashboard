@@ -1,8 +1,7 @@
 "use client";
-import { Button, message } from "antd";
+import { App, Button } from "antd";
 import { DownloadOutlined } from "@ant-design/icons";
 import { useState } from "react";
-import { formatPriceAccounting } from "@/lib/formatPrice";
 import dayjs from "dayjs";
 import * as XLSX from "xlsx";
 
@@ -66,7 +65,7 @@ const DownloadFinanceExcel = ({
   planId,
 }: Props) => {
   const [loading, setLoading] = useState(false);
-
+  const { message } = App.useApp();
   const calculateServiceFee = (order: SaleOrder) => {
     const serviceFee = order.sale_items.reduce((acc, saleItem) => {
       const itemServiceFee = saleItem.fulfillment.reduce(
@@ -107,7 +106,32 @@ const DownloadFinanceExcel = ({
   const generateExcel = async () => {
     try {
       setLoading(true);
+      const usedSheetNames = new Set();
+      function getUniqueSheetName(baseName: string) {
+        // limpiar caracteres inválidos
+        let cleanName = baseName.replace(/[:\\/?*\[\]]/g, "");
 
+        // recortar a 31 chars (límite Excel)
+        cleanName = cleanName.substring(0, 31);
+
+        let finalName = cleanName;
+        let counter = 1;
+
+        // asegurar unicidad
+        while (usedSheetNames.has(finalName)) {
+          const suffix = ` (${counter})`;
+
+          // asegurar que con sufijo no supere 31 chars
+          const maxBaseLength = 31 - suffix.length;
+          const trimmedBase = cleanName.substring(0, maxBaseLength);
+
+          finalName = `${trimmedBase}${suffix}`;
+          counter++;
+        }
+
+        usedSheetNames.add(finalName);
+        return finalName;
+      }
       // Agrupar órdenes por cliente
       const ordersByCustomer = data.reduce(
         (acc, order) => {
@@ -135,7 +159,7 @@ const DownloadFinanceExcel = ({
         const { customer, orders } = customerData;
 
         // Preparar datos para la hoja
-        const sheetData: any[] = [];
+        const sheetData = [];
 
         // Información del cliente
         sheetData.push(["INFORMACIÓN DEL CLIENTE"]);
@@ -164,18 +188,21 @@ const DownloadFinanceExcel = ({
           totalServicio += calculateServiceFee(order);
           totalDomicilio += order.delivery_fee || 0;
           totalGeneral += getTotal(order);
-          
+
           // Calcular suma de subtotales (productos con comisión incluida)
           const orderSubtotals = order.sale_items.reduce((acc, saleItem) => {
-            const itemTotal = saleItem.fulfillment.reduce((fAcc, fulfillment) => {
-              const quantity = Number(
-                fulfillment.purchase_item.received_quantity || 0,
-              );
-              const unitPrice =
-                Number(fulfillment.purchase_item.actual_price || 0) *
-                (1 + serviceFeePercentage / 100);
-              return fAcc + quantity * unitPrice;
-            }, 0);
+            const itemTotal = saleItem.fulfillment.reduce(
+              (fAcc, fulfillment) => {
+                const quantity = Number(
+                  fulfillment.purchase_item.received_quantity || 0,
+                );
+                const unitPrice =
+                  Number(fulfillment.purchase_item.actual_price || 0) *
+                  (1 + serviceFeePercentage / 100);
+                return fAcc + quantity * unitPrice;
+              },
+              0,
+            );
             return acc + itemTotal;
           }, 0);
           sumaSubtotales += orderSubtotals;
@@ -252,10 +279,7 @@ const DownloadFinanceExcel = ({
         ];
         worksheet["!cols"] = columnWidths;
 
-        // Nombre de la hoja (limitado a 31 caracteres)
-        let sheetName = customer.name.substring(0, 31);
-        // Limpiar caracteres no permitidos en nombres de hojas
-        sheetName = sheetName.replace(/[:\\/?*\[\]]/g, "");
+        const sheetName = getUniqueSheetName(customer.name);
 
         // Agregar hoja al libro
         XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
