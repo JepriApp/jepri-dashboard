@@ -24,6 +24,7 @@ export type ProductMinimal = {
   name: string;
   unit: string;
   reference_price?: number | null;
+  main_photo: string | null;
 };
 
 export type OfferWithProduct = {
@@ -32,6 +33,7 @@ export type OfferWithProduct = {
   available: boolean;
   product_id?:string;
   product: ProductMinimal;
+  created_at: string;
 };
 
 export type SupplierWithOffers = {
@@ -69,9 +71,7 @@ const Index = () => {
       key: "actions",
       render: (_: unknown, record: SupplierRow) => (
         <Space>
-          <OfferBySupplierDrawer record={record} onSuccess={async () => {
-            await refetch();
-          }}/>
+          <OfferBySupplierDrawer record={record} />
         </Space>
       ),
     },

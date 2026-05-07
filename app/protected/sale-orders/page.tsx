@@ -139,7 +139,7 @@ const Index = () => {
               sale_order_id: order.id,
               product_id: item.product_id,
               quantity: item.required_quantity,
-              unit_price: item.product?.reference_price ?? 0,
+              unit_price: item.product?.reference_price ?? 0,//BUG: Aqui se usa offer. Debe mostrar es el precio al que se compró, no el de referencia
               product: item.product,
             }));
             const itemsTotal = items.reduce(
