@@ -2,7 +2,6 @@
 import { Button, message } from "antd";
 import { DownloadOutlined } from "@ant-design/icons";
 import { useState } from "react";
-import { formatPriceAccounting } from "@/lib/formatPrice";
 import dayjs from "dayjs";
 import * as XLSX from "xlsx";
 
@@ -135,7 +134,7 @@ const DownloadFinanceExcel = ({
         const { customer, orders } = customerData;
 
         // Preparar datos para la hoja
-        const sheetData: any[] = [];
+        const sheetData = [];
 
         // Información del cliente
         sheetData.push(["INFORMACIÓN DEL CLIENTE"]);

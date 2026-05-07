@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import ProductImage from "@/app/protected/components/ProductImage";
 import dayjs from "dayjs";
 import CreateNewOfferForSupplierButton from "./CreateNewOfferForSupplierButton";
+import UpdateOfferForSupplierButton from "./UpdateOfferForSupplierButton";
 
 const OfferBySupplierDrawer = ({ record }: { record: SupplierRow }) => {
   const supabase = createClient();
@@ -106,6 +107,19 @@ const OfferBySupplierDrawer = ({ record }: { record: SupplierRow }) => {
                           <Tag color="geekblue">{product?.unit}</Tag>
                         </Space>
                       </>
+                    }
+                    extra={
+                      <UpdateOfferForSupplierButton
+                        supplierId={record.id}
+                        supplierName={record.name}
+                        productId={product.id}
+                        productName={product.name}
+                        offerId={offer.id}
+                        offerPrice={offer.price}
+                        onSuccess={async () => {
+                          await openOffersDrawer(record);
+                        }}
+                      />
                     }
                   >
                     <div className="flex flex-row flex-wrap gap-3">

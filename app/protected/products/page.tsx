@@ -157,7 +157,11 @@ const ProductsIndexPage = () => {
             gridTemplateColumns: "1fr 1fr",
           }}
         >
-          <ProductImage source={record.main_photo} name={record.name} size="large" />
+          <ProductImage
+            source={record.main_photo}
+            name={record.name}
+            size="large"
+          />
           <Space orientation="vertical" size={0}>
             <Text strong style={{ whiteSpace: "normal", wordBreak: "normal" }}>
               {record.name}
@@ -190,12 +194,10 @@ const ProductsIndexPage = () => {
       ),
     },
     {
-      title: "Catálogos de proveedores",
+      title: "Proveedores",
       key: "offers",
       render: (_: unknown, record: ProductWithOffers) => {
-        const offers = (record.offers || []).filter((o) =>
-          availableOnly ? o.available : true,
-        );
+        const offers = record.offers || [];
         if (offers.length === 0)
           return <Text type="secondary">Sin Catálogos</Text>;
         const offersSorted = [...offers].sort(
