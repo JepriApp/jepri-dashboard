@@ -83,7 +83,7 @@ const UpdateOfferForSupplierButton = ({
           <Form.Item name={"price"} label="Precio" required>
             <InputNumber prefix="$" min={1} />
           </Form.Item>
-          <Button htmlType="submit">Guardar</Button>
+          <Button htmlType="submit" loading={saveOfferMutation.isPending}>Guardar</Button>
         </Form>
       </Modal>
     </>
