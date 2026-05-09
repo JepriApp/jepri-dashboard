@@ -233,6 +233,7 @@ const Page = () => {
                           purchaseItemId={row.id}
                           disabled={!isEditable}
                           planId={planId}
+                          referencePrice={row.offer.price}
                         />
                       ),
                     },

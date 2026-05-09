@@ -11,18 +11,17 @@ const PurchaseItemActualPriceForm = ({
   purchaseItemId,
   planId,
   disabled,
+  referencePrice,
 }: {
   purchaseItemId: string;
   planId: string;
   disabled: boolean;
+  referencePrice: number;
 }) => {
   const supabase = createClient();
   const [form] = Form.useForm();
   const distributionPlanQuery = useQuery({
-    queryKey: [
-      "distribution-plan",
-      planId,
-    ],
+    queryKey: ["distribution-plan", planId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("distribution_plan")
@@ -118,7 +117,28 @@ const PurchaseItemActualPriceForm = ({
       form={form}
       onFinish={handleSubmit}
     >
-      <Form.Item name="actual_price" noStyle>
+      <Form.Item
+        name="actual_price"
+        noStyle
+        rules={[
+          {
+            required: true,
+          },
+          () => ({
+            validator(_, value) {
+              const diference = (referencePrice - value) / referencePrice;
+              if (Math.abs(diference) > 0.3) {
+                return Promise.reject(
+                  new Error(
+                    "Advertencia. Hay mucha diferencia del precio anterior.",
+                  ),
+                );
+              }
+              return Promise.resolve();
+            },
+          }),
+        ]}
+      >
         <InputNumber
           disabled={updateActualPriceMutation.isPending || disabled}
           min={0}
