@@ -20,6 +20,10 @@ const PurchaseItemActualPriceForm = ({
 }) => {
   const supabase = createClient();
   const [form] = Form.useForm();
+  const actual_price = Form.useWatch("actual_price", form);
+  const showWarning: boolean =
+    !!actual_price &&
+    Math.abs((referencePrice - actual_price) / referencePrice) > 0.3;
   const distributionPlanQuery = useQuery({
     queryKey: ["distribution-plan", planId],
     queryFn: async () => {
@@ -97,6 +101,7 @@ const PurchaseItemActualPriceForm = ({
       });
     }
   };
+
   const isComponentDisabled =
     distributionPlanQuery.data?.status !== "in_progress";
 
@@ -120,24 +125,7 @@ const PurchaseItemActualPriceForm = ({
       <Form.Item
         name="actual_price"
         noStyle
-        rules={[
-          {
-            required: true,
-          },
-          () => ({
-            validator(_, value) {
-              const diference = (referencePrice - value) / referencePrice;
-              if (Math.abs(diference) > 0.3) {
-                return Promise.reject(
-                  new Error(
-                    "Advertencia. Hay mucha diferencia del precio anterior.",
-                  ),
-                );
-              }
-              return Promise.resolve();
-            },
-          }),
-        ]}
+        validateStatus={showWarning ? "warning" : undefined}
       >
         <InputNumber
           disabled={updateActualPriceMutation.isPending || disabled}

@@ -6,7 +6,8 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "update-supabase-types": "npx supabase gen types typescript --project-id gswoglqqilkhwuedgktp > database.types.ts"
   },
   "dependencies": {
     "@ant-design/icons": "6.x",

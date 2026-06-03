@@ -1,4 +1,4 @@
-"use client"
+"use client";
 import { Button, Space, Divider } from "antd";
 import { ArrowDownOutlined } from "@ant-design/icons";
 import { useParams, useRouter } from "next/navigation";

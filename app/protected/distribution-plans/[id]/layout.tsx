@@ -18,7 +18,7 @@ export default function DistributionPlanEditorLayout({
   const planId = params.id as string | undefined;
   const supabase = createClient();
   const { data } = useQuery({
-    queryKey: ["distributionPlan", "forCardTitle", planId],
+    queryKey: ["distribution-plan", "forCardTitle", planId],
     enabled: !!planId,
     queryFn: async () => {
       const { data: plan, error: planErr } = await supabase
