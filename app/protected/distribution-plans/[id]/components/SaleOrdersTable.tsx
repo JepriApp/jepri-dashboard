@@ -1,9 +1,10 @@
 "use client";
 import ProductImage from "@/app/protected/components/ProductImage";
 import SaleOrderStatusTag from "@/app/protected/components/SaleOrderStatusTag";
+import EditSaleOrderModal from "@/app/protected/components/EditSaleOrderModal";
 import { formatPriceAccounting } from "@/lib/formatPrice";
 import { createClient } from "@/lib/supabase/client";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Table, Typography, TableColumnsType } from "antd";
 interface SaleOrder {
   id: string;
@@ -41,6 +42,7 @@ interface SaleOrder {
 }
 const SaleOrdersTable = ({ id }: { id: string }) => {
   const supabase = createClient();
+  const queryClient = useQueryClient();
   const { isPending, error, data } = useQuery<SaleOrder[]>({
     queryKey: ["distribution-plan", "components", "sale-order-table", id],
     queryFn: async () => {
@@ -68,7 +70,7 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
           ),
           service_fee,
           delivery_fee
-  `
+  `,
         )
         .eq("distribution_plan_id", id);
       if (error) {
@@ -151,6 +153,41 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
       title: "Items",
       key: "items_count",
       render: (_, record) => record.items?.length ?? 0,
+    },
+    {
+      title: "Acciones",
+      key: "actions",
+      render: (_: any, record) => (
+        <EditSaleOrderModal
+          order={{
+            id: record.id,
+            status: record.status as any,
+            order_code: record.order_code,
+            items: record.items?.map((e) => {
+              return {
+                id: e.id,
+                sale_order_id: record.id,
+                product_id: e.products.id,
+                quantity: e.required_quantity,
+                unit_price: e.products.reference_price,
+                product: e.products,
+              };
+            }),
+            service_fee: record.service_fee,
+            delivery_fee: record.delivery_fee,
+          }}
+          onSaved={async () => {
+            await queryClient.invalidateQueries({
+              queryKey: [
+                "distribution-plan",
+                "components",
+                "sale-order-table",
+                id,
+              ],
+            });
+          }}
+        />
+      ),
     },
   ];
   return (

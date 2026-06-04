@@ -17,10 +17,10 @@ import {
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { formatPriceAccounting } from "@/lib/formatPrice";
-import { Product, SaleItem } from "../page";
-import ProductImage from "../../components/ProductImage";
+import { Product, SaleItem } from "../sale-orders/page";
+import ProductImage from "./ProductImage";
 import { useWatch } from "antd/es/form/Form";
-import { PlusOutlined } from "@ant-design/icons";
+import { EditOutlined, PlusOutlined } from "@ant-design/icons";
 
 const { Text } = Typography;
 
@@ -195,7 +195,7 @@ const EditSaleOrderModal = ({ order, onSaved }: EditSaleOrderModalProps) => {
   }
   return (
     <>
-      <Button size="small" onClick={() => setIsOpen(true)}>
+      <Button icon={<EditOutlined/>} onClick={() => setIsOpen(true)}>
         Modificar pedido
       </Button>
       <Modal

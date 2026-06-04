@@ -8,7 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatPriceAccounting } from "@/lib/formatPrice";
 import SaleOrderStatusTag from "../components/SaleOrderStatusTag";
 import ProductImage from "../components/ProductImage";
-import EditSaleOrderModal from "./components/EditSaleOrderModal";
+import EditSaleOrderModal from "../components/EditSaleOrderModal";
 
 const { Text } = Typography;
 
@@ -49,7 +49,6 @@ export interface SaleItem {
 export interface Product {
   id: string;
   name: string;
-  description: string | null;
   unit: string;
   main_photo: string | null;
   reference_price: number | null;
@@ -92,7 +91,6 @@ const Index = () => {
           product:product!product_id (
             id,
             name,
-            description,
             unit,
             main_photo,
             reference_price
