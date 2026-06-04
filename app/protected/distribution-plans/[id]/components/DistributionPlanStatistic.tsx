@@ -21,7 +21,20 @@ const DistributionPlanStatistic = ({ id }: { id: string }) => {
       // Obtener órdenes de venta con delivery_fee
       const { data: saleOrders, error: saleOrdersError } = await supabase
         .from("sale_order")
-        .select("id, delivery_fee")
+        .select(
+          `id, 
+                 delivery_fee,
+                 sale_items: sale_item(
+                  id,
+                  required_quantity,
+                  delivered_quantity,
+                  product: product_id(
+                    id,
+                    reference_price
+                    )
+                 )
+                `,
+        )
         .eq("distribution_plan_id", id);
 
       if (saleOrdersError) throw saleOrdersError;
@@ -55,9 +68,18 @@ const DistributionPlanStatistic = ({ id }: { id: string }) => {
           .eq("distribution_plan_id", id);
 
       if (purchaseOrdersError) throw purchaseOrdersError;
-
-      // Calcular el costo total de compra (cantidad * precio de la oferta)
       const expected_total_cost =
+        saleOrders?.reduce((sum, so) => {
+          const soCost =
+            so.sale_items?.reduce((itemSum, si) => {
+              const itemCost =
+                (si.required_quantity ?? 0) * (si.product.reference_price ?? 0);
+              return itemSum + itemCost;
+            }, 0) || 0;
+          return sum + soCost;
+        }, 0) || 0;
+      // Calcular el costo total de compra (cantidad * precio de la oferta)
+      const real_total_cost =
         purchaseOrders?.reduce((sum, po) => {
           const poCost =
             po.purchase_items?.reduce((itemSum, pi) => {
@@ -69,11 +91,12 @@ const DistributionPlanStatistic = ({ id }: { id: string }) => {
 
       // Comisión total es el 24% de la venta (que es el costo de compra)
       const expected_total_earning =
-        expected_total_cost * (distributionPlan.service_fee_percentage / 100);
+        real_total_cost * (distributionPlan.service_fee_percentage / 100);
 
       return {
         sale_order_count,
         expected_total_cost,
+        real_total_cost,
         expected_total_earning,
         total_delivery_fee,
         service_fee_percentage: distributionPlan.service_fee_percentage,
@@ -84,6 +107,7 @@ const DistributionPlanStatistic = ({ id }: { id: string }) => {
   if (error) return "An error has occurred: " + error.message;
   const {
     sale_order_count = 0,
+    real_total_cost = 0,
     expected_total_cost = 0,
     expected_total_earning = 0,
     total_delivery_fee = 0,
@@ -98,6 +122,11 @@ const DistributionPlanStatistic = ({ id }: { id: string }) => {
         <Statistic
           title="Costo por compras esperado"
           value={expected_total_cost ?? 0}
+          formatter={(val) => formatPriceAccounting(Number(val))}
+        />
+        <Statistic
+          title="Costo por compras real"
+          value={real_total_cost ?? 0}
           formatter={(val) => formatPriceAccounting(Number(val))}
         />
       </Card>
