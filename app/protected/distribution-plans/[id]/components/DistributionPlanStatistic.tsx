@@ -89,7 +89,6 @@ const DistributionPlanStatistic = ({ id }: { id: string }) => {
           return sum + poCost;
         }, 0) || 0;
 
-      // Comisión total es el 24% de la venta (que es el costo de compra)
       const expected_total_earning =
         real_total_cost * (distributionPlan.service_fee_percentage / 100);
 

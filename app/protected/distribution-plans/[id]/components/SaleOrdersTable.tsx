@@ -127,29 +127,6 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
       render: (status) => <SaleOrderStatusTag status={status} />,
     },
     {
-      title: "Subtotal",
-      dataIndex: "subtotal",
-      key: "subtotal",
-      render: (t) => formatPriceAccounting(Number(t ?? 0)),
-    },
-    {
-      title: "Cargos",
-      key: "charges",
-      render: (_, record) => (
-        <Typography.Text style={{ whiteSpace: "nowrap" }}>
-          Servicio: {formatPriceAccounting(Number(record.service_fee || 0))}
-          <br />
-          Domicilio: {formatPriceAccounting(Number(record.delivery_fee || 0))}
-        </Typography.Text>
-      ),
-    },
-    {
-      title: "Total",
-      dataIndex: "total",
-      key: "total",
-      render: (t) => formatPriceAccounting(Number(t ?? 0)),
-    },
-    {
       title: "Items",
       key: "items_count",
       render: (_, record) => record.items?.length ?? 0,
@@ -242,22 +219,6 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
                   `${Number(it.required_quantity || 0)} ${
                     it?.products?.unit ?? ""
                   }`,
-              },
-              {
-                title: "Unitario",
-                dataIndex: ["products", "reference_price"],
-                key: "unit_price",
-                render: (v) => formatPriceAccounting(Number(v || 0)),
-              },
-              {
-                title: "Subtotal",
-                key: "subtotal",
-                render: (_, it) => {
-                  const subtotal =
-                    Number(it.required_quantity || 0) *
-                    Number(it.products?.reference_price || 0);
-                  return formatPriceAccounting(subtotal);
-                },
               },
             ]}
           />
