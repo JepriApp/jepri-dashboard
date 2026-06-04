@@ -20,7 +20,8 @@ import { formatPriceAccounting } from "@/lib/formatPrice";
 import { Product, SaleItem } from "../sale-orders/page";
 import ProductImage from "./ProductImage";
 import { useWatch } from "antd/es/form/Form";
-import { EditOutlined, PlusOutlined } from "@ant-design/icons";
+import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
+import AsyncButton from "./AsyncButton";
 
 const { Text } = Typography;
 
@@ -129,6 +130,16 @@ async function saveOrderItems(
     if (error) throw error;
   }
 }
+async function deleteSaleOrder(
+  supabase: ReturnType<typeof createClient>,
+  sale_order_id: string,
+) {
+  const { error } = await supabase
+    .from("sale_order")
+    .delete()
+    .eq("id", sale_order_id);
+  if (error) throw error;
+}
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
@@ -173,7 +184,7 @@ const EditSaleOrderModal = ({ order, onSaved }: EditSaleOrderModalProps) => {
   }, [order?.id, isOpen]);
 
   // useMutation que orquesta los tres pasos (delete / update / insert)
-  const mutation = useMutation({
+  const updateOrderMutation = useMutation({
     mutationFn: (values: FormValues) =>
       saveOrderItems(supabase, order!, values),
     onSuccess: async () => {
@@ -187,15 +198,29 @@ const EditSaleOrderModal = ({ order, onSaved }: EditSaleOrderModalProps) => {
     },
   });
 
+  const deleteOrderMutation = useMutation({
+    mutationFn: () => deleteSaleOrder(supabase, order?.id || ""),
+    onSuccess: async () => {
+      message.success("Pedido eliminado correctamente");
+      onSaved?.();
+      setIsOpen(false);
+    },
+    onError: (err) => {
+      console.error("Error eliminado pedido", err);
+      message.error("Error al eliminado el pedido");
+    },
+  });
+
   const handleOk = () => form.submit();
 
-  const handleFinish = (values: FormValues) => mutation.mutate(values);
+  const handleFinish = (values: FormValues) =>
+    updateOrderMutation.mutate(values);
   if (order?.status === "cancelled" || order?.status === "delivered") {
     return null;
   }
   return (
     <>
-      <Button icon={<EditOutlined/>} onClick={() => setIsOpen(true)}>
+      <Button icon={<EditOutlined />} onClick={() => setIsOpen(true)}>
         Modificar pedido
       </Button>
       <Modal
@@ -208,7 +233,7 @@ const EditSaleOrderModal = ({ order, onSaved }: EditSaleOrderModalProps) => {
         onOk={handleOk}
         okText="Guardar cambios"
         cancelText="Cancelar"
-        confirmLoading={mutation.isPending}
+        confirmLoading={updateOrderMutation.isPending}
         width={900}
         destroyOnHidden
       >
@@ -365,9 +390,7 @@ const EditSaleOrderModal = ({ order, onSaved }: EditSaleOrderModalProps) => {
                       cancelText="No"
                       onConfirm={() => remove(index)}
                     >
-                      <Button danger size="small">
-                        Quitar
-                      </Button>
+                      <Button size="small">Quitar</Button>
                     </Popconfirm>
                   ),
                 },
@@ -400,6 +423,22 @@ const EditSaleOrderModal = ({ order, onSaved }: EditSaleOrderModalProps) => {
                     <Button onClick={handleAddItem} icon={<PlusOutlined />}>
                       Agregar producto
                     </Button>
+                    <AsyncButton
+                      danger
+                      icon={<DeleteOutlined />}
+                      popConfirm={{
+                        title: "Cancelar órden",
+                        description: "¿Seguro que deseas eliminar este pedido?",
+                        okText: "Sí",
+                        cancelText: "No",
+                      }}
+                      onClick={() => {
+                        return deleteOrderMutation.mutateAsync();
+                      }}
+                      loading={deleteOrderMutation.isPending}
+                    >
+                      Cancelar órden
+                    </AsyncButton>
                   </div>
 
                   <Table
