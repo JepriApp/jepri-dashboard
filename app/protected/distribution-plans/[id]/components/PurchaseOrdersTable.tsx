@@ -54,7 +54,7 @@ interface PurchaseOrder {
 const PurchaseOrdersTable = ({ id }: { id: string }) => {
   const supabase = createClient();
   const { isPending, error, data } = useQuery<PurchaseOrder[]>({
-    queryKey: ["distribution-plan", "components", "purchase-order-table", id],
+    queryKey: ["distribution-plan", id, "components", "purchase-order-table"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("purchase_order")

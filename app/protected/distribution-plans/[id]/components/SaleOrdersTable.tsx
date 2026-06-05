@@ -44,7 +44,7 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
   const supabase = createClient();
   const queryClient = useQueryClient();
   const { isPending, error, data } = useQuery<SaleOrder[]>({
-    queryKey: ["distribution-plan", "components", "sale-order-table", id],
+    queryKey: ["distribution-plan", id, "components", "sale-order-table"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("sale_order")
@@ -180,9 +180,9 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
             await queryClient.invalidateQueries({
               queryKey: [
                 "distribution-plan",
+                id,
                 "components",
                 "sale-order-table",
-                id,
               ],
             });
           }}

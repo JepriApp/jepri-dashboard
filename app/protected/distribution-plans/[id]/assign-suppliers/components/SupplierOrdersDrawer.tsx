@@ -37,7 +37,7 @@ const SupplierOrdersDrawer = ({ planId }: { planId: string }) => {
   const supabase = createClient();
   const { token } = theme.useToken();
   const { data, isLoading } = useQuery({
-    queryKey: ["distribution-plan", "supplier-orders-drawer", planId],
+    queryKey: ["distribution-plan", planId, "supplier-orders-drawer"],
     enabled: open,
     queryFn: async () => {
       const { data: planData, error } = await supabase

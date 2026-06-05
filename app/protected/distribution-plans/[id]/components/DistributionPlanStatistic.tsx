@@ -7,7 +7,7 @@ import { Space, Card, Statistic } from "antd";
 const DistributionPlanStatistic = ({ id }: { id: string }) => {
   const supabase = createClient();
   const { isPending, error, data } = useQuery({
-    queryKey: ["distribution-plan", "components", "statistic", id],
+    queryKey: ["distribution-plan", id, "components", "statistic"],
     queryFn: async () => {
       // Obtener comision del plan
       const { data: distributionPlan, error: distributionPlanError } =
@@ -58,6 +58,8 @@ const DistributionPlanStatistic = ({ id }: { id: string }) => {
           purchase_items: purchase_item(
             id,
             quantity,
+            received_quantity,
+            actual_price,
             offer: offer_id(
               id,
               price
@@ -68,7 +70,8 @@ const DistributionPlanStatistic = ({ id }: { id: string }) => {
           .eq("distribution_plan_id", id);
 
       if (purchaseOrdersError) throw purchaseOrdersError;
-      const expected_total_cost =
+      const purchase_order_count = purchaseOrders?.length || 0;
+      const estimated_total_cost =
         saleOrders?.reduce((sum, so) => {
           const soCost =
             so.sale_items?.reduce((itemSum, si) => {
@@ -88,18 +91,20 @@ const DistributionPlanStatistic = ({ id }: { id: string }) => {
             }, 0) || 0;
           return sum + poCost;
         }, 0) || 0;
-
       // Comisión total es el 24% de la venta (que es el costo de compra)
-      const expected_total_earning =
+      const estimated_total_earning =
+        estimated_total_cost * (distributionPlan.service_fee_percentage / 100);
+      const real_total_earning =
         real_total_cost * (distributionPlan.service_fee_percentage / 100);
-
       return {
         sale_order_count,
-        expected_total_cost,
+        purchase_order_count,
+        estimated_total_cost,
         real_total_cost,
-        expected_total_earning,
+        estimated_total_earning,
         total_delivery_fee,
         service_fee_percentage: distributionPlan.service_fee_percentage,
+        real_total_earning,
       };
     },
   });
@@ -107,21 +112,24 @@ const DistributionPlanStatistic = ({ id }: { id: string }) => {
   if (error) return "An error has occurred: " + error.message;
   const {
     sale_order_count = 0,
+    purchase_order_count = 0,
     real_total_cost = 0,
-    expected_total_cost = 0,
-    expected_total_earning = 0,
+    estimated_total_cost = 0,
+    estimated_total_earning = 0,
+    real_total_earning = 0,
     total_delivery_fee = 0,
     service_fee_percentage = 0,
   } = data;
   return (
     <Space size="large" wrap>
       <Card variant="outlined">
-        <Statistic title="Cantidad de órdenes" value={sale_order_count ?? 0} />
+        <Statistic title="# de pedidos" value={sale_order_count ?? 0} />
+        <Statistic title="# de compras" value={purchase_order_count ?? 0} />
       </Card>
       <Card variant="outlined">
         <Statistic
-          title="Costo por compras esperado"
-          value={expected_total_cost ?? 0}
+          title="Costo por compras estimado"
+          value={estimated_total_cost ?? 0}
           formatter={(val) => formatPriceAccounting(Number(val))}
         />
         <Statistic
@@ -132,15 +140,20 @@ const DistributionPlanStatistic = ({ id }: { id: string }) => {
       </Card>
       <Card variant="outlined">
         <Statistic
-          title="Costo por transporte"
-          value={total_delivery_fee ?? 0}
+          title={`Comision total estimada (${service_fee_percentage}%)`}
+          value={estimated_total_earning ?? 0}
+          formatter={(val) => formatPriceAccounting(Number(val))}
+        />
+        <Statistic
+          title={`Comision total real (${service_fee_percentage}%)`}
+          value={real_total_earning ?? 0}
           formatter={(val) => formatPriceAccounting(Number(val))}
         />
       </Card>
       <Card variant="outlined">
         <Statistic
-          title={`Comision total esperada (${service_fee_percentage}%)`}
-          value={expected_total_earning ?? 0}
+          title="Costo por transporte"
+          value={total_delivery_fee ?? 0}
           formatter={(val) => formatPriceAccounting(Number(val))}
         />
       </Card>

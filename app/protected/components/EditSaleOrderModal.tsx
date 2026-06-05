@@ -12,7 +12,7 @@ import {
   Popconfirm,
   Alert,
   Form,
-  message,
+  App,
 } from "antd";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
@@ -145,12 +145,13 @@ async function deleteSaleOrder(
 
 const EditSaleOrderModal = ({ order, onSaved }: EditSaleOrderModalProps) => {
   const supabase = createClient();
+  const {message} = App.useApp()
   const [form] = Form.useForm<FormValues>();
   const [isOpen, setIsOpen] = useState(false);
   const currentItems = useWatch("items", form);
   // Productos disponibles para agregar nuevas filas
   const { data: products = [], isLoading: productsLoading } = useQuery({
-    queryKey: ["products"],
+    queryKey: ["products", "forEditSaleOrderModal"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("product")
@@ -300,11 +301,10 @@ const EditSaleOrderModal = ({ order, onSaved }: EditSaleOrderModalProps) => {
                           { required: true, message: "Selecciona un producto" },
                           ({}) => ({
                             validator(_, value) {
-                              if (
-                                !currentItems
-                                  .map((e) => e.product_id)
-                                  .includes(value)
-                              ) {
+                              const productCount = currentItems.filter(
+                                (e) => e.product_id === value,
+                              );
+                              if (productCount.length === 1) {
                                 return Promise.resolve();
                               }
                               return Promise.reject(

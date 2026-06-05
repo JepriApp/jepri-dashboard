@@ -235,7 +235,7 @@ const SaleOrdersTable = ({ id }: { id: string }) => {
       exact: true,
     });
     queryClient.invalidateQueries({
-      queryKey: ["distribution-plan", "components", "statistic", id],
+      queryKey: ["distribution-plan", id, "components", "statistic"],
       exact: true,
     });
   };

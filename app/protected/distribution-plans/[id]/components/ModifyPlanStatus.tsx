@@ -80,7 +80,7 @@ const ModifyPlanStatus = ({
     error: resumenError,
     data: resumen,
   } = useQuery({
-    queryKey: ["distribution-plan", "changes-resume-to-close", id],
+    queryKey: ["distribution-plan", id, "changes-resume-to-close"],
     queryFn: async () => {
       const { data, error } = await supabase.rpc("simulate_transition_to_completed_state", {
         plan_id: id,

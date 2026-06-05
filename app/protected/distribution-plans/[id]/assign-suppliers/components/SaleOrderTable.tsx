@@ -57,7 +57,7 @@ const SaleOrderTable = ({ id }: { id: string }) => {
   const selectedOrderId = params.get("selected_sale_order_id");
   const planId = id;
   const { isPending, error, data, refetch } = useQuery<SaleItem[]>({
-    queryKey: ["distribution-plan", "components", "sale-order-table", planId],
+    queryKey: ["distribution-plan", planId, "components", "assign-sale-order-table"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("distribution_plan")
