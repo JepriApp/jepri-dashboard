@@ -20,6 +20,7 @@ const planStatusLabels: Record<string, string> = {
   planned: "Planificado",
   preparing: "En preparación",
   in_progress: "En progreso",
+  invoicing: "Procesando cuentas",
   completed: "Completado",
   cancelled: "Cancelado",
 };
@@ -27,9 +28,10 @@ const PLAN_STATUSES_ORDER: (
   | "planned"
   | "preparing"
   | "in_progress"
+  | "invoicing"
   | "completed"
   | "cancelled"
-)[] = ["planned", "preparing", "in_progress", "completed"];
+)[] = ["planned", "preparing", "in_progress", "invoicing", "completed"];
 
 const isNewStatusValid = (
   currentStatus: string,
@@ -38,7 +40,8 @@ const isNewStatusValid = (
   const validTransitions: Record<string, string[]> = {
     planned: ["preparing", "cancelled"],
     preparing: ["in_progress", "cancelled"],
-    in_progress: ["completed", "cancelled"],
+    in_progress: ["invoicing", "cancelled"],
+    invoicing: ["completed", "cancelled"],
     completed: [],
     cancelled: [],
   };
@@ -82,9 +85,12 @@ const ModifyPlanStatus = ({
   } = useQuery({
     queryKey: ["distribution-plan", id, "changes-resume-to-close"],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc("simulate_transition_to_completed_state", {
-        plan_id: id,
-      });
+      const { data, error } = await supabase.rpc(
+        "simulate_transition_to_completed_state",
+        {
+          plan_id: id,
+        },
+      );
       if (error) {
         throw error;
       }
@@ -109,6 +115,12 @@ const ModifyPlanStatus = ({
         return (
           <ul style={{ marginTop: 8 }}>
             <li>✔ Se podrán recibir en bodega las órdenes de compra</li>
+            <li>✖ No podrás volver al estado anterior</li>
+          </ul>
+        );
+      case "invoicing":
+        return (
+          <ul style={{ marginTop: 8 }}>
             <li>✖ No podrás volver al estado anterior</li>
           </ul>
         );
@@ -208,6 +220,7 @@ const ModifyPlanStatus = ({
         | "planned"
         | "preparing"
         | "in_progress"
+        | "invoicing"
         | "completed"
         | "cancelled";
     }) => {
@@ -221,7 +234,7 @@ const ModifyPlanStatus = ({
           .from("distribution_plan")
           .update({ status: status })
           .eq("id", String(id))
-          .select(`service_fee_percentage`)
+
           .single();
         if (error) {
           throw error;
@@ -238,7 +251,18 @@ const ModifyPlanStatus = ({
           .from("distribution_plan")
           .update({ status: status })
           .eq("id", String(id))
-          .select(`service_fee_percentage`)
+
+          .single();
+        if (error) {
+          throw error;
+        }
+      }
+      if (status === "invoicing") {
+        const { error } = await supabase
+          .from("distribution_plan")
+          .update({ status: status })
+          .eq("id", String(id))
+
           .single();
         if (error) {
           throw error;
@@ -258,7 +282,7 @@ const ModifyPlanStatus = ({
           .from("distribution_plan")
           .update({ status: status })
           .eq("id", String(id))
-          .select(`service_fee_percentage`)
+
           .single();
         if (error) {
           throw error;
@@ -274,7 +298,13 @@ const ModifyPlanStatus = ({
   });
 
   const onFinish = async (values: {
-    status: "planned" | "preparing" | "in_progress" | "completed" | "cancelled";
+    status:
+      | "planned"
+      | "preparing"
+      | "in_progress"
+      | "invoicing"
+      | "completed"
+      | "cancelled";
   }) => {
     try {
       await updatePlanStatus.mutateAsync(values);
@@ -337,6 +367,7 @@ const ModifyPlanStatus = ({
             { title: "Planeado" },
             { title: "En preparación" },
             { title: "En progreso" },
+            { title: "Procesando cuentas" },
             { title: "Completado" },
           ]}
         />
