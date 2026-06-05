@@ -5,7 +5,6 @@ import { createClient } from "@/lib/supabase/client";
 import { useState } from "react";
 import { listSuppliers } from "../../services/listSuppliers";
 
-
 const CreateNewOfferForProductButton = ({
   productId,
   productName,
@@ -86,7 +85,8 @@ const CreateNewOfferForProductButton = ({
               }}
               options={suppliers
                 .filter(
-                  (supplier) => !supplierIdsOfExistingOffers.includes(supplier.id),
+                  (supplier) =>
+                    !supplierIdsOfExistingOffers.includes(supplier.id),
                 )
                 .map((supplier) => {
                   return {
@@ -97,7 +97,7 @@ const CreateNewOfferForProductButton = ({
             />
           </Form.Item>
           <Form.Item name={"price"} label="Precio" required>
-            <InputNumber prefix="$" min={1} />
+            <InputNumber prefix="$" min={1} step={100} />
           </Form.Item>
           <Button htmlType="submit">Guardar</Button>
         </Form>

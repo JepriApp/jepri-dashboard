@@ -1,7 +1,9 @@
 "use client";
 import { createClient } from "@/lib/supabase/client";
+import { LinkOutlined } from "@ant-design/icons";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Form, InputNumber, message, Typography } from "antd";
+import { useEffect } from "react";
 
 interface PurchaseItem {
   id: string;
@@ -12,14 +14,30 @@ const PurchaseItemActualPriceForm = ({
   planId,
   disabled,
   referencePrice,
+  onChange,
+  handleFocus,
+  handleBlur,
+  isFocused,
+  prices,
+  productId
 }: {
   purchaseItemId: string;
   planId: string;
   disabled: boolean;
   referencePrice: number;
+  isFocused: boolean;
+  prices: Record<string,number|null>;
+  productId:string;
+  onChange: (value: number | null) => void;
+  handleFocus: () => void;
+  handleBlur: () => void;
 }) => {
   const supabase = createClient();
   const [form] = Form.useForm();
+  useEffect(() => {
+    const value = prices[productId]
+    form.setFieldsValue({ actual_price: value });
+  }, [prices, form]);
   const actual_price = Form.useWatch("actual_price", form);
   const showWarning: boolean =
     !!actual_price &&
@@ -133,6 +151,7 @@ const PurchaseItemActualPriceForm = ({
           prefix="$"
           style={{ width: 120 }}
           onBlur={() => {
+            handleBlur();
             form.submit();
           }}
           onKeyDown={(e) => {
@@ -140,7 +159,11 @@ const PurchaseItemActualPriceForm = ({
               form.submit();
             }
           }}
+          step={100}
           placeholder="Precio real"
+          onChange={onChange}
+          onFocus={handleFocus}
+          suffix={isFocused && <LinkOutlined />}
         />
       </Form.Item>
     </Form>

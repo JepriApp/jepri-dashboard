@@ -41,12 +41,14 @@ const CreateNewOfferForSupplierButton = ({
     },
     onSuccess: async () => {
       message.success("Productos ofrecidos actualizados");
-      setIsOpen(false)
+      setIsOpen(false);
       await onSuccess?.();
     },
     onError: (err) => {
       console.error(err);
-      message.error(err?.message || "Error al actualizar las productos ofrecidos");
+      message.error(
+        err?.message || "Error al actualizar las productos ofrecidos",
+      );
     },
   });
   return (
@@ -97,7 +99,7 @@ const CreateNewOfferForSupplierButton = ({
             />
           </Form.Item>
           <Form.Item name={"price"} label="Precio" required>
-            <InputNumber prefix="$" min={1} />
+            <InputNumber prefix="$" min={1} step={100} />
           </Form.Item>
           <Button htmlType="submit">Guardar</Button>
         </Form>

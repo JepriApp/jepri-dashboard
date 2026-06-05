@@ -70,7 +70,7 @@ const CreateNewOfferButton = ({
   const openModal = () => {
     setOpen(true);
   };
-  if (!productId||!existingSuppliers) return null;
+  if (!productId || !existingSuppliers) return null;
   return (
     <>
       <Button onClick={openModal} block>
@@ -113,7 +113,7 @@ const CreateNewOfferButton = ({
             />
           </Form.Item>
           <Form.Item name="price" label="Precio" rules={[{ required: true }]}>
-            <InputNumber min={0} prefix="$" />
+            <InputNumber min={0} prefix="$" step={100} />
           </Form.Item>
           <Form.Item>
             <Button

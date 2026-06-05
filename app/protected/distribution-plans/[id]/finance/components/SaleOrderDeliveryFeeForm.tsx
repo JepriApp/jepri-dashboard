@@ -21,10 +21,7 @@ const SaleOrderDeliveryFeeForm = ({
   const supabase = createClient();
   const [form] = Form.useForm();
   const distributionPlanQuery = useQuery({
-    queryKey: [
-      "distribution-plan",
-      planId,
-    ],
+    queryKey: ["distribution-plan", planId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("distribution_plan")
@@ -125,6 +122,7 @@ const SaleOrderDeliveryFeeForm = ({
           disabled={updateMutation.isPending || disabled}
           min={0}
           prefix="$"
+          step={100}
           style={{ width: 120 }}
           onBlur={() => {
             form.submit();

@@ -281,7 +281,12 @@ const ProductsIndexPage = () => {
             <Input />
           </Form.Item>
           <Form.Item name="reference_price" label="Precio de referencia">
-            <InputNumber min={0} style={{ width: "100%" }} placeholder="0.00" />
+            <InputNumber
+              min={0}
+              style={{ width: "100%" }}
+              placeholder="0.00"
+              step={100}
+            />
           </Form.Item>
           <Form.Item name="description" label="Descripción">
             <Input.TextArea rows={3} placeholder="Descripción del producto" />
