@@ -25,7 +25,9 @@ const SupplierReceptionTableForm = ({
   onSuccessUpdatePurchaseOrder,
 }: props) => {
   const supabase = createClient();
-  const [productPrices, setProductPrices] = useState<Record<string,number|null>>({});
+  const [productPrices, setProductPrices] = useState<
+    Record<string, number | null>
+  >({});
   const [currentFocusId, setCurrentFocusId] = useState<string | null>(null);
   const distributionPlanQuery = useQuery({
     queryKey: ["distribution-plan", planId],
@@ -82,7 +84,6 @@ const SupplierReceptionTableForm = ({
       }
       styles={{ body: { padding: 0 } }}
     >
-      <p>{JSON.stringify(productPrices)}</p>
       {(() => {
         const isPublished = purchaseOrder.status === "published";
         const isEditable = purchaseOrder.status === "accepted";
