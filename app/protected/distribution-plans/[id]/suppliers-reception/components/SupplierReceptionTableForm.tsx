@@ -25,9 +25,6 @@ const SupplierReceptionTableForm = ({
   onSuccessUpdatePurchaseOrder,
 }: props) => {
   const supabase = createClient();
-  const [productPrices, setProductPrices] = useState<
-    Record<string, number | null>
-  >({});
   const [currentFocusId, setCurrentFocusId] = useState<string | null>(null);
   const distributionPlanQuery = useQuery({
     queryKey: ["distribution-plan", planId],
@@ -137,13 +134,6 @@ const SupplierReceptionTableForm = ({
                       disabled={!isEditable}
                       planId={planId}
                       referencePrice={row.offer.price}
-                      productId={row.offer.product.id}
-                      prices={productPrices}
-                      onChange={(value) => {
-                        setProductPrices((prev) => {
-                          return { ...prev, [row.offer.product.id]: value };
-                        });
-                      }}
                       handleFocus={function (): void {
                         setCurrentFocusId(row.offer.product.id);
                       }}
