@@ -113,7 +113,7 @@ const CreateNewOfferButton = ({
             />
           </Form.Item>
           <Form.Item name="price" label="Precio" rules={[{ required: true }]}>
-            <InputNumber min={0} prefix="$" step={100} />
+            <InputNumber min={0} prefix="$" step={50} />
           </Form.Item>
           <Form.Item>
             <Button

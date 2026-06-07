@@ -122,7 +122,7 @@ const SaleOrderDeliveryFeeForm = ({
           disabled={updateMutation.isPending || disabled}
           min={0}
           prefix="$"
-          step={100}
+          step={50}
           style={{ width: 120 }}
           onBlur={() => {
             form.submit();

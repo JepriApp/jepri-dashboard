@@ -147,7 +147,7 @@ const PurchaseItemActualPriceForm = ({
               form.submit();
             }
           }}
-          step={100}
+          step={50}
           placeholder="Precio real"
           onFocus={handleFocus}
           suffix={isFocused && <LinkOutlined />}

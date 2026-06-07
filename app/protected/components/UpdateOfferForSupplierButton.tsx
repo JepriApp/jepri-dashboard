@@ -81,7 +81,7 @@ const UpdateOfferForSupplierButton = ({
           onFinish={saveOfferMutation.mutateAsync}
         >
           <Form.Item name={"price"} label="Precio" required>
-            <InputNumber prefix="$" min={1} step={100} />
+            <InputNumber prefix="$" min={1} step={50} />
           </Form.Item>
           <Button htmlType="submit" loading={saveOfferMutation.isPending}>
             Guardar

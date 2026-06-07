@@ -95,7 +95,7 @@ const CreateProduct = ({ onSubmit }: { onSubmit: () => void }) => {
               min={0}
               style={{ width: "100%" }}
               placeholder="0.00"
-              step={100}
+              step={50}
             />
           </Form.Item>
           <Form.Item name="description" label="Descripción">
