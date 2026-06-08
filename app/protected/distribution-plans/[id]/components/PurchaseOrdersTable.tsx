@@ -149,7 +149,7 @@ const PurchaseOrdersTable = ({ id }: { id: string }) => {
       ) => <PurchaseOrderStatusTag status={status} />,
     },
     {
-      title: "Total estimado",
+      title: "Total",
       key: "po_total",
       render: (_, record) => {
         const items = record.purchase_item || [];
@@ -160,7 +160,16 @@ const PurchaseOrdersTable = ({ id }: { id: string }) => {
               Number(it.actual_price ?? it.offer?.price ?? 0),
           0,
         );
-        return formatPriceAccounting(total);
+        return (
+          <div>
+            {formatPriceAccounting(total)}
+            {record.status !== "received" && (
+              <Tooltip title="Basado en el precio mas reciente">
+                <InfoCircleOutlined />
+              </Tooltip>
+            )}
+          </div>
+        );
       },
     },
     {
@@ -225,8 +234,11 @@ const PurchaseOrdersTable = ({ id }: { id: string }) => {
               {
                 title: "Precio mas reciente",
                 key: "price",
-                render: (_, it) =>
-                  <Typography.Text strong={!it.actual_price}>{formatPriceAccounting(Number(it.offer?.price ?? 0))}</Typography.Text>,
+                render: (_, it) => (
+                  <Typography.Text strong={!it.actual_price}>
+                    {formatPriceAccounting(Number(it.offer?.price ?? 0))}
+                  </Typography.Text>
+                ),
               },
               {
                 title: "Precio real",

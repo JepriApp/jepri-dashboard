@@ -17,104 +17,130 @@ const DistributionPlanStatistic = ({ id }: { id: string }) => {
           .eq("id", id)
           .single();
       if (distributionPlanError) throw distributionPlanError;
-
-      // Obtener órdenes de venta con delivery_fee
+      const { service_fee_percentage } = distributionPlan;
       const { data: saleOrders, error: saleOrdersError } = await supabase
         .from("sale_order")
         .select(
-          `id, 
-                 delivery_fee,
-                 sale_items: sale_item(
-                  id,
-                  required_quantity,
-                  delivered_quantity,
-                  product: product_id(
-                    id,
-                    reference_price
-                    )
-                 )
-                `,
+          `
+          id,
+          sale_items:sale_item(
+            id,
+            required_quantity,
+            product:product_id(
+              id,
+              reference_price
+            ),
+            fulfillment: fulfillment (
+              id,
+              purchase_item: purchase_item_id (
+                id,
+                received_quantity,
+                actual_price
+              )
+            )
+          ),
+          service_fee,
+          delivery_fee
+          `,
         )
         .eq("distribution_plan_id", id);
 
       if (saleOrdersError) throw saleOrdersError;
+      const estimated_total_cost = saleOrders.reduce(
+        (saleOrderAccumulator, saleOrder) => {
+          const saleItemsSum: number = saleOrder.sale_items.reduce(
+            (acumulador, actual) =>
+              acumulador +
+              actual.required_quantity * (actual.product.reference_price || 0),
+            0,
+          );
 
-      const sale_order_count = saleOrders?.length || 0;
+          return saleOrderAccumulator + saleItemsSum;
+        },
+        0,
+      );
+      const estimated_total_earning = saleOrders.reduce(
+        (saleOrderAccumulator, saleOrder) => {
+          const saleItemsSum: number = saleOrder.sale_items.reduce(
+            (acumulador, actual) =>
+              acumulador +
+              actual.required_quantity *
+                (actual.product.reference_price || 0) *
+                (service_fee_percentage / 100),
+            0,
+          );
 
-      // Obtener costo por transporte (suma de delivery_fee de sale_orders)
-      const total_delivery_fee =
-        saleOrders?.reduce(
-          (sum, order) => sum + (order.delivery_fee ?? 0),
-          0,
-        ) || 0;
+          return saleOrderAccumulator + saleItemsSum;
+        },
+        0,
+      );
+      const real_total_cost = saleOrders.reduce(
+        (saleOrderAccumulator, saleOrder) => {
+          const saleItemsSum: number = saleOrder.sale_items.reduce(
+            (saleItemAccumulator, saleItem) => {
+              const fullfilmentsSum = saleItem.fulfillment.reduce(
+                (acumulador, actual) => {
+                  return (
+                    acumulador +
+                    (actual.purchase_item.actual_price || 0) *
+                      (actual.purchase_item.received_quantity || 0)
+                  );
+                },
+                0,
+              );
+              return saleItemAccumulator + fullfilmentsSum;
+            },
+            0,
+          );
 
-      // Obtener costo por compra (suma de actual_price de purchase_items)
-      const { data: purchaseOrders, error: purchaseOrdersError } =
-        await supabase
-          .from("purchase_order")
-          .select(
-            `
-          id,
-          purchase_items: purchase_item(
-            id,
-            quantity,
-            received_quantity,
-            actual_price,
-            offer: offer_id(
-              id,
-              price
-            )
-          )
-        `,
-          )
-          .eq("distribution_plan_id", id);
+          return saleOrderAccumulator + saleItemsSum;
+        },
+        0,
+      );
 
-      if (purchaseOrdersError) throw purchaseOrdersError;
-      const purchase_order_count = purchaseOrders?.length || 0;
-      const estimated_total_cost =
-        saleOrders?.reduce((sum, so) => {
-          const soCost =
-            so.sale_items?.reduce((itemSum, si) => {
-              const itemCost =
-                (si.required_quantity ?? 0) * (si.product.reference_price ?? 0);
-              return itemSum + itemCost;
-            }, 0) || 0;
-          return sum + soCost;
-        }, 0) || 0;
-      // Calcular el costo total de compra (cantidad * precio de la oferta)
-      const real_total_cost =
-        purchaseOrders?.reduce((sum, po) => {
-          const poCost =
-            po.purchase_items?.reduce((itemSum, pi) => {
-              const itemCost = (pi.quantity ?? 0) * (pi.offer?.price ?? 0);
-              return itemSum + itemCost;
-            }, 0) || 0;
-          return sum + poCost;
-        }, 0) || 0;
-      // Comisión total es el 24% de la venta (que es el costo de compra)
-      const estimated_total_earning =
-        estimated_total_cost * (distributionPlan.service_fee_percentage / 100);
-      const real_total_earning =
-        real_total_cost * (distributionPlan.service_fee_percentage / 100);
+      const real_total_earning = saleOrders.reduce(
+        (saleOrderAccumulator, saleOrder) => {
+          const saleItemsSum: number = saleOrder.sale_items.reduce(
+            (saleItemAccumulator, saleItem) => {
+              const fullfilmentsSum = saleItem.fulfillment.reduce(
+                (acumulador, actual) => {
+                  return (
+                    acumulador +
+                    (actual.purchase_item.actual_price || 0) *
+                      (actual.purchase_item.received_quantity || 0) *
+                      (service_fee_percentage / 100)
+                  );
+                },
+                0,
+              );
+              return saleItemAccumulator + fullfilmentsSum;
+            },
+            0,
+          );
+
+          return saleOrderAccumulator + saleItemsSum;
+        },
+        0,
+      );
+      const total_delivery_fee = saleOrders.reduce(
+        (acumulador, actual) => acumulador + (actual.delivery_fee || 0),
+        0,
+      );
       return {
-        sale_order_count,
-        purchase_order_count,
         estimated_total_cost,
-        real_total_cost,
         estimated_total_earning,
-        total_delivery_fee,
-        service_fee_percentage: distributionPlan.service_fee_percentage,
+        real_total_cost,
         real_total_earning,
+        total_delivery_fee,
+        service_fee_percentage,
       };
     },
   });
   if (isPending) return "Loading...";
   if (error) return "An error has occurred: " + error.message;
   const {
-    sale_order_count = 0,
-    purchase_order_count = 0,
-    real_total_cost = 0,
     estimated_total_cost = 0,
+    real_total_cost = 0,
     estimated_total_earning = 0,
     real_total_earning = 0,
     total_delivery_fee = 0,
@@ -122,10 +148,6 @@ const DistributionPlanStatistic = ({ id }: { id: string }) => {
   } = data;
   return (
     <Space size="large" wrap>
-      <Card variant="outlined">
-        <Statistic title="# de pedidos" value={sale_order_count ?? 0} />
-        <Statistic title="# de compras" value={purchase_order_count ?? 0} />
-      </Card>
       <Card variant="outlined">
         <Statistic
           title="Costo por compras pronosticado"
