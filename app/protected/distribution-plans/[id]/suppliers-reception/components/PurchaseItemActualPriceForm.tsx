@@ -1,8 +1,10 @@
 "use client";
 import { createClient } from "@/lib/supabase/client";
-import { LinkOutlined, LoadingOutlined } from "@ant-design/icons";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { LinkOutlined } from "@ant-design/icons";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Form, InputNumber, message, Typography } from "antd";
+import { FormInstance } from "antd/lib";
+import { useEffect } from "react";
 
 interface PurchaseItem {
   id: string;
@@ -16,18 +18,36 @@ const PurchaseItemActualPriceForm = ({
   handleFocus,
   handleBlur,
   isFocused,
+  onPriceChange,
+  syncValue,
+  triggerSubmit,
+  getRef,
 }: {
   purchaseItemId: string;
   planId: string;
   disabled: boolean;
   referencePrice: number;
   isFocused: boolean;
+  onPriceChange?: (value: number | null) => void;
+  syncValue?: number | null;
+  getRef: (formInstance: FormInstance) => void;
+  triggerSubmit: (formInstance: FormInstance) => Promise<void>;
   handleFocus: () => void;
   handleBlur: () => void;
 }) => {
+  const queryClient = useQueryClient();
   const supabase = createClient();
   const [form] = Form.useForm();
   const actual_price = Form.useWatch("actual_price", form);
+  useEffect(() => {
+    if (
+      isFocused &&
+      syncValue !== undefined &&
+      syncValue !== form.getFieldValue("actual_price")
+    ) {
+      form.setFieldValue("actual_price", syncValue);
+    }
+  }, [syncValue, isFocused, form]);
   const showWarning: boolean =
     !!actual_price &&
     Math.abs((referencePrice - actual_price) / referencePrice) > 0.3;
@@ -93,6 +113,15 @@ const PurchaseItemActualPriceForm = ({
     },
     onSuccess: (data) => {
       form.setFieldValue("actual_price", data.data.actual_price);
+      queryClient.setQueryData(
+        [
+          "suppliers-reception",
+          "components",
+          "purchase-item-actual-price-form",
+          { purchaseItemId },
+        ],
+        { actual_price: data.data.actual_price, id: purchaseItemId },
+      );
     },
     onError: (err) => {
       console.error("Error al actualizar precio real:", err);
@@ -100,7 +129,10 @@ const PurchaseItemActualPriceForm = ({
     },
   });
   const handleSubmit = (values: { actual_price: number }) => {
-    if (form.isFieldTouched("actual_price")) {
+    if (
+      form.isFieldTouched("actual_price") &&
+      data?.actual_price !== values.actual_price
+    ) {
       updateActualPriceMutation.mutateAsync({
         purchaseItemId: purchaseItemId,
         newPrice: values.actual_price,
@@ -127,6 +159,7 @@ const PurchaseItemActualPriceForm = ({
       }}
       form={form}
       onFinish={handleSubmit}
+      ref={getRef}
     >
       <Form.Item
         name="actual_price"
@@ -138,19 +171,25 @@ const PurchaseItemActualPriceForm = ({
           min={0}
           prefix="$"
           style={{ width: 120 }}
-          onBlur={() => {
+          onBlur={async () => {
+            await triggerSubmit(form);
             handleBlur();
-            form.submit();
           }}
-          onKeyDown={(e) => {
+          onKeyDown={async (e) => {
+            e.preventDefault();
             if (e.key === "Enter") {
-              form.submit();
+              await triggerSubmit(form);
+              handleBlur();
             }
           }}
           step={50}
           placeholder="Precio real"
           onFocus={handleFocus}
           suffix={isFocused && <LinkOutlined />}
+          onChange={(value) => {
+            form.setFieldValue("actual_price", value);
+            onPriceChange?.(value);
+          }}
         />
       </Form.Item>
     </Form>

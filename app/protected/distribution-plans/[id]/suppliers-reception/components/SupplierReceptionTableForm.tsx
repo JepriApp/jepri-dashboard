@@ -3,7 +3,7 @@ import PurchaseOrderStatusTag from "@/app/protected/components/PurchaseOrderStat
 import { formatPriceAccounting } from "@/lib/formatPrice";
 import { Card, Space, Typography, TableColumnsType, Table } from "antd";
 import dayjs from "dayjs";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import PurchaseItemActualPriceForm from "./PurchaseItemActualPriceForm";
 import PurchaseItemReceivedQtyForm from "./PurchaseItemReceivedQtyForm";
 import PurchaseOrderNotesForm from "./PurchaseOrderNotesForm";
@@ -12,6 +12,7 @@ import UpdatePurchaseOrderStatusButton from "./UpdatePurchaseOrderStatusButton";
 import { PurchaseItem, PurchaseOrder } from "../page";
 import { createClient } from "@/lib/supabase/client";
 import { useQuery } from "@tanstack/react-query";
+import { FormInstance } from "antd/lib";
 
 interface props {
   purchaseOrder: PurchaseOrder;
@@ -26,6 +27,10 @@ const SupplierReceptionTableForm = ({
 }: props) => {
   const supabase = createClient();
   const [currentFocusId, setCurrentFocusId] = useState<string | null>(null);
+  const [linkedPriceState, setLinkedPriceState] = useState<
+    Record<string, number | null | undefined>
+  >({});
+  const formulariosRef = useRef<{ [key: string]: FormInstance[] }>({});
   const distributionPlanQuery = useQuery({
     queryKey: ["distribution-plan", planId],
     queryFn: async () => {
@@ -127,28 +132,49 @@ const SupplierReceptionTableForm = ({
                 title: "Real",
                 dataIndex: "actual_price",
                 key: "actual_price",
-                render: (v: number | null, row: PurchaseItem) => (
-                  <Space className="flex row-auto">
-                    <PurchaseItemActualPriceForm
-                      purchaseItemId={row.id}
-                      disabled={!isEditable}
-                      planId={planId}
-                      referencePrice={row.offer.price}
-                      handleFocus={function (): void {
-                        setCurrentFocusId(row.offer.product.id);
-                      }}
-                      handleBlur={function (): void {
-                        setCurrentFocusId(null);
-                      }}
-                      isFocused={
-                        currentFocusId === row.offer.product.id &&
-                        purchaseOrder.items.filter(
-                          (e) => e.offer.product.id === row.offer.product.id,
-                        ).length > 1
-                      }
-                    />
-                  </Space>
-                ),
+                render: (v: number | null, row: PurchaseItem) => {
+                  const productId = row.offer.product.id;
+                  const isFocused =
+                    currentFocusId === productId &&
+                    purchaseOrder.items.filter(
+                      (e) => e.offer.product.id === productId,
+                    ).length > 1;
+                  const currentFormInstance =
+                    formulariosRef.current[productId] || [];
+                  return (
+                    <Space className="flex row-auto">
+                      <PurchaseItemActualPriceForm
+                        purchaseItemId={row.id}
+                        disabled={!isEditable}
+                        planId={planId}
+                        referencePrice={row.offer.price}
+                        getRef={(formInstance) => {
+                          if (formInstance) {
+                            currentFormInstance.push(formInstance);
+                            formulariosRef.current[productId] =
+                              currentFormInstance;
+                          }
+                        }}
+                        handleFocus={function (): void {
+                          setCurrentFocusId(productId);
+                        }}
+                        handleBlur={function (): void {
+                          setCurrentFocusId(null);
+                        }}
+                        isFocused={isFocused}
+                        syncValue={linkedPriceState[productId]}
+                        onPriceChange={(value) => {
+                          setLinkedPriceState((prev) => {
+                            return { ...prev, [productId]: value };
+                          });
+                        }}
+                        triggerSubmit={async () => {
+                          currentFormInstance.forEach((form) => form.submit());
+                        }}
+                      />
+                    </Space>
+                  );
+                },
               },
             ],
           },
