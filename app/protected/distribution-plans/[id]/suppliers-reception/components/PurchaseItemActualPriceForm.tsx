@@ -176,8 +176,8 @@ const PurchaseItemActualPriceForm = ({
             handleBlur();
           }}
           onKeyDown={async (e) => {
-            e.preventDefault();
             if (e.key === "Enter") {
+              e.preventDefault();
               await triggerSubmit(form);
               handleBlur();
             }

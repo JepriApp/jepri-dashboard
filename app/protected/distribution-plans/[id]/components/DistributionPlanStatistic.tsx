@@ -128,7 +128,7 @@ const DistributionPlanStatistic = ({ id }: { id: string }) => {
       </Card>
       <Card variant="outlined">
         <Statistic
-          title="Costo por compras estimado"
+          title="Costo por compras pronosticado"
           value={estimated_total_cost ?? 0}
           formatter={(val) => formatPriceAccounting(Number(val))}
         />
@@ -140,7 +140,7 @@ const DistributionPlanStatistic = ({ id }: { id: string }) => {
       </Card>
       <Card variant="outlined">
         <Statistic
-          title={`Comision total estimada (${service_fee_percentage}%)`}
+          title={`Comision total pronosticada (${service_fee_percentage}%)`}
           value={estimated_total_earning ?? 0}
           formatter={(val) => formatPriceAccounting(Number(val))}
         />
