@@ -7,7 +7,7 @@ import { Space, Card, Statistic } from "antd";
 const DistributionPlanStatistic = ({ id }: { id: string }) => {
   const supabase = createClient();
   const { isPending, error, data } = useQuery({
-    queryKey: ["distribution-plan", "components", "statistic", id],
+    queryKey: ["distribution-plan", id, "components", "statistic"],
     queryFn: async () => {
       // Obtener comision del plan
       const { data: distributionPlan, error: distributionPlanError } =
@@ -17,87 +17,158 @@ const DistributionPlanStatistic = ({ id }: { id: string }) => {
           .eq("id", id)
           .single();
       if (distributionPlanError) throw distributionPlanError;
-
-      // Obtener órdenes de venta con delivery_fee
+      const { service_fee_percentage } = distributionPlan;
       const { data: saleOrders, error: saleOrdersError } = await supabase
         .from("sale_order")
-        .select("id, delivery_fee")
+        .select(
+          `
+          id,
+          sale_items:sale_item(
+            id,
+            required_quantity,
+            product:product_id(
+              id,
+              reference_price
+            ),
+            fulfillment: fulfillment (
+              id,
+              purchase_item: purchase_item_id (
+                id,
+                received_quantity,
+                actual_price
+              )
+            )
+          ),
+          service_fee,
+          delivery_fee
+          `,
+        )
         .eq("distribution_plan_id", id);
 
       if (saleOrdersError) throw saleOrdersError;
+      const estimated_total_cost = saleOrders.reduce(
+        (saleOrderAccumulator, saleOrder) => {
+          const saleItemsSum: number = saleOrder.sale_items.reduce(
+            (acumulador, actual) =>
+              acumulador +
+              actual.required_quantity * (actual.product.reference_price || 0),
+            0,
+          );
 
-      const sale_order_count = saleOrders?.length || 0;
+          return saleOrderAccumulator + saleItemsSum;
+        },
+        0,
+      );
+      const estimated_total_earning = saleOrders.reduce(
+        (saleOrderAccumulator, saleOrder) => {
+          const saleItemsSum: number = saleOrder.sale_items.reduce(
+            (acumulador, actual) =>
+              acumulador +
+              actual.required_quantity *
+                (actual.product.reference_price || 0) *
+                (service_fee_percentage / 100),
+            0,
+          );
 
-      // Obtener costo por transporte (suma de delivery_fee de sale_orders)
-      const total_delivery_fee =
-        saleOrders?.reduce(
-          (sum, order) => sum + (order.delivery_fee ?? 0),
-          0,
-        ) || 0;
+          return saleOrderAccumulator + saleItemsSum;
+        },
+        0,
+      );
+      const real_total_cost = saleOrders.reduce(
+        (saleOrderAccumulator, saleOrder) => {
+          const saleItemsSum: number = saleOrder.sale_items.reduce(
+            (saleItemAccumulator, saleItem) => {
+              const fullfilmentsSum = saleItem.fulfillment.reduce(
+                (acumulador, actual) => {
+                  return (
+                    acumulador +
+                    (actual.purchase_item.actual_price || 0) *
+                      (actual.purchase_item.received_quantity || 0)
+                  );
+                },
+                0,
+              );
+              return saleItemAccumulator + fullfilmentsSum;
+            },
+            0,
+          );
 
-      // Obtener costo por compra (suma de actual_price de purchase_items)
-      const { data: purchaseOrders, error: purchaseOrdersError } =
-        await supabase
-          .from("purchase_order")
-          .select(
-            `
-          id,
-          purchase_items: purchase_item(
-            id,
-            quantity,
-            offer: offer_id(
-              id,
-              price
-            )
-          )
-        `,
-          )
-          .eq("distribution_plan_id", id);
+          return saleOrderAccumulator + saleItemsSum;
+        },
+        0,
+      );
 
-      if (purchaseOrdersError) throw purchaseOrdersError;
+      const real_total_earning = saleOrders.reduce(
+        (saleOrderAccumulator, saleOrder) => {
+          const saleItemsSum: number = saleOrder.sale_items.reduce(
+            (saleItemAccumulator, saleItem) => {
+              const fullfilmentsSum = saleItem.fulfillment.reduce(
+                (acumulador, actual) => {
+                  return (
+                    acumulador +
+                    (actual.purchase_item.actual_price || 0) *
+                      (actual.purchase_item.received_quantity || 0) *
+                      (service_fee_percentage / 100)
+                  );
+                },
+                0,
+              );
+              return saleItemAccumulator + fullfilmentsSum;
+            },
+            0,
+          );
 
-      // Calcular el costo total de compra (cantidad * precio de la oferta)
-      const expected_total_cost =
-        purchaseOrders?.reduce((sum, po) => {
-          const poCost =
-            po.purchase_items?.reduce((itemSum, pi) => {
-              const itemCost = (pi.quantity ?? 0) * (pi.offer?.price ?? 0);
-              return itemSum + itemCost;
-            }, 0) || 0;
-          return sum + poCost;
-        }, 0) || 0;
-
-      // Comisión total es el 24% de la venta (que es el costo de compra)
-      const expected_total_earning =
-        expected_total_cost * (distributionPlan.service_fee_percentage / 100);
-
+          return saleOrderAccumulator + saleItemsSum;
+        },
+        0,
+      );
+      const total_delivery_fee = saleOrders.reduce(
+        (acumulador, actual) => acumulador + (actual.delivery_fee || 0),
+        0,
+      );
       return {
-        sale_order_count,
-        expected_total_cost,
-        expected_total_earning,
+        estimated_total_cost,
+        estimated_total_earning,
+        real_total_cost,
+        real_total_earning,
         total_delivery_fee,
-        service_fee_percentage: distributionPlan.service_fee_percentage,
+        service_fee_percentage,
       };
     },
   });
   if (isPending) return "Loading...";
   if (error) return "An error has occurred: " + error.message;
   const {
-    sale_order_count = 0,
-    expected_total_cost = 0,
-    expected_total_earning = 0,
+    estimated_total_cost = 0,
+    real_total_cost = 0,
+    estimated_total_earning = 0,
+    real_total_earning = 0,
     total_delivery_fee = 0,
     service_fee_percentage = 0,
   } = data;
   return (
     <Space size="large" wrap>
       <Card variant="outlined">
-        <Statistic title="Cantidad de órdenes" value={sale_order_count ?? 0} />
+        <Statistic
+          title="Costo por compras pronosticado"
+          value={estimated_total_cost ?? 0}
+          formatter={(val) => formatPriceAccounting(Number(val))}
+        />
+        <Statistic
+          title="Costo por compras real"
+          value={real_total_cost ?? 0}
+          formatter={(val) => formatPriceAccounting(Number(val))}
+        />
       </Card>
       <Card variant="outlined">
         <Statistic
-          title="Costo por compras esperado"
-          value={expected_total_cost ?? 0}
+          title={`Comision total pronosticada (${service_fee_percentage}%)`}
+          value={estimated_total_earning ?? 0}
+          formatter={(val) => formatPriceAccounting(Number(val))}
+        />
+        <Statistic
+          title={`Comision total real (${service_fee_percentage}%)`}
+          value={real_total_earning ?? 0}
           formatter={(val) => formatPriceAccounting(Number(val))}
         />
       </Card>
@@ -105,13 +176,6 @@ const DistributionPlanStatistic = ({ id }: { id: string }) => {
         <Statistic
           title="Costo por transporte"
           value={total_delivery_fee ?? 0}
-          formatter={(val) => formatPriceAccounting(Number(val))}
-        />
-      </Card>
-      <Card variant="outlined">
-        <Statistic
-          title={`Comision total esperada (${service_fee_percentage}%)`}
-          value={expected_total_earning ?? 0}
           formatter={(val) => formatPriceAccounting(Number(val))}
         />
       </Card>

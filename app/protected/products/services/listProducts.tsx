@@ -3,16 +3,14 @@ import { ProductWithOffers } from "../page";
 
 export async function listProducts(supabaseClient: SupabaseClient) {
   const { data, error } = await supabaseClient
-    .from("product")
-    .select(
-      `id, name, description, unit, reference_price, main_photo, siigo_id,
-           offers:offer(id, price, available, supplier:supplier_id(id, name, phone))`
-    )
-    .order("name", { ascending: true });
+    .from("product_with_active_offers")
+    .select("*")
+    .order("name");
   if (error) throw error;
-  return (data || []).map((p) => ({  //BUG: Aqui se usa offer. Replantear el uso
+  return (data || []).map((p) => ({
+    //BUG: Aqui se usa offer. Replantear el uso
     ...p,
-    offers: (p.offers || []).map((o) => {
+    offers: (p.offers || []).map((o: { supplier: unknown[]; }) => {
       const supplierObj = Array.isArray(o.supplier)
         ? o.supplier[0]
         : o.supplier;

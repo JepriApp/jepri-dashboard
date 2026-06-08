@@ -57,7 +57,7 @@ const SaleOrderTable = ({ id }: { id: string }) => {
   const selectedOrderId = params.get("selected_sale_order_id");
   const planId = id;
   const { isPending, error, data, refetch } = useQuery<SaleItem[]>({
-    queryKey: ["distribution-plan", "components", "sale-order-table", planId],
+    queryKey: ["distribution-plan", planId, "components", "assign-sale-order-table"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("distribution_plan")
@@ -159,7 +159,7 @@ const SaleOrderTable = ({ id }: { id: string }) => {
         return (
           <div className="flex flex-row flex-wrap gap-1">
             <ProductImage
-              source={record.product.main_photo}
+              source={record.product?.main_photo}
               name={record.product?.name}
               size="small"
             />

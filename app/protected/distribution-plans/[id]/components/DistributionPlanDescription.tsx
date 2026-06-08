@@ -31,7 +31,7 @@ function DistributionPlanDescription({ id }: { id: string }) {
       },
     });
   const { isPending, error, data } = useQuery({
-    queryKey: ["distribution-plan", "components", "description", id],
+    queryKey: ["distribution-plan", id, "components", "description"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("distribution_plan")

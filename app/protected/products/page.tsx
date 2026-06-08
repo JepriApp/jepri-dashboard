@@ -2,10 +2,8 @@
 import { useMemo, useState } from "react";
 import {
   App,
-  Card,
   Input,
   Space,
-  Switch,
   Table,
   Tag,
   Button,
@@ -13,23 +11,17 @@ import {
   Form,
   Select,
   InputNumber,
-  Empty,
 } from "antd";
 import Text from "antd/es/typography/Text";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { Image } from "antd";
-import { Drawer, Popconfirm } from "antd";
-import {
-  PlusOutlined,
-  DeleteOutlined,
-  SearchOutlined,
-} from "@ant-design/icons";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { SearchOutlined } from "@ant-design/icons";
 import { createClient } from "@/lib/supabase/client";
 import { listProducts } from "./services/listProducts";
-import { listSuppliers } from "../services/listSuppliers";
 import { formatPriceAccounting } from "@/lib/formatPrice";
 import CreateProduct from "./components/createProduct";
 import ProductImage from "../components/ProductImage";
+import OfferByProductDrawer from "./components/offerByProductDrawer";
+
 export type SupplierMinimal = {
   id: string;
   name: string;
@@ -41,6 +33,7 @@ export type OfferWithSupplier = {
   price: number;
   available: boolean;
   supplier: SupplierMinimal;
+  created_at: string;
 };
 
 export type ProductWithOffers = {
@@ -54,26 +47,23 @@ export type ProductWithOffers = {
   siigo_id: string;
 };
 
+type FormInterface = {
+  name: string;
+  unit: string;
+  siigo_id: string;
+  reference_price: number;
+  description: string;
+};
+
 const ProductsIndexPage = () => {
   const supabase = createClient();
   const { message } = App.useApp();
+  const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
-  const [availableOnly, setAvailableOnly] = useState(false);
-  const [offersOpen, setOffersOpen] = useState(false);
-  const [offersEditingProduct, setOffersEditingProduct] =
-    useState<ProductWithOffers | null>(null);
-  const [offersForm] = Form.useForm();
-  const [originalOfferIds, setOriginalOfferIds] = useState<string[]>([]);
-  const [originalOffersMap, setOriginalOffersMap] = useState<
-    Record<string, string>
-  >({});
-  const [removedOffersBySupplier, setRemovedOffersBySupplier] = useState<
-    Record<string, string>
-  >({});
   const [editOpen, setEditOpen] = useState(false);
   const [editingProduct, setEditingProduct] =
     useState<ProductWithOffers | null>(null);
-  const [editForm] = Form.useForm();
+  const [editForm] = Form.useForm<FormInterface>();
 
   const {
     data: products = [],
@@ -87,17 +77,6 @@ const ProductsIndexPage = () => {
     },
     staleTime: 30_000,
   }); //BUG: Aqui se usa offer. Replantear el uso
-
-  const { data: suppliers = [], isLoading: suppliersLoading } = useQuery<
-    SupplierMinimal[]
-  >({
-    queryKey: ["suppliers-minimal"],
-    queryFn: async () => {
-      const data = await listSuppliers(supabase);
-      return data;
-    },
-    staleTime: 60_000,
-  });
 
   const filteredProducts = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -116,31 +95,9 @@ const ProductsIndexPage = () => {
       unit: record.unit,
       reference_price: record.reference_price ?? undefined,
       description: record.description ?? "",
-      main_photo: record.main_photo ?? "",
       siigo_id: record.siigo_id ?? "",
     });
     setEditOpen(true);
-  };
-
-  const openOffersDrawer = (record: ProductWithOffers) => {
-    setOffersEditingProduct(record);
-    const initialItems = (record.offers || []).map((o) => ({
-      id: o.id,
-      supplier_id: o.supplier?.id || null,
-      price: Number(o.price ?? 0),
-      available: Boolean(o.available),
-    }));
-    setOriginalOfferIds(
-      initialItems.map((i) => i.id).filter(Boolean) as string[],
-    );
-    const map: Record<string, string> = {};
-    initialItems.forEach((i) => {
-      if (i.id && i.supplier_id) map[i.id as string] = i.supplier_id as string;
-    });
-    setOriginalOffersMap(map);
-    setRemovedOffersBySupplier({});
-    offersForm.setFieldsValue({ offers: initialItems });
-    setOffersOpen(true);
   };
 
   const columns = [
@@ -157,7 +114,11 @@ const ProductsIndexPage = () => {
             gridTemplateColumns: "1fr 1fr",
           }}
         >
-          <ProductImage source={record.main_photo} name={record.name} size="large" />
+          <ProductImage
+            source={record.main_photo}
+            name={record.name}
+            size="large"
+          />
           <Space orientation="vertical" size={0}>
             <Text strong style={{ whiteSpace: "normal", wordBreak: "normal" }}>
               {record.name}
@@ -190,12 +151,10 @@ const ProductsIndexPage = () => {
       ),
     },
     {
-      title: "Catálogos de proveedores",
+      title: "Proveedores",
       key: "offers",
       render: (_: unknown, record: ProductWithOffers) => {
-        const offers = (record.offers || []).filter((o) =>
-          availableOnly ? o.available : true,
-        );
+        const offers = record.offers || [];
         if (offers.length === 0)
           return <Text type="secondary">Sin Catálogos</Text>;
         const offersSorted = [...offers].sort(
@@ -224,16 +183,21 @@ const ProductsIndexPage = () => {
       render: (_: unknown, record: ProductWithOffers) => (
         <Space>
           <Button onClick={() => openEditModal(record)}>Modificar</Button>
-          <Button type="dashed" onClick={() => openOffersDrawer(record)}>
-            Editar catálogos
-          </Button>
+          <OfferByProductDrawer
+            record={record}
+            onChange={async () => {
+              await queryClient.invalidateQueries({
+                queryKey: ["products-with-offers"],
+              });
+            }}
+          />
         </Space>
       ),
     },
   ];
 
   const updateProductMutation = useMutation({
-    mutationFn: async (values: any) => {
+    mutationFn: async (values: FormInterface) => {
       if (!editingProduct) throw new Error("No hay producto seleccionado");
       const payload = {
         description: values.description || null,
@@ -242,7 +206,6 @@ const ProductsIndexPage = () => {
           values.reference_price !== null
             ? Number(values.reference_price)
             : null,
-        main_photo: values.main_photo || null,
         siigo_id: (values.siigo_id || "").trim(),
       };
       const { data, error } = await supabase
@@ -266,126 +229,9 @@ const ProductsIndexPage = () => {
     },
   });
 
-  const saveOffersMutation = useMutation({
-    mutationFn: async (values: any) => {
-      if (!offersEditingProduct)
-        throw new Error("No hay producto seleccionado");
-      const formOffers = (values.offers || []).map((o: any) => {
-        const revivedId =
-          !o.id && o.supplier_id
-            ? removedOffersBySupplier[o.supplier_id]
-            : undefined;
-        const base: any = {
-          supplier_id: o.supplier_id,
-          price: Number(o.price ?? 0),
-          available: Boolean(o.available),
-          product_id: offersEditingProduct.id,
-        };
-        if (o.id) base.id = o.id;
-        else if (revivedId) base.id = revivedId;
-        return base;
-      });
-
-      // Validar proveedores duplicados
-      const supplierIds = formOffers
-        .map((o: any) => o.supplier_id)
-        .filter(Boolean);
-      const duplicates = supplierIds.filter(
-        (id: string, i: number) => supplierIds.indexOf(id) !== i,
-      );
-      if (duplicates.length) {
-        throw new Error(
-          "No se permiten proveedores duplicados en las catálogos",
-        );
-      }
-
-      // Validar inmutabilidad del proveedor en catálogos existentes
-      for (const u of formOffers) {
-        if (u.id) {
-          const original = originalOffersMap[u.id as string];
-          if (original && u.supplier_id !== original) {
-            throw new Error(
-              "El proveedor de una catálogo existente es inmutable. Si necesitas cambiar el proveedor, crea una nueva catálogo y elimina la anterior (si no tiene asociaciones).",
-            );
-          }
-        }
-      }
-
-      const finalIds = formOffers
-        .map((o: any) => o.id)
-        .filter(Boolean) as string[];
-      let toDelete = originalOfferIds.filter((id) => !finalIds.includes(id));
-
-      // Preverificación de dependencias antes de eliminar
-      if (toDelete.length) {
-        const { data: used, error: usedErr } = await supabase
-          .from("purchase_item")
-          .select("offer_id")
-          .in("offer_id", toDelete);
-        if (usedErr) throw usedErr;
-        const blockedIds = Array.from(
-          new Set((used || []).map((row: any) => row.offer_id)),
-        );
-        if (blockedIds.length) {
-          // No eliminar catálogos asociadas
-          toDelete = toDelete.filter((id) => !blockedIds.includes(id));
-          message.warning(
-            `Se omitió la eliminación de ${blockedIds.length} catálogo(s) porque están asociadas a órdenes de compra.`,
-          );
-        }
-      }
-
-      // Ejecutar operaciones
-      // Borrados
-      if (toDelete.length) {
-        const { error } = await supabase
-          .from("offer")
-          .delete()
-          .in("id", toDelete);
-        if (error) throw error;
-      }
-
-      // Inserciones
-      const inserts = formOffers.filter((o: any) => !o.id);
-      if (inserts.length) {
-        const { error } = await supabase.from("offer").insert(inserts);
-        if (error) throw error;
-      }
-
-      // Actualizaciones (una por una) — sin cambiar supplier_id
-      const updates = formOffers.filter((o: any) => !!o.id);
-      for (const u of updates) {
-        const { error } = await supabase
-          .from("offer")
-          .update({
-            price: u.price,
-            available: u.available,
-          })
-          .eq("id", u.id as string);
-        if (error) throw error;
-      }
-    },
-    onSuccess: async () => {
-      message.success("Catálogos actualizadas");
-      setOffersOpen(false);
-      setOffersEditingProduct(null);
-      offersForm.resetFields();
-      setRemovedOffersBySupplier({});
-      await refetch();
-    },
-    onError: (err) => {
-      console.error(err);
-      message.error(err?.message || "Error al actualizar las catálogos");
-    },
-  });
-
   return (
     <Space orientation="vertical" style={{ width: "100%" }} size="large">
       <Space style={{ display: "flex", justifyContent: "space-between" }}>
-        {/* <Space>
-          <Text>Mostrar solo productos disponibles</Text>
-          <Switch checked={availableOnly} onChange={setAvailableOnly} />
-        </Space> */}
         <Input
           placeholder="Buscar por nombre"
           value={query}
@@ -435,240 +281,18 @@ const ProductsIndexPage = () => {
             <Input />
           </Form.Item>
           <Form.Item name="reference_price" label="Precio de referencia">
-            <InputNumber min={0} style={{ width: "100%" }} placeholder="0.00" />
+            <InputNumber
+              min={0}
+              style={{ width: "100%" }}
+              placeholder="0.00"
+              step={50}
+            />
           </Form.Item>
           <Form.Item name="description" label="Descripción">
             <Input.TextArea rows={3} placeholder="Descripción del producto" />
           </Form.Item>
         </Form>
       </Modal>
-
-      <Drawer
-        title={`Editar catálogos${
-          offersEditingProduct ? ` — ${offersEditingProduct.name}` : ""
-        }`}
-        open={offersOpen}
-        size={720}
-        onClose={() => {
-          setOffersOpen(false);
-          setOffersEditingProduct(null);
-          offersForm.resetFields();
-        }}
-        extra={
-          <Space>
-            <Button
-              onClick={() => {
-                setOffersOpen(false);
-                setOffersEditingProduct(null);
-                offersForm.resetFields();
-              }}
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="primary"
-              onClick={() => offersForm.submit()}
-              loading={saveOffersMutation.isPending}
-            >
-              Guardar
-            </Button>
-          </Space>
-        }
-      >
-        <Form
-          form={offersForm}
-          layout="inline"
-          onFinish={(values) => saveOffersMutation.mutate(values)}
-        >
-          <Form.List name="offers">
-            {(fields, { add, remove }) => (
-              <Space direction="vertical" style={{ width: "100%" }}>
-                {fields.length === 0 ? (
-                  <Text type="secondary">Sin catálogos</Text>
-                ) : null}
-
-                {fields.map(({ key, name, ...restField }) => (
-                  <Card
-                    size="small"
-                    key={key}
-                    variant="outlined"
-                    title={
-                      offersForm.getFieldValue(["offers", name, "id"])
-                        ? "Catálogo existente"
-                        : "Nuevo catálogo"
-                    }
-                  >
-                    {/* Hidden id to keep track of existing offers */}
-                    <Form.Item {...restField} name={[name, "id"]} hidden>
-                      <Input />
-                    </Form.Item>
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr 1fr",
-                        gap: 12,
-                        alignItems: "end",
-                      }}
-                    >
-                      {offersForm.getFieldValue(["offers", name, "id"]) ? (
-                        <>
-                          {/* Mantener supplier_id en el formulario para el submit */}
-                          <Form.Item
-                            {...restField}
-                            name={[name, "supplier_id"]}
-                            hidden
-                          >
-                            <Input />
-                          </Form.Item>
-                          <Form.Item
-                            label="Proveedor"
-                            style={{ gridColumn: "1 / 2" }}
-                          >
-                            <Text>
-                              {(() => {
-                                const sid = offersForm.getFieldValue([
-                                  "offers",
-                                  name,
-                                  "supplier_id",
-                                ]);
-                                return (
-                                  suppliers.find((s) => s.id === sid)?.name ||
-                                  "—"
-                                );
-                              })()}
-                            </Text>
-                          </Form.Item>
-                        </>
-                      ) : (
-                        <Form.Item
-                          {...restField}
-                          name={[name, "supplier_id"]}
-                          label="Proveedor"
-                          rules={[
-                            {
-                              required: true,
-                              message: "Selecciona el proveedor",
-                            },
-                          ]}
-                          style={{ gridColumn: "1 / 2" }}
-                        >
-                          <Select
-                            placeholder="Selecciona proveedor"
-                            options={(() => {
-                              const allOffers =
-                                offersForm.getFieldValue("offers") || [];
-                              const currentSupplierId =
-                                offersForm.getFieldValue([
-                                  "offers",
-                                  name,
-                                  "supplier_id",
-                                ]);
-                              const usedSupplierIds = new Set(
-                                allOffers
-                                  .map((o: any, idx: number) =>
-                                    idx !== name ? o?.supplier_id : undefined,
-                                  )
-                                  .filter(Boolean),
-                              );
-                              return suppliers
-                                .filter(
-                                  (s) =>
-                                    !usedSupplierIds.has(s.id) ||
-                                    s.id === currentSupplierId,
-                                )
-                                .map((s) => ({ value: s.id, label: s.name }));
-                            })()}
-                            loading={suppliersLoading}
-                            showSearch
-                            optionFilterProp="label"
-                          />
-                        </Form.Item>
-                      )}
-
-                      <Form.Item
-                        {...restField}
-                        name={[name, "price"]}
-                        label="Precio"
-                        rules={[
-                          { required: true, message: "Ingresa el precio" },
-                        ]}
-                        style={{ gridColumn: "2 / 3", marginRight: 0 }}
-                      >
-                        <InputNumber
-                          min={0}
-                          style={{ width: "100%" }}
-                          placeholder="0.00"
-                        />
-                      </Form.Item>
-
-                      <Form.Item
-                        {...restField}
-                        name={[name, "available"]}
-                        label="Disponible"
-                        valuePropName="checked"
-                        style={{ gridColumn: "1 / 2" }}
-                      >
-                        <Switch />
-                      </Form.Item>
-                      <Form.Item
-                        style={{ gridColumn: "2 / 3", marginRight: 0 }}
-                      >
-                        {offersForm.getFieldValue(["offers", name, "id"]) ? (
-                          <Popconfirm
-                            title="Eliminar catálogo"
-                            description="Esta catálogo ya existe. ¿Confirmas eliminarla? Se eliminará al guardar."
-                            okText="Eliminar"
-                            cancelText="Cancelar"
-                            onConfirm={() => {
-                              const existingId = offersForm.getFieldValue([
-                                "offers",
-                                name,
-                                "id",
-                              ]);
-                              const existingSupplierId =
-                                offersForm.getFieldValue([
-                                  "offers",
-                                  name,
-                                  "supplier_id",
-                                ]);
-                              if (existingId && existingSupplierId) {
-                                setRemovedOffersBySupplier((prev) => ({
-                                  ...prev,
-                                  [existingSupplierId]: existingId,
-                                }));
-                              }
-                              remove(name);
-                            }}
-                          >
-                            <Button danger icon={<DeleteOutlined />} />
-                          </Popconfirm>
-                        ) : (
-                          <Button
-                            danger
-                            icon={<DeleteOutlined />}
-                            onClick={() => remove(name)}
-                          />
-                        )}
-                      </Form.Item>
-                    </div>
-                  </Card>
-                ))}
-
-                <Button
-                  type="dashed"
-                  icon={<PlusOutlined />}
-                  onClick={() =>
-                    add({ supplier_id: null, price: 0, available: true })
-                  }
-                  block
-                >
-                  Agregar catálogo
-                </Button>
-              </Space>
-            )}
-          </Form.List>
-        </Form>
-      </Drawer>
     </Space>
   );
 };

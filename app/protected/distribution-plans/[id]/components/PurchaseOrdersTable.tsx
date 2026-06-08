@@ -2,8 +2,9 @@ import ProductImage from "@/app/protected/components/ProductImage";
 import PurchaseOrderStatusTag from "@/app/protected/components/PurchaseOrderStatusTag";
 import { formatPriceAccounting } from "@/lib/formatPrice";
 import { createClient } from "@/lib/supabase/client";
+import { InfoCircleOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
-import { Table, Typography } from "antd";
+import { Space, Table, Tooltip, Typography } from "antd";
 import { ColumnsType } from "antd/es/table";
 interface PurchaseOrder {
   id: string;
@@ -54,7 +55,7 @@ interface PurchaseOrder {
 const PurchaseOrdersTable = ({ id }: { id: string }) => {
   const supabase = createClient();
   const { isPending, error, data } = useQuery<PurchaseOrder[]>({
-    queryKey: ["distribution-plan", "components", "purchase-order-table", id],
+    queryKey: ["distribution-plan", id, "components", "purchase-order-table"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("purchase_order")
@@ -90,7 +91,7 @@ const PurchaseOrdersTable = ({ id }: { id: string }) => {
         )
 
           )
-        `
+        `,
         )
         .eq("distribution_plan_id", id)
         .order("created_at", { ascending: true });
@@ -148,7 +149,7 @@ const PurchaseOrdersTable = ({ id }: { id: string }) => {
       ) => <PurchaseOrderStatusTag status={status} />,
     },
     {
-      title: "Total estimado",
+      title: "Total",
       key: "po_total",
       render: (_, record) => {
         const items = record.purchase_item || [];
@@ -159,7 +160,16 @@ const PurchaseOrdersTable = ({ id }: { id: string }) => {
               Number(it.actual_price ?? it.offer?.price ?? 0),
           0,
         );
-        return formatPriceAccounting(total);
+        return (
+          <div>
+            {formatPriceAccounting(total)}
+            {record.status !== "received" && (
+              <Tooltip title="Basado en el precio mas reciente">
+                <InfoCircleOutlined />
+              </Tooltip>
+            )}
+          </div>
+        );
       },
     },
     {
@@ -222,21 +232,44 @@ const PurchaseOrdersTable = ({ id }: { id: string }) => {
                   `${Number(it.quantity || 0)} ${it?.offer?.product?.unit}`,
               },
               {
-                title: "Último precio",
+                title: "Precio mas reciente",
+                key: "price",
+                render: (_, it) => (
+                  <Typography.Text strong={!it.actual_price}>
+                    {formatPriceAccounting(Number(it.offer?.price ?? 0))}
+                  </Typography.Text>
+                ),
+              },
+              {
+                title: "Precio real",
                 key: "price",
                 render: (_, it) =>
-                  formatPriceAccounting(
-                    Number(it.actual_price ?? it.offer?.price ?? 0),
+                  it.actual_price ? (
+                    <Typography.Text strong>
+                      {formatPriceAccounting(Number(it.actual_price ?? 0))}
+                    </Typography.Text>
+                  ) : (
+                    <Typography.Text type="secondary">No info</Typography.Text>
                   ),
               },
               {
                 title: "Importe",
                 key: "line_total",
-                render: (_, it) =>
-                  formatPriceAccounting(
-                    Number(it.quantity || 0) *
-                      Number(it.actual_price ?? it.offer?.price ?? 0),
-                  ),
+                render: (_, it) => (
+                  <Space>
+                    <Typography.Text strong>
+                      {formatPriceAccounting(
+                        Number(it.quantity || 0) *
+                          Number(it.actual_price ?? it.offer?.price ?? 0),
+                      )}
+                    </Typography.Text>
+                    {!it.actual_price && (
+                      <Tooltip title="Calculado en base al precio mas reciente">
+                        <InfoCircleOutlined style={{ color: "gray" }} />
+                      </Tooltip>
+                    )}
+                  </Space>
+                ),
               },
             ]}
           />

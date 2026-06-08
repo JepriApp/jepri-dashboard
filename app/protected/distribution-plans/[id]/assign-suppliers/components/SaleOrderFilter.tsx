@@ -45,7 +45,7 @@ const SaleOrderFilter = ({ id }: { id: string }) => {
   }, []);
 
   const { isPending, error, data } = useQuery<SaleOrder[]>({
-    queryKey: ["distribution-plan", "components", "sale-order-filter", id],
+    queryKey: ["distribution-plan", id, "components", "sale-order-filter"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("sale_order")

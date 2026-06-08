@@ -98,7 +98,7 @@ export type Database = {
       }
       distribution_plan: {
         Row: {
-          created_at: string | null
+          created_at: string
           cutoff_at: string | null
           id: string
           notes: string | null
@@ -111,7 +111,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
-          created_at?: string | null
+          created_at?: string
           cutoff_at?: string | null
           id?: string
           notes?: string | null
@@ -124,7 +124,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
-          created_at?: string | null
+          created_at?: string
           cutoff_at?: string | null
           id?: string
           notes?: string | null
@@ -185,6 +185,7 @@ export type Database = {
       offer: {
         Row: {
           available: boolean | null
+          created_at: string
           id: string
           price: number
           product_id: string
@@ -192,6 +193,7 @@ export type Database = {
         }
         Insert: {
           available?: boolean | null
+          created_at?: string
           id?: string
           price: number
           product_id: string
@@ -199,6 +201,7 @@ export type Database = {
         }
         Update: {
           available?: boolean | null
+          created_at?: string
           id?: string
           price?: number
           product_id?: string
@@ -210,6 +213,13 @@ export type Database = {
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "product"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "offer_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "product_with_active_offers"
             referencedColumns: ["id"]
           },
           {
@@ -466,6 +476,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "sale_item_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "product_with_active_offers"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "sale_item_sale_order_id_fkey"
             columns: ["sale_order_id"]
             isOneToOne: false
@@ -591,6 +608,13 @@ export type Database = {
             referencedRelation: "product"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "shopping_cart_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "product_with_active_offers"
+            referencedColumns: ["id"]
+          },
         ]
       }
       supplier: {
@@ -633,10 +657,34 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      product_with_active_offers: {
+        Row: {
+          description: string | null
+          id: string | null
+          main_photo: string | null
+          name: string | null
+          offers: Json | null
+          reference_price: number | null
+          siigo_id: string | null
+          unit: Database["public"]["Enums"]["unit_type"] | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
-      [_ in never]: never
+      procesar_ofertas_por_plan: {
+        Args: { plan_id: string }
+        Returns: undefined
+      }
+      simular_procesamiento_plan: { Args: { plan_id: string }; Returns: Json }
+      simulate_transition_to_completed_state: {
+        Args: { plan_id: string }
+        Returns: Json
+      }
+      transition_to_completed_state: {
+        Args: { plan_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       distribution_plan_status:

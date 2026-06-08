@@ -6,7 +6,8 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "update-supabase-types": "npx supabase gen types typescript --project-id gswoglqqilkhwuedgktp > database.types.ts"
   },
   "dependencies": {
     "@ant-design/icons": "6.x",
@@ -40,6 +41,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "autoprefixer": "^10.4.20",
+    "baseline-browser-mapping": "^2.10.27",
     "eslint": "^9",
     "eslint-config-next": "15.3.1",
     "postcss": "^8",

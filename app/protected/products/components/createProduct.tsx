@@ -27,7 +27,7 @@ const CreateProduct = ({ onSubmit }: { onSubmit: () => void }) => {
           values.reference_price !== null
             ? Number(values.reference_price)
             : null,
-        main_photo: values.main_photo || null,        
+        main_photo: values.main_photo || null,
         siigo_id: (values.siigo_id || "").trim(),
       };
       const { data, error } = await supabase
@@ -87,14 +87,16 @@ const CreateProduct = ({ onSubmit }: { onSubmit: () => void }) => {
               ]}
             />
           </Form.Item>
-          <Form.Item
-            name="siigo_id"
-            label="Id en Siigo"
-          >
+          <Form.Item name="siigo_id" label="Id en Siigo">
             <Input placeholder="Id en Siigo" />
           </Form.Item>
           <Form.Item name="reference_price" label="Precio de referencia">
-            <InputNumber min={0} style={{ width: "100%" }} placeholder="0.00" />
+            <InputNumber
+              min={0}
+              style={{ width: "100%" }}
+              placeholder="0.00"
+              step={50}
+            />
           </Form.Item>
           <Form.Item name="description" label="Descripción">
             <Input.TextArea rows={3} placeholder="Descripción del producto" />

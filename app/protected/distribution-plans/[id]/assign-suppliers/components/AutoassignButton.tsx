@@ -1,7 +1,7 @@
 "use client";
 import { createClient } from "@/lib/supabase/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, message, Modal, Table, Tag, Typography } from "antd";
+import { App, Button, Modal, Table, Tag, Typography } from "antd";
 import { useState } from "react";
 import { formatPriceAccounting } from "@/lib/formatPrice";
 
@@ -25,6 +25,7 @@ const AutoassignButton = ({
   onSuccess?: () => Promise<void>;
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const { message } = App.useApp();
   const supabase = createClient();
   const queryClient = useQueryClient();
   const distributionPlanQuery = useQuery({
