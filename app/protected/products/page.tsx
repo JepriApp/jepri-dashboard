@@ -24,7 +24,7 @@ import OfferByProductDrawer from "./components/offerByProductDrawer";
 
 export type SupplierMinimal = {
   id: string;
-  name: string;
+  name: string | null;
   phone?: string | null;
 };
 
@@ -38,7 +38,7 @@ export type OfferWithSupplier = {
 
 export type ProductWithOffers = {
   id: string;
-  name: string;
+  name: string | null;
   description?: string | null;
   unit: string;
   reference_price?: number | null;
@@ -82,7 +82,7 @@ const ProductsIndexPage = () => {
     const q = query.trim().toLowerCase();
     return products.filter((p) =>
       q
-        ? p.name.toLowerCase().includes(q) ||
+        ? p.name?.toLowerCase().includes(q) ||
           (p.description || "").toLowerCase().includes(q)
         : true,
     );
@@ -91,7 +91,7 @@ const ProductsIndexPage = () => {
   const openEditModal = (record: ProductWithOffers) => {
     setEditingProduct(record);
     editForm.setFieldsValue({
-      name: record.name,
+      name: record.name || "",
       unit: record.unit,
       reference_price: record.reference_price ?? undefined,
       description: record.description ?? "",
@@ -116,7 +116,7 @@ const ProductsIndexPage = () => {
         >
           <ProductImage
             source={record.main_photo}
-            name={record.name}
+            name={record.name || ""}
             size="large"
           />
           <Space orientation="vertical" size={0}>

@@ -31,10 +31,17 @@ const CreateNewOfferForSupplierButton = ({
     staleTime: 60_000,
   });
   const saveOffersMutation = useMutation({
-    mutationFn: async (values: { productId: string; price: number }) => {
+    mutationFn: async ({
+      product_id,
+      price,
+    }: {
+      product_id: string;
+      price: number;
+    }) => {
       const newOffer = {
         supplier_id: supplierId,
-        ...values,
+        product_id,
+        price,
       };
       const { error } = await supabase.from("offer").insert(newOffer);
       if (error) throw error;
@@ -44,8 +51,12 @@ const CreateNewOfferForSupplierButton = ({
       setIsOpen(false);
       await onSuccess?.();
     },
-    onError: (err) => {
+    onError: (err: { code: string; message: string }) => {
       console.error(err);
+      if (err.code === "23505") {
+        message.error("Ya existe una oferta para este producto", 10);
+        return;
+      }
       message.error(
         err?.message || "Error al actualizar las productos ofrecidos",
       );

@@ -33,7 +33,7 @@ const CreateNewOfferForProductButton = ({
         product_id: productId,
         ...values,
       };
-      const { error } = await supabase.from("offer").insert(newOffer);
+      const { error } = await supabase.from("offer").insert(newOffer as any);
       if (error) throw error;
     },
     onSuccess: async () => {

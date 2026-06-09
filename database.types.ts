@@ -186,6 +186,7 @@ export type Database = {
         Row: {
           available: boolean | null
           created_at: string
+          distribution_plan_id: string | null
           id: string
           price: number
           product_id: string
@@ -194,6 +195,7 @@ export type Database = {
         Insert: {
           available?: boolean | null
           created_at?: string
+          distribution_plan_id?: string | null
           id?: string
           price: number
           product_id: string
@@ -202,12 +204,20 @@ export type Database = {
         Update: {
           available?: boolean | null
           created_at?: string
+          distribution_plan_id?: string | null
           id?: string
           price?: number
           product_id?: string
           supplier_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "offer_distribution_plan_id_fkey"
+            columns: ["distribution_plan_id"]
+            isOneToOne: false
+            referencedRelation: "distribution_plan"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "offer_product_id_fkey"
             columns: ["product_id"]
@@ -293,6 +303,42 @@ export type Database = {
           reference_price?: number | null
           siigo_id?: string | null
           unit?: Database["public"]["Enums"]["unit_type"]
+        }
+        Relationships: []
+      }
+      product_reference_price_history: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          distribution_plan_id: string | null
+          id: string
+          new_reference_price: number | null
+          old_reference_price: number | null
+          product_id: string
+          product_name: string
+          product_unit: Database["public"]["Enums"]["unit_type"]
+        }
+        Insert: {
+          changed_at?: string
+          changed_by?: string | null
+          distribution_plan_id?: string | null
+          id?: string
+          new_reference_price?: number | null
+          old_reference_price?: number | null
+          product_id: string
+          product_name: string
+          product_unit: Database["public"]["Enums"]["unit_type"]
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          distribution_plan_id?: string | null
+          id?: string
+          new_reference_price?: number | null
+          old_reference_price?: number | null
+          product_id?: string
+          product_name?: string
+          product_unit?: Database["public"]["Enums"]["unit_type"]
         }
         Relationships: []
       }
@@ -693,6 +739,7 @@ export type Database = {
         | "in_progress"
         | "completed"
         | "cancelled"
+        | "invoicing"
       idetification_type: "CC" | "NIT" | "PPT" | "PEP"
       purchase_order_status:
         | "created"
@@ -842,6 +889,7 @@ export const Constants = {
         "in_progress",
         "completed",
         "cancelled",
+        "invoicing",
       ],
       idetification_type: ["CC", "NIT", "PPT", "PEP"],
       purchase_order_status: [

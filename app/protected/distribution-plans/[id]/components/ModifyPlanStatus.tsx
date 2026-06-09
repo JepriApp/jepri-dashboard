@@ -94,9 +94,25 @@ const ModifyPlanStatus = ({
       if (error) {
         throw error;
       }
-      return data;
+      return data as {
+        detalles_ofertas: {
+          product_id: string;
+          supplier_id: string;
+          nombre_producto: string;
+          nuevo_precio_oferta: number;
+          precio_oferta_anterior: number;
+        }[];
+        total_ofertas_a_crear: number;
+        productos_a_actualizar: {
+          nombre: string;
+          product_id: string;
+          ofertas_asociadas: number;
+          nuevo_precio_referencia: number;
+          precio_referencia_anterior: number;
+        }[];
+      };
     },
-    enabled: data?.status === "in_progress",
+    enabled: data?.status === "invoicing",
   });
   const isComponentDisabled =
     data?.status === "completed" || data?.status === "cancelled";

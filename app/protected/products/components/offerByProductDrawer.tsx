@@ -46,13 +46,9 @@ const OfferByProductDrawer = ({
       const productWithOffers: ProductWithOffers = {
         ...record,
         offers: (supplierOffers || []).map((o) => {
-          const productObj = Array.isArray(o.product)
-            ? o.product[0]
-            : o.product;
           return {
             ...o,
             available: Boolean(o.available),
-            product: productObj || null,
           };
         }),
       };
@@ -115,9 +111,9 @@ const OfferByProductDrawer = ({
                     extra={
                       <UpdateOfferForSupplierButton
                         supplierId={offer.supplier.id}
-                        supplierName={offer.supplier.name}
+                        supplierName={offer.supplier.name || ""}
                         productId={record.id}
-                        productName={record.name}
+                        productName={record.name || ""}
                         offerId={offer.id}
                         offerPrice={offer.price}
                         onSuccess={async () => {
@@ -146,13 +142,13 @@ const OfferByProductDrawer = ({
             })}
           <CreateNewOfferForProductButton
             productId={record.id}
-            productName={record.name}
+            productName={record.name || ""}
             supplierIdsOfExistingOffers={
               record.offers?.map((o) => o.supplier.id) || []
             }
             onSuccess={async () => {
               await openOffersDrawer(record);
-              await onChange?.()
+              await onChange?.();
             }}
           />
         </div>

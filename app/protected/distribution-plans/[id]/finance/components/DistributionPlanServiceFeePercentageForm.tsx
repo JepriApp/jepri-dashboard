@@ -6,7 +6,7 @@ import { Form, InputNumber, message, Typography } from "antd";
 interface DistributionPlan {
   id: string;
   service_fee_percentage: number;
-  status: "planned" | "preparing" | "in_progress" | "completed" | "cancelled";
+  status: "planned" | "preparing" | "in_progress" | "completed" | "cancelled" | "invoicing";
 }
 const DistributionPlanServiceFeePercentageForm = ({
   id,
