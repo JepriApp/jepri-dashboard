@@ -161,14 +161,14 @@ const PurchaseOrdersTable = ({ id }: { id: string }) => {
           0,
         );
         return (
-          <div>
+          <Space>
             {formatPriceAccounting(total)}
             {record.status !== "received" && (
-              <Tooltip title="Basado en el precio mas reciente">
-                <InfoCircleOutlined />
+              <Tooltip title="Cálculo en base al precio mas reciente">
+                <InfoCircleOutlined  style={{ color: "gray" }} />
               </Tooltip>
             )}
-          </div>
+          </Space>
         );
       },
     },
@@ -264,7 +264,7 @@ const PurchaseOrdersTable = ({ id }: { id: string }) => {
                       )}
                     </Typography.Text>
                     {!it.actual_price && (
-                      <Tooltip title="Calculado en base al precio mas reciente">
+                      <Tooltip title="Cálculo en base al precio mas reciente">
                         <InfoCircleOutlined style={{ color: "gray" }} />
                       </Tooltip>
                     )}

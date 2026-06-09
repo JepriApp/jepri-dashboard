@@ -187,6 +187,7 @@ const PurchaseItemActualPriceForm = ({
           onFocus={handleFocus}
           suffix={isFocused && <LinkOutlined />}
           onChange={(value) => {
+            handleFocus();
             form.setFieldValue("actual_price", value);
             onPriceChange?.(value);
           }}
