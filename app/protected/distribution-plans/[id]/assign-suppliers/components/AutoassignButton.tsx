@@ -102,7 +102,8 @@ const AutoassignButton = ({
               )
             `,
             )
-            .eq("product_id", saleItem.product.id);
+            .eq("product_id", saleItem.product.id)
+            .eq("available", true);
 
           if (offersError) throw offersError;
 
