@@ -135,7 +135,8 @@ const AsignSupplierDrawer = ({
             )
             `,
         )
-        .eq("product_id", saleItemData?.product.id);
+        .eq("product_id", saleItemData?.product.id)
+        .eq("available", true);
       if (offerError) {
         throw offerError;
       }
