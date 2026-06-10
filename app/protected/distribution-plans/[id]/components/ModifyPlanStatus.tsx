@@ -329,7 +329,7 @@ const ModifyPlanStatus = ({
       message.error("No se pudo actualizar el estado del plan");
     }
   };
-  if (isPending || (resumenIsPending && data?.status === "in_progress"))
+  if (isPending || (resumenIsPending && data?.status === "invoicing"))
     return "Loading...";
   if (error) return "An error has occurred: " + error.message;
   if (resumenError) return "An error has occurred: " + resumenError.message;
