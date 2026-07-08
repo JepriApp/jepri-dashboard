@@ -70,7 +70,6 @@ export const AutoMenu = (props: MenuProps) => {
               key: `/protected/users/admins`,
               label: <Link href="/protected/users/admins">Administradores</Link>,
               children: undefined,
-              disabled: true,
             },
           ],
         },
