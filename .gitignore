@@ -40,3 +40,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# env (added by `vercel link`) — pero mantené versionado el ejemplo
+.env*
+!.env.example

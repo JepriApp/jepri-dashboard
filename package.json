@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "update-supabase-types": "npx supabase gen types typescript --project-id gswoglqqilkhwuedgktp > database.types.ts"
+    "update-supabase-types": "npx supabase gen types typescript --project-id acuofxciywrktkckokqo > database.types.ts"
   },
   "dependencies": {
     "@ant-design/icons": "6.x",
