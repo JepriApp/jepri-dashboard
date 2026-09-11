@@ -283,6 +283,13 @@ const ModifyPlanStatus = ({
         if (error) {
           throw error;
         }
+        // Crea una fila invoice_review pendiente de revisión por cada orden
+        // de venta no cancelada del plan.
+        const { error: initInvoiceReviewError } = await supabase.rpc(
+          "initialize_invoice_review",
+          { plan_id: id },
+        );
+        if (initInvoiceReviewError) throw initInvoiceReviewError;
       }
       if (status === "completed") {
         const { error: error4 } = await supabase.rpc(

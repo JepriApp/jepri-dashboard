@@ -140,8 +140,10 @@ const PurchaseItemActualPriceForm = ({
     }
   };
 
-  const isComponentDisabled =
-    distributionPlanQuery.data?.status !== "in_progress";
+  const isComponentDisabled = ![
+    "in_progress",
+    "invoicing",
+  ].includes(distributionPlanQuery.data?.status ?? "");
 
   if (isPending) return "Loading...";
   if (error) return "An error has occurred: " + error.message;

@@ -201,6 +201,79 @@ export type Database = {
           },
         ]
       }
+      invoice_review: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          created_at: string
+          distribution_plan_id: string
+          error_message: string | null
+          id: string
+          invoiced_at: string | null
+          invoiced_lines: Json | null
+          sale_order_id: string
+          siigo_invoice_id: string | null
+          siigo_invoice_number: string | null
+          siigo_public_url: string | null
+          status: Database["public"]["Enums"]["invoice_review_status"]
+          updated_at: string | null
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          distribution_plan_id: string
+          error_message?: string | null
+          id?: string
+          invoiced_at?: string | null
+          invoiced_lines?: Json | null
+          sale_order_id: string
+          siigo_invoice_id?: string | null
+          siigo_invoice_number?: string | null
+          siigo_public_url?: string | null
+          status?: Database["public"]["Enums"]["invoice_review_status"]
+          updated_at?: string | null
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          distribution_plan_id?: string
+          error_message?: string | null
+          id?: string
+          invoiced_at?: string | null
+          invoiced_lines?: Json | null
+          sale_order_id?: string
+          siigo_invoice_id?: string | null
+          siigo_invoice_number?: string | null
+          siigo_public_url?: string | null
+          status?: Database["public"]["Enums"]["invoice_review_status"]
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_review_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_review_distribution_plan_id_fkey"
+            columns: ["distribution_plan_id"]
+            isOneToOne: false
+            referencedRelation: "distribution_plan"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_review_sale_order_id_fkey"
+            columns: ["sale_order_id"]
+            isOneToOne: true
+            referencedRelation: "sale_order"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       offer: {
         Row: {
           available: boolean | null
@@ -1516,6 +1589,10 @@ export type Database = {
           start_date: string
         }[]
       }
+      initialize_invoice_review: {
+        Args: { plan_id: string }
+        Returns: undefined
+      }
       simulate_transition_to_completed_state: {
         Args: { plan_id: string }
         Returns: Json
@@ -1534,6 +1611,12 @@ export type Database = {
         | "cancelled"
         | "invoicing"
       idetification_type: "CC" | "NIT" | "PPT" | "PEP"
+      invoice_review_status:
+        | "pending_review"
+        | "approved"
+        | "invoicing"
+        | "invoiced"
+        | "failed"
       purchase_order_status:
         | "created"
         | "published"
@@ -1688,6 +1771,13 @@ export const Constants = {
         "invoicing",
       ],
       idetification_type: ["CC", "NIT", "PPT", "PEP"],
+      invoice_review_status: [
+        "pending_review",
+        "approved",
+        "invoicing",
+        "invoiced",
+        "failed",
+      ],
       purchase_order_status: [
         "created",
         "published",
