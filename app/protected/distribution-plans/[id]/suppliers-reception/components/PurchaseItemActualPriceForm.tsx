@@ -22,6 +22,7 @@ const PurchaseItemActualPriceForm = ({
   syncValue,
   triggerSubmit,
   getRef,
+  onSuccess,
 }: {
   purchaseItemId: string;
   planId: string;
@@ -34,6 +35,7 @@ const PurchaseItemActualPriceForm = ({
   triggerSubmit: (formInstance: FormInstance) => Promise<void>;
   handleFocus: () => void;
   handleBlur: () => void;
+  onSuccess?: () => void;
 }) => {
   const queryClient = useQueryClient();
   const supabase = createClient();
@@ -122,6 +124,7 @@ const PurchaseItemActualPriceForm = ({
         ],
         { actual_price: data.data.actual_price, id: purchaseItemId },
       );
+      onSuccess?.();
     },
     onError: (err) => {
       console.error("Error al actualizar precio real:", err);

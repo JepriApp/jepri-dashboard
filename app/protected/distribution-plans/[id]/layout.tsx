@@ -57,6 +57,12 @@ export default function DistributionPlanEditorLayout({
       children: undefined,
     },
     {
+      key: `/invoicing`,
+      icon: React.createElement(HomeOutlined),
+      label: "Facturación",
+      children: undefined,
+    },
+    {
       key: `/sale-orders-delivery`,
       icon: React.createElement(HomeOutlined),
       label: "Domicilio de Pedidos",
