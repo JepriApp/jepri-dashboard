@@ -5,6 +5,10 @@ import { ExclamationCircleOutlined, WarningOutlined } from "@ant-design/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
+  App,
+  Button,
+  Checkbox,
+  Modal,
   Space,
   Table,
   TableColumnsType,
@@ -13,7 +17,15 @@ import {
   Tooltip,
   Typography,
 } from "antd";
+import { useState } from "react";
 import PurchaseItemActualPriceForm from "../../suppliers-reception/components/PurchaseItemActualPriceForm";
+
+interface MissingSiigoCustomer {
+  id: string;
+  name: string | null;
+  identificationType: string | null;
+  identificationNumber: string | null;
+}
 
 type InvoiceReviewStatus =
   | "pending_review"
@@ -78,6 +90,11 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
   const supabase = createClient();
   const queryClient = useQueryClient();
   const { token } = theme.useToken();
+  const { message } = App.useApp();
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkChecked, setBulkChecked] = useState(false);
+  const [bulkRunning, setBulkRunning] = useState(false);
+  const [retryingOrderId, setRetryingOrderId] = useState<string | null>(null);
 
   const distributionPlanQuery = useQuery({
     queryKey: ["invoicing", "distribution-plan", id],
@@ -153,6 +170,24 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
     },
   });
 
+  const customerValidationQuery = useQuery<{
+    checked: number;
+    missing: MissingSiigoCustomer[];
+  }>({
+    queryKey: ["invoicing", "components", "validate-customers", id],
+    enabled: (invoiceReviewQuery.data?.length ?? 0) > 0,
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/distribution-plans/${id}/invoicing/validate-customers`,
+      );
+      const body = await response.json();
+      if (!response.ok) {
+        throw new Error(body.error || "No se pudo validar los clientes en Siigo.");
+      }
+      return body;
+    },
+  });
+
   if (
     distributionPlanQuery.isPending ||
     invoiceReviewQuery.isPending ||
@@ -197,6 +232,72 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
     );
 
   const ordersWithInvalidCost = salesQuery.data.filter(orderHasInvalidCost);
+
+  const missingCustomers = customerValidationQuery.data?.missing ?? [];
+  const missingCustomerIds = new Set(missingCustomers.map((c) => c.id));
+
+  const isOrderApprovable = (order: SaleOrder) => {
+    const review = invoiceReviewByOrderId.get(order.id);
+    return (
+      !!review &&
+      (review.status === "pending_review" || review.status === "failed") &&
+      !orderHasInvalidCost(order) &&
+      !missingCustomerIds.has(order.customer.id)
+    );
+  };
+  const approvableOrders = salesQuery.data.filter(isOrderApprovable);
+
+  const refreshInvoicing = () => {
+    queryClient.invalidateQueries({
+      queryKey: ["invoicing", "components", "invoice-review", id],
+    });
+  };
+
+  const approveOrder = async (saleOrderId: string) => {
+    const response = await fetch(
+      `/api/distribution-plans/${id}/invoicing/approve`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ saleOrderId }),
+      },
+    );
+    const body = await response.json();
+    if (!response.ok) {
+      throw new Error(body.error || "Error al facturar la orden.");
+    }
+    return body;
+  };
+
+  const handleRetry = async (saleOrderId: string) => {
+    setRetryingOrderId(saleOrderId);
+    try {
+      await approveOrder(saleOrderId);
+    } catch {
+      // el detalle del error queda reflejado en invoice_review.error_message
+    } finally {
+      refreshInvoicing();
+      setRetryingOrderId(null);
+    }
+  };
+
+  const handleBulkApprove = async () => {
+    setBulkRunning(true);
+    for (const order of approvableOrders) {
+      try {
+        await approveOrder(order.id);
+      } catch {
+        // el detalle del error queda reflejado en invoice_review.error_message
+      }
+      refreshInvoicing();
+    }
+    setBulkRunning(false);
+    setBulkModalOpen(false);
+    setBulkChecked(false);
+    message.info(
+      "Proceso de facturación finalizado. Revisa el estado de cada orden.",
+    );
+  };
 
   const getOrderTotal = (order: SaleOrder) =>
     order.sale_items.reduce((acc, saleItem) => {
@@ -246,20 +347,40 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
                 Costo inválido
               </Tag>
             )}
+            {missingCustomerIds.has(record.customer.id) && (
+              <Tag color="error" icon={<ExclamationCircleOutlined />}>
+                Cliente no existe en Siigo
+              </Tag>
+            )}
             {review.status === "invoiced" && review.siigo_invoice_number && (
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 {review.siigo_invoice_number}
               </Typography.Text>
             )}
-            {review.status === "failed" && review.error_message && (
-              <Tooltip title={review.error_message}>
-                <Typography.Text
-                  type="danger"
-                  style={{ fontSize: 12, cursor: "help" }}
+            {review.status === "failed" && (
+              <>
+                {review.error_message && (
+                  <Tooltip title={review.error_message}>
+                    <Typography.Text
+                      type="danger"
+                      style={{ fontSize: 12, cursor: "help" }}
+                    >
+                      Ver error
+                    </Typography.Text>
+                  </Tooltip>
+                )}
+                <Button
+                  size="small"
+                  loading={retryingOrderId === record.id}
+                  disabled={
+                    orderHasInvalidCost(record) ||
+                    missingCustomerIds.has(record.customer.id)
+                  }
+                  onClick={() => handleRetry(record.id)}
                 >
-                  Ver error
-                </Typography.Text>
-              </Tooltip>
+                  Reintentar
+                </Button>
+              </>
             )}
           </Space>
         );
@@ -285,6 +406,97 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
           style={{ marginBottom: 16 }}
         />
       )}
+      {missingCustomers.length > 0 && (
+        <Alert
+          type="error"
+          showIcon
+          title="Hay clientes que no existen en Siigo"
+          description={
+            <Space orientation="vertical" size={4}>
+              <span>
+                Debes crearlos manualmente en Siigo antes de poder facturar
+                sus órdenes:{" "}
+                {missingCustomers
+                  .map(
+                    (c) =>
+                      `${c.name} (${c.identificationType} ${c.identificationNumber})`,
+                  )
+                  .join(", ")}
+                .
+              </span>
+              <Button
+                size="small"
+                loading={customerValidationQuery.isFetching}
+                onClick={() => customerValidationQuery.refetch()}
+              >
+                Revalidar clientes en Siigo
+              </Button>
+            </Space>
+          }
+          style={{ marginBottom: 16 }}
+        />
+      )}
+      <Space
+        style={{
+          marginBottom: 16,
+          display: "flex",
+          justifyContent: "flex-end",
+        }}
+      >
+        <Button
+          type="primary"
+          disabled={approvableOrders.length === 0}
+          onClick={() => setBulkModalOpen(true)}
+        >
+          Aprobar y facturar todas las órdenes ({approvableOrders.length})
+        </Button>
+      </Space>
+      <Modal
+        title="Aprobar y facturar órdenes en Siigo"
+        open={bulkModalOpen}
+        onCancel={() => {
+          if (!bulkRunning) {
+            setBulkModalOpen(false);
+            setBulkChecked(false);
+          }
+        }}
+        footer={[
+          <Button
+            key="cancel"
+            disabled={bulkRunning}
+            onClick={() => {
+              setBulkModalOpen(false);
+              setBulkChecked(false);
+            }}
+          >
+            Volver sin cambiar
+          </Button>,
+          <Button
+            key="ok"
+            type="primary"
+            danger
+            disabled={!bulkChecked}
+            loading={bulkRunning}
+            onClick={handleBulkApprove}
+          >
+            Facturar {approvableOrders.length} orden(es)
+          </Button>,
+        ]}
+      >
+        <Alert
+          type="warning"
+          showIcon
+          title={`Se van a crear ${approvableOrders.length} factura(s) en Siigo`}
+          description="No podrás deshacer esta acción para las órdenes que se facturen correctamente."
+          style={{ marginBottom: 16 }}
+        />
+        <Checkbox
+          checked={bulkChecked}
+          onChange={(e) => setBulkChecked(e.target.checked)}
+        >
+          Entiendo que este cambio no se puede deshacer.
+        </Checkbox>
+      </Modal>
       <Table
         dataSource={salesQuery.data.sort((a, b) =>
           (a.order_code || "").localeCompare(b.order_code || ""),
