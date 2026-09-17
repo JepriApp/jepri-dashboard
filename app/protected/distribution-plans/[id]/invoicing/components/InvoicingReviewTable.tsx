@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   ExclamationCircleOutlined,
   LockOutlined,
+  SearchOutlined,
   WarningOutlined,
 } from "@ant-design/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -12,9 +13,12 @@ import {
   App,
   Button,
   Checkbox,
+  Input,
+  InputNumber,
   Modal,
   Space,
   Table,
+  TableColumnType,
   TableColumnsType,
   Tag,
   theme,
@@ -330,20 +334,85 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
       return acc + itemTotal;
     }, 0);
 
+  const getTextFilterProps = (
+    getValue: (record: SaleOrder) => string,
+    placeholder: string,
+  ): Pick<
+    TableColumnType<SaleOrder>,
+    "filterDropdown" | "filterIcon" | "onFilter"
+  > => ({
+    filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters }) => (
+      <div style={{ padding: 8 }} onKeyDown={(e) => e.stopPropagation()}>
+        <Input
+          placeholder={placeholder}
+          value={selectedKeys[0] as string}
+          onChange={(e) =>
+            setSelectedKeys(e.target.value ? [e.target.value] : [])
+          }
+          onPressEnter={() => confirm()}
+          style={{ marginBottom: 8, display: "block", width: 200 }}
+        />
+        <Space>
+          <Button
+            type="primary"
+            size="small"
+            onClick={() => confirm()}
+            style={{ width: 90 }}
+          >
+            Buscar
+          </Button>
+          <Button
+            size="small"
+            onClick={() => {
+              clearFilters?.();
+              confirm();
+            }}
+            style={{ width: 90 }}
+          >
+            Limpiar
+          </Button>
+        </Space>
+      </div>
+    ),
+    filterIcon: (filtered) => (
+      <SearchOutlined
+        style={{ color: filtered ? token.colorPrimary : undefined }}
+      />
+    ),
+    onFilter: (value, record) =>
+      getValue(record).toLowerCase().includes(String(value).toLowerCase()),
+  });
+
   const columns: TableColumnsType<SaleOrder> = [
     {
       title: "# Orden de venta",
       dataIndex: "order_code",
       key: "order_code",
+      ...getTextFilterProps(
+        (record) => record.order_code || "",
+        "Buscar # orden",
+      ),
     },
     {
       title: "Cliente",
       dataIndex: ["customer", "name"],
       key: "customer_name",
+      ...getTextFilterProps(
+        (record) => record.customer?.name || "",
+        "Buscar cliente",
+      ),
     },
     {
       title: "Identificación",
       key: "identification",
+      ...getTextFilterProps(
+        (record) =>
+          record.customer?.identification_number &&
+          record.customer?.identification_type
+            ? `${record.customer.identification_type} ${record.customer.identification_number}`
+            : "",
+        "Buscar identificación",
+      ),
       render: (_, record) =>
         record.customer?.identification_number &&
         record.customer?.identification_type
@@ -422,6 +491,67 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
     {
       title: "Total",
       key: "total",
+      filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters }) => {
+        const [min, max] = String(selectedKeys[0] || "-").split("-");
+        const setRange = (nextMin: string, nextMax: string) =>
+          setSelectedKeys(
+            nextMin || nextMax ? [`${nextMin}-${nextMax}`] : [],
+          );
+        return (
+          <div style={{ padding: 8 }} onKeyDown={(e) => e.stopPropagation()}>
+            <Space orientation="vertical">
+              <InputNumber
+                placeholder="Mínimo"
+                style={{ width: 160 }}
+                min={0}
+                value={min ? Number(min) : undefined}
+                onChange={(v) => setRange(v != null ? String(v) : "", max)}
+                onPressEnter={() => confirm()}
+              />
+              <InputNumber
+                placeholder="Máximo"
+                style={{ width: 160 }}
+                min={0}
+                value={max ? Number(max) : undefined}
+                onChange={(v) => setRange(min, v != null ? String(v) : "")}
+                onPressEnter={() => confirm()}
+              />
+              <Space>
+                <Button
+                  type="primary"
+                  size="small"
+                  onClick={() => confirm()}
+                  style={{ width: 90 }}
+                >
+                  Filtrar
+                </Button>
+                <Button
+                  size="small"
+                  onClick={() => {
+                    clearFilters?.();
+                    confirm();
+                  }}
+                  style={{ width: 90 }}
+                >
+                  Limpiar
+                </Button>
+              </Space>
+            </Space>
+          </div>
+        );
+      },
+      filterIcon: (filtered) => (
+        <SearchOutlined
+          style={{ color: filtered ? token.colorPrimary : undefined }}
+        />
+      ),
+      onFilter: (value, record) => {
+        const [min, max] = String(value).split("-");
+        const total = getOrderTotal(record);
+        if (min && total < Number(min)) return false;
+        if (max && total > Number(max)) return false;
+        return true;
+      },
       render: (_, record) => formatPriceAccounting(getOrderTotal(record)),
     },
   ];
