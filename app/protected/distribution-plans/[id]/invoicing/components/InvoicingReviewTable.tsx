@@ -353,6 +353,21 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
     {
       title: "Estado de facturación",
       key: "invoice_status",
+      filters: [
+        { text: "Pendiente revisión", value: "pending_review" },
+        { text: "Aprobada", value: "approved" },
+        { text: "Facturando", value: "invoicing" },
+        { text: "Facturada", value: "invoiced" },
+        { text: "Error", value: "failed" },
+        { text: "Costo inválido", value: "invalid_cost" },
+        { text: "Cliente no existe en Siigo", value: "missing_customer" },
+      ],
+      onFilter: (value, record) => {
+        if (value === "invalid_cost") return orderHasInvalidCost(record);
+        if (value === "missing_customer")
+          return missingCustomerIds.has(record.customer.id);
+        return invoiceReviewByOrderId.get(record.id)?.status === value;
+      },
       render: (_, record) => {
         const review = invoiceReviewByOrderId.get(record.id);
         if (!review) return <Tag>Sin iniciar</Tag>;
