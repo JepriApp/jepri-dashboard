@@ -1,7 +1,11 @@
 "use client";
 import { formatPriceAccounting } from "@/lib/formatPrice";
 import { createClient } from "@/lib/supabase/client";
-import { ExclamationCircleOutlined, WarningOutlined } from "@ant-design/icons";
+import {
+  ExclamationCircleOutlined,
+  LockOutlined,
+  WarningOutlined,
+} from "@ant-design/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -217,6 +221,20 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
   const invoiceReviewByOrderId = new Map(
     invoiceReviewQuery.data.map((review) => [review.sale_order_id, review]),
   );
+
+  // Un mismo purchase_item puede surtir varias sale_order. Si alguna de
+  // esas órdenes ya fue facturada en Siigo, su costo ya quedó plasmado en
+  // esa factura: editarlo ahora (aunque el plan siga abierto por otras
+  // órdenes pendientes de corregir) desalinearía la factura ya emitida.
+  const invoicedPurchaseItemIds = new Set<string>();
+  for (const order of salesQuery.data) {
+    if (invoiceReviewByOrderId.get(order.id)?.status !== "invoiced") continue;
+    for (const saleItem of order.sale_items) {
+      for (const fulfillment of saleItem.fulfillment) {
+        invoicedPurchaseItemIds.add(fulfillment.purchase_item.id);
+      }
+    }
+  }
 
   const getUnitSalePrice = (actualPrice: number | null) =>
     Number(actualPrice || 0) * (1 + serviceFeePercentage / 100);
@@ -560,35 +578,45 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
               {
                 title: "Costo unitario",
                 key: "actual_price",
-                render: (_, it) => (
-                  <Space>
-                    <PurchaseItemActualPriceForm
-                      purchaseItemId={it.purchaseItemId}
-                      planId={id}
-                      disabled={false}
-                      referencePrice={it.referencePrice || 0}
-                      isFocused={false}
-                      getRef={() => {}}
-                      handleFocus={() => {}}
-                      handleBlur={() => {}}
-                      triggerSubmit={async (form) => {
-                        form.submit();
-                      }}
-                      onSuccess={() => {
-                        queryClient.invalidateQueries({
-                          queryKey: salesQueryKey,
-                        });
-                      }}
-                    />
-                    {isInvalidCost(it.actualPrice) && (
-                      <Tooltip title="El costo debe ser mayor a $0 para poder aprobar esta orden">
-                        <ExclamationCircleOutlined
-                          style={{ color: token.colorError }}
-                        />
-                      </Tooltip>
-                    )}
-                  </Space>
-                ),
+                render: (_, it) => {
+                  const isLocked = invoicedPurchaseItemIds.has(
+                    it.purchaseItemId,
+                  );
+                  return (
+                    <Space>
+                      <PurchaseItemActualPriceForm
+                        purchaseItemId={it.purchaseItemId}
+                        planId={id}
+                        disabled={isLocked}
+                        referencePrice={it.referencePrice || 0}
+                        isFocused={false}
+                        getRef={() => {}}
+                        handleFocus={() => {}}
+                        handleBlur={() => {}}
+                        triggerSubmit={async (form) => {
+                          form.submit();
+                        }}
+                        onSuccess={() => {
+                          queryClient.invalidateQueries({
+                            queryKey: salesQueryKey,
+                          });
+                        }}
+                      />
+                      {isLocked && (
+                        <Tooltip title="Este producto ya fue incluido en una factura de Siigo (de esta u otra orden que comparte el mismo costo). No se puede editar para no desalinear esa factura.">
+                          <LockOutlined style={{ color: token.colorTextDisabled }} />
+                        </Tooltip>
+                      )}
+                      {!isLocked && isInvalidCost(it.actualPrice) && (
+                        <Tooltip title="El costo debe ser mayor a $0 para poder aprobar esta orden">
+                          <ExclamationCircleOutlined
+                            style={{ color: token.colorError }}
+                          />
+                        </Tooltip>
+                      )}
+                    </Space>
+                  );
+                },
               },
               {
                 title: "Precio de venta unitario",
