@@ -84,6 +84,7 @@ const CreateNewOfferForProductButton = ({
                     .localeCompare((optionB?.label ?? "").toLowerCase()),
               }}
               options={suppliers
+                .filter((supplier) => supplier.is_active)
                 .filter(
                   (supplier) =>
                     !supplierIdsOfExistingOffers.includes(supplier.id),

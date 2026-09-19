@@ -32,6 +32,7 @@ const CreateNewOfferButton = ({
           name
         `
         )
+        .eq("is_active", true)
         .order("name", { ascending: true });
       if (error) throw error;
       return data || [];

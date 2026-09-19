@@ -9,7 +9,8 @@ export async function listSuppliers(supabaseClient: SupabaseClient) {
           name,
           contact,
           phone,
-          user_id
+          user_id,
+          is_active
         `
     )
     .order("name", { ascending: true });
