@@ -33,7 +33,13 @@ const getSiigoConfig = () => {
   const paymentId = Number(
     process.env.SIIGO_PAYMENT_ID ?? (process.env.SIIGO_MODE === "live" ? NaN : 1),
   );
-  return { documentId, sellerId, paymentId };
+  // Algunas formas de pago (p.ej. Crédito) tienen "vencimiento" habilitado
+  // en Siigo Nube y Siigo rechaza la factura si no se manda due_date.
+  const paymentRequiresDueDate = process.env.SIIGO_PAYMENT_REQUIRES_DUE_DATE === "true";
+  const paymentDueDays = process.env.SIIGO_PAYMENT_DUE_DAYS
+    ? Number(process.env.SIIGO_PAYMENT_DUE_DAYS)
+    : undefined;
+  return { documentId, sellerId, paymentId, paymentRequiresDueDate, paymentDueDays };
 };
 
 /**
@@ -166,7 +172,8 @@ export async function approveOrderInvoice(
     return { ok: false, status: 422, error: message };
   }
 
-  const { documentId, sellerId, paymentId } = getSiigoConfig();
+  const { documentId, sellerId, paymentId, paymentRequiresDueDate, paymentDueDays } =
+    getSiigoConfig();
   if (!documentId || !sellerId || !paymentId) {
     return {
       ok: false,
@@ -174,6 +181,15 @@ export async function approveOrderInvoice(
       error:
         "Falta configurar SIIGO_DOCUMENT_ID, SIIGO_SELLER_ID y/o SIIGO_PAYMENT_ID.",
     };
+  }
+  if (paymentRequiresDueDate && !paymentDueDays) {
+    const message =
+      "SIIGO_PAYMENT_REQUIRES_DUE_DATE está activo pero falta configurar SIIGO_PAYMENT_DUE_DAYS.";
+    await supabase
+      .from("invoice_review")
+      .update({ status: "failed", error_message: message })
+      .eq("id", review.id);
+    return { ok: false, status: 500, error: message };
   }
 
   const items = lines.map((line) => ({
@@ -183,16 +199,43 @@ export async function approveOrderInvoice(
     price: Number(line.unit_price),
   }));
 
+  const invoiceDate = new Date();
+  const paymentDueDate = paymentRequiresDueDate
+    ? new Date(invoiceDate.getTime() + paymentDueDays! * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10)
+    : undefined;
+
   try {
     const result = await siigo.createInvoice({
       documentId,
-      date: new Date().toISOString().slice(0, 10),
+      date: invoiceDate.toISOString().slice(0, 10),
       customerIdentification: identification,
       sellerId,
       paymentId,
+      paymentDueDate,
       items,
       observations: `Plan ${plan.plan_code} - Orden ${lines[0].order_code}`,
     });
+
+    // El documento se creó en Siigo, pero si la DIAN rechazó el timbrado
+    // guardamos igual el siigo_invoice_id: es el mismo documento que se
+    // puede reenviar a validación después (ver resendInvoiceStamp), sin
+    // crear una factura duplicada.
+    if (result.stampErrors) {
+      await supabase
+        .from("invoice_review")
+        .update({
+          status: "failed",
+          error_message: `La DIAN rechazó el timbrado: ${result.stampErrors}`,
+          siigo_invoice_id: result.siigoInvoiceId,
+          siigo_invoice_number: result.invoiceNumber,
+          siigo_public_url: result.publicUrl,
+        })
+        .eq("id", review.id);
+      return { ok: false, status: 422, error: result.stampErrors };
+    }
+
     await supabase
       .from("invoice_review")
       .update({
@@ -215,6 +258,97 @@ export async function approveOrderInvoice(
       err instanceof Error
         ? err.message
         : "Error desconocido al crear la factura en Siigo.";
+    await supabase
+      .from("invoice_review")
+      .update({ status: "failed", error_message: message })
+      .eq("id", review.id);
+    return { ok: false, status: 502, error: message };
+  }
+}
+
+/**
+ * Reenvía a validación de la DIAN un invoice_review en estado `failed` que
+ * ya tiene un documento creado en Siigo (siigo_invoice_id) — p.ej. porque
+ * el timbrado fue rechazado y se corrigió el problema directamente en
+ * Siigo. No crea una factura nueva: reintenta el timbrado sobre el mismo
+ * documento vía SiigoClient.resendStamp.
+ */
+export async function resendInvoiceStamp(
+  supabase: SupabaseClient<Database>,
+  siigo: SiigoClient,
+  saleOrderId: string,
+  planId: string,
+): Promise<ApproveOrderResult> {
+  const { data: review, error: reviewError } = await supabase
+    .from("invoice_review")
+    .select("id, status, siigo_invoice_id")
+    .eq("sale_order_id", saleOrderId)
+    .eq("distribution_plan_id", planId)
+    .single();
+  if (reviewError) {
+    return { ok: false, status: 500, error: reviewError.message };
+  }
+  if (!review.siigo_invoice_id) {
+    return {
+      ok: false,
+      status: 422,
+      error:
+        "Esta orden no tiene un documento creado en Siigo todavía — usa 'Reintentar' en vez de 'Reenviar a DIAN'.",
+    };
+  }
+
+  const { data: claimed, error: claimError } = await supabase
+    .from("invoice_review")
+    .update({ status: "invoicing", error_message: null })
+    .eq("id", review.id)
+    .eq("status", "failed")
+    .select("id")
+    .maybeSingle();
+  if (claimError) {
+    return { ok: false, status: 500, error: claimError.message };
+  }
+  if (!claimed) {
+    return {
+      ok: false,
+      status: 409,
+      error: "Esta orden ya fue facturada o ya se está procesando.",
+    };
+  }
+
+  try {
+    const result = await siigo.resendStamp(review.siigo_invoice_id);
+    if (result.stampErrors) {
+      await supabase
+        .from("invoice_review")
+        .update({
+          status: "failed",
+          error_message: `La DIAN rechazó el timbrado: ${result.stampErrors}`,
+          siigo_invoice_number: result.invoiceNumber,
+          siigo_public_url: result.publicUrl,
+        })
+        .eq("id", review.id);
+      return { ok: false, status: 422, error: result.stampErrors };
+    }
+    await supabase
+      .from("invoice_review")
+      .update({
+        status: "invoiced",
+        siigo_invoice_number: result.invoiceNumber,
+        siigo_public_url: result.publicUrl,
+        invoiced_at: new Date().toISOString(),
+      })
+      .eq("id", review.id);
+    return {
+      ok: true,
+      siigoInvoiceId: result.siigoInvoiceId,
+      invoiceNumber: result.invoiceNumber,
+      publicUrl: result.publicUrl,
+    };
+  } catch (err) {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Error desconocido al reenviar la factura a la DIAN.";
     await supabase
       .from("invoice_review")
       .update({ status: "failed", error_message: message })

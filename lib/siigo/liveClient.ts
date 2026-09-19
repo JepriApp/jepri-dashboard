@@ -27,7 +27,29 @@ interface SiigoInvoiceCreateResponse {
   number?: number | string;
   name?: string;
   public_url?: string;
+  stamp?: {
+    status?: string;
+    cufe?: string;
+    errors?: { code?: string; message?: string }[];
+  };
 }
+
+const parseInvoiceResponse = (
+  data: SiigoInvoiceCreateResponse,
+): SiigoInvoiceResult => {
+  const stampErrors =
+    data.stamp?.errors && data.stamp.errors.length > 0
+      ? data.stamp.errors
+          .map((e) => `${e.code ? `[${e.code}] ` : ""}${e.message}`)
+          .join("; ")
+      : undefined;
+  return {
+    siigoInvoiceId: data.id,
+    invoiceNumber: data.name ?? (data.number ? String(data.number) : null),
+    publicUrl: data.public_url ?? null,
+    stampErrors,
+  };
+};
 
 export const createLiveSiigoClient = (): SiigoClient => {
   let cachedToken: { accessToken: string; expiresAt: number } | null = null;
@@ -114,9 +136,16 @@ export const createLiveSiigoClient = (): SiigoClient => {
                 (acc, item) => acc + item.quantity * item.price,
                 0,
               ),
+              ...(payload.paymentDueDate
+                ? { due_date: payload.paymentDueDate }
+                : {}),
             },
           ],
-          stamp: { send: false },
+          // send: true -> Siigo envía la factura a validación electrónica
+          // ante la DIAN automáticamente al crearla (queda timbrada, ya no
+          // se puede editar/anular). La validación es síncrona: el
+          // resultado viene en este mismo response, en `stamp`.
+          stamp: { send: true },
           mail: { send: false },
         }),
       });
@@ -126,11 +155,41 @@ export const createLiveSiigoClient = (): SiigoClient => {
         );
       }
       const data: SiigoInvoiceCreateResponse = await response.json();
-      return {
-        siigoInvoiceId: data.id,
-        invoiceNumber: data.name ?? (data.number ? String(data.number) : null),
-        publicUrl: data.public_url ?? null,
-      };
+      // Si la DIAN rechaza el timbrado, el documento igual quedó creado en
+      // Siigo (con errores) — no lanzamos excepción para no perder su id;
+      // el llamador decide el estado a partir de `stampErrors`.
+      return parseInvoiceResponse(data);
+    },
+
+    async resendStamp(siigoInvoiceId: string): Promise<SiigoInvoiceResult> {
+      const headers = await authHeaders();
+      const postResponse = await fetch(
+        `${SIIGO_BASE_URL}/v1/invoices/${siigoInvoiceId}/stamp`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ mail: { send: false } }),
+        },
+      );
+      if (!postResponse.ok) {
+        throw new Error(
+          `Siigo reenvío a DIAN falló (${postResponse.status}): ${await postResponse.text()}`,
+        );
+      }
+      // El resultado del timbrado se confirma con una consulta aparte al
+      // documento (la respuesta del POST no siempre trae `stamp`
+      // actualizado de forma consistente).
+      const getResponse = await fetch(
+        `${SIIGO_BASE_URL}/v1/invoices/${siigoInvoiceId}`,
+        { headers },
+      );
+      if (!getResponse.ok) {
+        throw new Error(
+          `No se pudo confirmar el estado del timbrado tras reenviar (${getResponse.status}): ${await getResponse.text()}`,
+        );
+      }
+      const data: SiigoInvoiceCreateResponse = await getResponse.json();
+      return parseInvoiceResponse(data);
     },
   };
 };

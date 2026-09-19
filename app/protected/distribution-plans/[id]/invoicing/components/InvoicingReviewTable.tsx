@@ -56,6 +56,7 @@ interface InvoiceReview {
   sale_order_id: string;
   status: InvoiceReviewStatus;
   error_message: string | null;
+  siigo_invoice_id: string | null;
   siigo_invoice_number: string | null;
 }
 
@@ -112,6 +113,9 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
   const [bulkChecked, setBulkChecked] = useState(false);
   const [bulkRunning, setBulkRunning] = useState(false);
+  const [bulkResendModalOpen, setBulkResendModalOpen] = useState(false);
+  const [bulkResendChecked, setBulkResendChecked] = useState(false);
+  const [bulkResendRunning, setBulkResendRunning] = useState(false);
   const [invoicingOrderId, setInvoicingOrderId] = useState<string | null>(
     null,
   );
@@ -182,7 +186,7 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
       const { data, error } = await supabase
         .from("invoice_review")
         .select(
-          `id, sale_order_id, status, error_message, siigo_invoice_number`,
+          `id, sale_order_id, status, error_message, siigo_invoice_id, siigo_invoice_number`,
         )
         .eq("distribution_plan_id", id);
       if (error) throw error;
@@ -376,6 +380,19 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
   };
   const approvableOrders = salesQuery.data.filter(isOrderApprovable);
 
+  const isOrderResendable = (order: SaleOrder) => {
+    const review = invoiceReviewByOrderId.get(order.id);
+    return (
+      !!review &&
+      review.status === "failed" &&
+      !!review.siigo_invoice_id &&
+      !orderHasInvalidCost(order) &&
+      !missingCustomerIds.has(order.customer.id) &&
+      !orderHasPendingChangeRequest(order)
+    );
+  };
+  const resendableOrders = salesQuery.data.filter(isOrderResendable);
+
   const refreshInvoicing = () => {
     queryClient.invalidateQueries({
       queryKey: ["invoicing", "components", "invoice-review", id],
@@ -402,6 +419,34 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
     setInvoicingOrderId(saleOrderId);
     try {
       await approveOrder(saleOrderId);
+    } catch {
+      // el detalle del error queda reflejado en invoice_review.error_message
+    } finally {
+      refreshInvoicing();
+      setInvoicingOrderId(null);
+    }
+  };
+
+  const resendStamp = async (saleOrderId: string) => {
+    const response = await fetch(
+      `/api/distribution-plans/${id}/invoicing/resend-stamp`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ saleOrderId }),
+      },
+    );
+    const body = await response.json();
+    if (!response.ok) {
+      throw new Error(body.error || "Error al reenviar la factura a la DIAN.");
+    }
+    return body;
+  };
+
+  const handleResendStamp = async (saleOrderId: string) => {
+    setInvoicingOrderId(saleOrderId);
+    try {
+      await resendStamp(saleOrderId);
     } catch {
       // el detalle del error queda reflejado en invoice_review.error_message
     } finally {
@@ -510,6 +555,24 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
     setBulkChecked(false);
     message.info(
       "Proceso de facturación finalizado. Revisa el estado de cada orden.",
+    );
+  };
+
+  const handleBulkResendStamp = async () => {
+    setBulkResendRunning(true);
+    for (const order of resendableOrders) {
+      try {
+        await resendStamp(order.id);
+      } catch {
+        // el detalle del error queda reflejado en invoice_review.error_message
+      }
+      refreshInvoicing();
+    }
+    setBulkResendRunning(false);
+    setBulkResendModalOpen(false);
+    setBulkResendChecked(false);
+    message.info(
+      "Reenvío a la DIAN finalizado. Revisa el estado de cada orden.",
     );
   };
 
@@ -640,9 +703,15 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
           orderHasInvalidCost(record) ||
           missingCustomerIds.has(record.customer.id) ||
           orderHasPendingChangeRequest(record);
+        const canResendStamp =
+          isAdmin &&
+          !isBlocked &&
+          review.status === "failed" &&
+          !!review.siigo_invoice_id;
         const canManuallyInvoice =
           isAdmin &&
           !isBlocked &&
+          !canResendStamp &&
           (review.status === "pending_review" ||
             review.status === "approved" ||
             review.status === "failed");
@@ -678,6 +747,16 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
                   Ver error
                 </Typography.Text>
               </Tooltip>
+            )}
+            {canResendStamp && (
+              <Button
+                size="small"
+                loading={invoicingOrderId === record.id}
+                onClick={() => handleResendStamp(record.id)}
+                style={{ marginTop: 4 }}
+              >
+                Reenviar a DIAN
+              </Button>
             )}
             {canManuallyInvoice && (
               <Button
@@ -812,13 +891,21 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
         }}
       >
         {autoInvoiceToggle}
-        <Button
-          type="primary"
-          disabled={approvableOrders.length === 0}
-          onClick={() => setBulkModalOpen(true)}
-        >
-          Aprobar y facturar todas las órdenes ({approvableOrders.length})
-        </Button>
+        <Space>
+          <Button
+            disabled={resendableOrders.length === 0}
+            onClick={() => setBulkResendModalOpen(true)}
+          >
+            Reenviar a la DIAN todas las órdenes con error ({resendableOrders.length})
+          </Button>
+          <Button
+            type="primary"
+            disabled={approvableOrders.length === 0}
+            onClick={() => setBulkModalOpen(true)}
+          >
+            Aprobar y facturar todas las órdenes ({approvableOrders.length})
+          </Button>
+        </Space>
       </Space>
       <Modal
         title="Aprobar y facturar órdenes en Siigo"
@@ -864,6 +951,52 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
           onChange={(e) => setBulkChecked(e.target.checked)}
         >
           Entiendo que este cambio no se puede deshacer.
+        </Checkbox>
+      </Modal>
+      <Modal
+        title="Reenviar órdenes a la DIAN"
+        open={bulkResendModalOpen}
+        onCancel={() => {
+          if (!bulkResendRunning) {
+            setBulkResendModalOpen(false);
+            setBulkResendChecked(false);
+          }
+        }}
+        footer={[
+          <Button
+            key="cancel"
+            disabled={bulkResendRunning}
+            onClick={() => {
+              setBulkResendModalOpen(false);
+              setBulkResendChecked(false);
+            }}
+          >
+            Volver sin cambiar
+          </Button>,
+          <Button
+            key="ok"
+            type="primary"
+            danger
+            disabled={!bulkResendChecked}
+            loading={bulkResendRunning}
+            onClick={handleBulkResendStamp}
+          >
+            Reenviar {resendableOrders.length} orden(es)
+          </Button>,
+        ]}
+      >
+        <Alert
+          type="warning"
+          showIcon
+          title={`Se van a reenviar ${resendableOrders.length} factura(s) ya creadas en Siigo a validación de la DIAN`}
+          description="Usa esto solo después de corregir el problema que causó el rechazo directamente en Siigo. No se crean facturas nuevas — se reintenta el timbrado sobre el mismo documento."
+          style={{ marginBottom: 16 }}
+        />
+        <Checkbox
+          checked={bulkResendChecked}
+          onChange={(e) => setBulkResendChecked(e.target.checked)}
+        >
+          Entiendo que ya corregí el problema en Siigo para estas órdenes.
         </Checkbox>
       </Modal>
       <Table

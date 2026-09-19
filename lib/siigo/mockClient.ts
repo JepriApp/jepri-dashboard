@@ -55,4 +55,14 @@ export const createMockSiigoClient = (): SiigoClient => ({
       publicUrl: null,
     };
   },
+
+  async resendStamp(siigoInvoiceId: string): Promise<SiigoInvoiceResult> {
+    await wait(150);
+    console.log(`[siigo:mock] reenvío a DIAN simulado para ${siigoInvoiceId}`);
+    return {
+      siigoInvoiceId,
+      invoiceNumber: `DRYRUN-${siigoInvoiceId.slice(-6)}`,
+      publicUrl: null,
+    };
+  },
 });
