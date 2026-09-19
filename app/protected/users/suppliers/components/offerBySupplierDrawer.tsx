@@ -25,7 +25,7 @@ const OfferBySupplierDrawer = ({ record }: { record: SupplierRow }) => {
         .select(
           `
         id, price, available, created_at,
-        product:product_id(id, name, unit, reference_price)
+        product:product_id(id, name, unit, reference_price, main_photo)
       `,
         )
         .eq("supplier_id", record.id)
