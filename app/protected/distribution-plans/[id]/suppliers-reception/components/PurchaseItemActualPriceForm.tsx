@@ -4,7 +4,7 @@ import { LinkOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Form, InputNumber, message, Typography } from "antd";
 import { FormInstance } from "antd/lib";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 interface PurchaseItem {
   id: string;
@@ -40,6 +40,7 @@ const PurchaseItemActualPriceForm = ({
   const queryClient = useQueryClient();
   const supabase = createClient();
   const [form] = Form.useForm();
+  const [isLocallyFocused, setIsLocallyFocused] = useState(false);
   const actual_price = Form.useWatch("actual_price", form);
   useEffect(() => {
     if (
@@ -96,6 +97,15 @@ const PurchaseItemActualPriceForm = ({
       return data;
     },
   });
+  // antd's `initialValues` only seeds the form once, on mount — it doesn't
+  // react to later changes. If actual_price changes through another path
+  // (e.g. a cost change request being approved elsewhere), this keeps the
+  // field in sync instead of showing a stale value until the page reloads.
+  useEffect(() => {
+    if (data && !isLocallyFocused) {
+      form.setFieldValue("actual_price", data.actual_price);
+    }
+  }, [data, isLocallyFocused, form]);
   const updateActualPriceMutation = useMutation({
     mutationFn: async ({
       purchaseItemId,
@@ -179,17 +189,22 @@ const PurchaseItemActualPriceForm = ({
           onBlur={async () => {
             await triggerSubmit(form);
             handleBlur();
+            setIsLocallyFocused(false);
           }}
           onKeyDown={async (e) => {
             if (e.key === "Enter") {
               e.preventDefault();
               await triggerSubmit(form);
               handleBlur();
+              setIsLocallyFocused(false);
             }
           }}
           step={50}
           placeholder="Precio real"
-          onFocus={handleFocus}
+          onFocus={() => {
+            setIsLocallyFocused(true);
+            handleFocus();
+          }}
           suffix={isFocused && <LinkOutlined />}
           onChange={(value) => {
             handleFocus();
