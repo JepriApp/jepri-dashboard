@@ -43,7 +43,7 @@ next-env.d.ts
 
 # env (added by `vercel link`) — pero mantené versionado el ejemplo
 .env*
-!.env.example
+!.env*.example
 
 # DB backups con datos (PII de customer: nombre, teléfono, identificación).
 # Solo se versiona el DDL: supabase/schema.sql
