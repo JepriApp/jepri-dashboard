@@ -3,6 +3,11 @@ import { getSiigoClient } from "@/lib/siigo/getSiigoClient";
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
+// El timbrado síncrono ante la DIAN puede tardar más que el timeout por
+// defecto de una función serverless (10s en Vercel Hobby sin Fluid
+// Compute). 60s es el máximo permitido en Hobby.
+export const maxDuration = 60;
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },

@@ -3,6 +3,10 @@ import { getSiigoClient } from "@/lib/siigo/getSiigoClient";
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
+// Ver nota en approve/route.ts: el timbrado síncrono ante la DIAN puede
+// tardar más que el timeout por defecto de una función serverless.
+export const maxDuration = 60;
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },

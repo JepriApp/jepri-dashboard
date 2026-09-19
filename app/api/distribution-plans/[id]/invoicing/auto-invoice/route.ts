@@ -4,6 +4,14 @@ import { getSiigoClient } from "@/lib/siigo/getSiigoClient";
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
+// 60s es el máximo permitido en el plan Hobby de Vercel. Esta ruta factura
+// TODAS las órdenes del plan en un solo request — con varias órdenes y el
+// timbrado síncrono de la DIAN por cada una, puede no alcanzar igual. Si
+// eso pasa, las órdenes ya procesadas quedan en su estado final
+// (invoiced/failed) y las restantes deben reintentarse manualmente; ninguna
+// queda a medias gracias al reclamo atómico por orden.
+export const maxDuration = 60;
+
 interface InvoiceValuesRow {
   order_id: string;
   product_name: string;

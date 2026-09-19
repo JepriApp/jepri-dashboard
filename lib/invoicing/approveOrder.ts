@@ -175,12 +175,13 @@ export async function approveOrderInvoice(
   const { documentId, sellerId, paymentId, paymentRequiresDueDate, paymentDueDays } =
     getSiigoConfig();
   if (!documentId || !sellerId || !paymentId) {
-    return {
-      ok: false,
-      status: 500,
-      error:
-        "Falta configurar SIIGO_DOCUMENT_ID, SIIGO_SELLER_ID y/o SIIGO_PAYMENT_ID.",
-    };
+    const message =
+      "Falta configurar SIIGO_DOCUMENT_ID, SIIGO_SELLER_ID y/o SIIGO_PAYMENT_ID.";
+    await supabase
+      .from("invoice_review")
+      .update({ status: "failed", error_message: message })
+      .eq("id", review.id);
+    return { ok: false, status: 500, error: message };
   }
   if (paymentRequiresDueDate && !paymentDueDays) {
     const message =
