@@ -67,7 +67,8 @@ const ModifyPlanStatus = ({
         .select(
           `
           id,
-          status
+          status,
+          auto_invoice_enabled
         `,
         )
         .eq("id", id)
@@ -138,6 +139,13 @@ const ModifyPlanStatus = ({
         return (
           <ul style={{ marginTop: 8 }}>
             <li>✖ No podrás volver al estado anterior</li>
+            {data?.auto_invoice_enabled && (
+              <li>
+                ✔ La autofacturación está activa: se facturarán todas las
+                órdenes automáticamente en Siigo si ninguna necesita
+                correcciones
+              </li>
+            )}
           </ul>
         );
       case "completed":
@@ -282,6 +290,26 @@ const ModifyPlanStatus = ({
           .single();
         if (error) {
           throw error;
+        }
+        // Crea una fila invoice_review pendiente de revisión por cada orden
+        // de venta no cancelada del plan.
+        const { error: initInvoiceReviewError } = await supabase.rpc(
+          "initialize_invoice_review",
+          { plan_id: id },
+        );
+        if (initInvoiceReviewError) throw initInvoiceReviewError;
+
+        if (data?.auto_invoice_enabled) {
+          const response = await fetch(
+            `/api/distribution-plans/${id}/invoicing/auto-invoice`,
+            { method: "POST" },
+          );
+          if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            throw new Error(
+              body.error || "No se pudo ejecutar la autofacturación.",
+            );
+          }
         }
       }
       if (status === "completed") {

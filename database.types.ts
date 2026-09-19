@@ -10,7 +10,32 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "13.0.5"
+    PostgrestVersion: "14.5"
+  }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
   public: {
     Tables: {
@@ -52,9 +77,7 @@ export type Database = {
           created_at: string | null
           id: string
           identification_number: string
-          identification_type:
-            | Database["public"]["Enums"]["idetification_type"]
-            | null
+          identification_type: Database["public"]["Enums"]["idetification_type"]
           name: string | null
           phone: string | null
           preferred_store: string | null
@@ -65,9 +88,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           identification_number: string
-          identification_type?:
-            | Database["public"]["Enums"]["idetification_type"]
-            | null
+          identification_type: Database["public"]["Enums"]["idetification_type"]
           name?: string | null
           phone?: string | null
           preferred_store?: string | null
@@ -78,9 +99,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           identification_number?: string
-          identification_type?:
-            | Database["public"]["Enums"]["idetification_type"]
-            | null
+          identification_type?: Database["public"]["Enums"]["idetification_type"]
           name?: string | null
           phone?: string | null
           preferred_store?: string | null
@@ -98,7 +117,8 @@ export type Database = {
       }
       distribution_plan: {
         Row: {
-          created_at: string
+          auto_invoice_enabled: boolean
+          created_at: string | null
           cutoff_at: string | null
           id: string
           notes: string | null
@@ -111,7 +131,8 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
-          created_at?: string
+          auto_invoice_enabled?: boolean
+          created_at?: string | null
           cutoff_at?: string | null
           id?: string
           notes?: string | null
@@ -124,7 +145,8 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
-          created_at?: string
+          auto_invoice_enabled?: boolean
+          created_at?: string | null
           cutoff_at?: string | null
           id?: string
           notes?: string | null
@@ -178,6 +200,150 @@ export type Database = {
             columns: ["sale_item_id"]
             isOneToOne: false
             referencedRelation: "sale_item"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      invoice_cost_change_request: {
+        Row: {
+          created_at: string
+          current_price: number | null
+          distribution_plan_id: string
+          id: string
+          purchase_item_id: string
+          reason: string | null
+          requested_by: string
+          requested_price: number
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: Database["public"]["Enums"]["invoice_cost_change_request_status"]
+        }
+        Insert: {
+          created_at?: string
+          current_price?: number | null
+          distribution_plan_id: string
+          id?: string
+          purchase_item_id: string
+          reason?: string | null
+          requested_by: string
+          requested_price: number
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: Database["public"]["Enums"]["invoice_cost_change_request_status"]
+        }
+        Update: {
+          created_at?: string
+          current_price?: number | null
+          distribution_plan_id?: string
+          id?: string
+          purchase_item_id?: string
+          reason?: string | null
+          requested_by?: string
+          requested_price?: number
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: Database["public"]["Enums"]["invoice_cost_change_request_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_cost_change_request_distribution_plan_id_fkey"
+            columns: ["distribution_plan_id"]
+            isOneToOne: false
+            referencedRelation: "distribution_plan"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_cost_change_request_purchase_item_id_fkey"
+            columns: ["purchase_item_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_item"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_cost_change_request_requested_by_fkey"
+            columns: ["requested_by"]
+            isOneToOne: false
+            referencedRelation: "admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_cost_change_request_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "admin"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      invoice_review: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          created_at: string
+          distribution_plan_id: string
+          error_message: string | null
+          id: string
+          invoiced_at: string | null
+          invoiced_lines: Json | null
+          sale_order_id: string
+          siigo_invoice_id: string | null
+          siigo_invoice_number: string | null
+          siigo_public_url: string | null
+          status: Database["public"]["Enums"]["invoice_review_status"]
+          updated_at: string | null
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          distribution_plan_id: string
+          error_message?: string | null
+          id?: string
+          invoiced_at?: string | null
+          invoiced_lines?: Json | null
+          sale_order_id: string
+          siigo_invoice_id?: string | null
+          siigo_invoice_number?: string | null
+          siigo_public_url?: string | null
+          status?: Database["public"]["Enums"]["invoice_review_status"]
+          updated_at?: string | null
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          distribution_plan_id?: string
+          error_message?: string | null
+          id?: string
+          invoiced_at?: string | null
+          invoiced_lines?: Json | null
+          sale_order_id?: string
+          siigo_invoice_id?: string | null
+          siigo_invoice_number?: string | null
+          siigo_public_url?: string | null
+          status?: Database["public"]["Enums"]["invoice_review_status"]
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_review_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_review_distribution_plan_id_fkey"
+            columns: ["distribution_plan_id"]
+            isOneToOne: false
+            referencedRelation: "distribution_plan"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_review_sale_order_id_fkey"
+            columns: ["sale_order_id"]
+            isOneToOne: true
+            referencedRelation: "sale_order"
             referencedColumns: ["id"]
           },
         ]
@@ -663,33 +829,635 @@ export type Database = {
           },
         ]
       }
+      siigo_daily_change_log: {
+        Row: {
+          change_date: string
+          change_type: string
+          current_raw_hash: string | null
+          current_snapshot_date: string
+          entity_id: string
+          entity_type: string
+          id: string
+          inserted_at: string
+          previous_raw_hash: string | null
+          previous_snapshot_date: string | null
+          summary: Json
+          sync_run_id: string | null
+        }
+        Insert: {
+          change_date?: string
+          change_type: string
+          current_raw_hash?: string | null
+          current_snapshot_date: string
+          entity_id: string
+          entity_type: string
+          id?: string
+          inserted_at?: string
+          previous_raw_hash?: string | null
+          previous_snapshot_date?: string | null
+          summary?: Json
+          sync_run_id?: string | null
+        }
+        Update: {
+          change_date?: string
+          change_type?: string
+          current_raw_hash?: string | null
+          current_snapshot_date?: string
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          inserted_at?: string
+          previous_raw_hash?: string | null
+          previous_snapshot_date?: string | null
+          summary?: Json
+          sync_run_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "siigo_daily_change_log_sync_run_id_fkey"
+            columns: ["sync_run_id"]
+            isOneToOne: false
+            referencedRelation: "siigo_sync_run"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      siigo_daily_customer_balance_snapshot: {
+        Row: {
+          balance_total: number
+          collected_total: number
+          customer_branch_office: number
+          customer_identification: string
+          customer_name: string | null
+          id: string
+          inserted_at: string
+          invoices_count: number
+          max_days_overdue: number
+          metadata: Json
+          oldest_due_date: string | null
+          overdue_balance_total: number
+          sales_total: number
+          siigo_customer_id: string | null
+          snapshot_date: string
+          supabase_customer_id: string | null
+          sync_run_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          balance_total?: number
+          collected_total?: number
+          customer_branch_office?: number
+          customer_identification: string
+          customer_name?: string | null
+          id?: string
+          inserted_at?: string
+          invoices_count?: number
+          max_days_overdue?: number
+          metadata?: Json
+          oldest_due_date?: string | null
+          overdue_balance_total?: number
+          sales_total?: number
+          siigo_customer_id?: string | null
+          snapshot_date: string
+          supabase_customer_id?: string | null
+          sync_run_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          balance_total?: number
+          collected_total?: number
+          customer_branch_office?: number
+          customer_identification?: string
+          customer_name?: string | null
+          id?: string
+          inserted_at?: string
+          invoices_count?: number
+          max_days_overdue?: number
+          metadata?: Json
+          oldest_due_date?: string | null
+          overdue_balance_total?: number
+          sales_total?: number
+          siigo_customer_id?: string | null
+          snapshot_date?: string
+          supabase_customer_id?: string | null
+          sync_run_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "siigo_daily_customer_balance_snapshot_supabase_customer_id_fkey"
+            columns: ["supabase_customer_id"]
+            isOneToOne: false
+            referencedRelation: "customer"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "siigo_daily_customer_balance_snapshot_sync_run_id_fkey"
+            columns: ["sync_run_id"]
+            isOneToOne: false
+            referencedRelation: "siigo_sync_run"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      siigo_daily_indicator_snapshot: {
+        Row: {
+          accounts_receivable_total: number
+          collections_month_to_date: number
+          collections_today: number
+          customers_overdue_count: number
+          customers_with_balance_count: number
+          id: string
+          inserted_at: string
+          invoices_count: number
+          metadata: Json
+          overdue_receivable_total: number
+          payment_receipts_count: number
+          sales_month_to_date: number
+          sales_today: number
+          snapshot_date: string
+          sync_run_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          accounts_receivable_total?: number
+          collections_month_to_date?: number
+          collections_today?: number
+          customers_overdue_count?: number
+          customers_with_balance_count?: number
+          id?: string
+          inserted_at?: string
+          invoices_count?: number
+          metadata?: Json
+          overdue_receivable_total?: number
+          payment_receipts_count?: number
+          sales_month_to_date?: number
+          sales_today?: number
+          snapshot_date: string
+          sync_run_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          accounts_receivable_total?: number
+          collections_month_to_date?: number
+          collections_today?: number
+          customers_overdue_count?: number
+          customers_with_balance_count?: number
+          id?: string
+          inserted_at?: string
+          invoices_count?: number
+          metadata?: Json
+          overdue_receivable_total?: number
+          payment_receipts_count?: number
+          sales_month_to_date?: number
+          sales_today?: number
+          snapshot_date?: string
+          sync_run_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "siigo_daily_indicator_snapshot_sync_run_id_fkey"
+            columns: ["sync_run_id"]
+            isOneToOne: false
+            referencedRelation: "siigo_sync_run"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      siigo_daily_invoice_item_snapshot: {
+        Row: {
+          discount_percentage: number | null
+          discount_value: number | null
+          id: string
+          inserted_at: string
+          invoice_snapshot_id: string | null
+          item_index: number
+          line_total: number
+          product_code: string | null
+          product_description: string | null
+          quantity: number
+          raw_hash: string
+          raw_payload: Json
+          siigo_invoice_id: string
+          siigo_item_id: string | null
+          snapshot_date: string
+          sync_run_id: string | null
+          taxes: Json
+          unit_price: number
+          updated_at: string
+        }
+        Insert: {
+          discount_percentage?: number | null
+          discount_value?: number | null
+          id?: string
+          inserted_at?: string
+          invoice_snapshot_id?: string | null
+          item_index: number
+          line_total?: number
+          product_code?: string | null
+          product_description?: string | null
+          quantity?: number
+          raw_hash: string
+          raw_payload?: Json
+          siigo_invoice_id: string
+          siigo_item_id?: string | null
+          snapshot_date: string
+          sync_run_id?: string | null
+          taxes?: Json
+          unit_price?: number
+          updated_at?: string
+        }
+        Update: {
+          discount_percentage?: number | null
+          discount_value?: number | null
+          id?: string
+          inserted_at?: string
+          invoice_snapshot_id?: string | null
+          item_index?: number
+          line_total?: number
+          product_code?: string | null
+          product_description?: string | null
+          quantity?: number
+          raw_hash?: string
+          raw_payload?: Json
+          siigo_invoice_id?: string
+          siigo_item_id?: string | null
+          snapshot_date?: string
+          sync_run_id?: string | null
+          taxes?: Json
+          unit_price?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "siigo_daily_invoice_item_snapshot_invoice_snapshot_id_fkey"
+            columns: ["invoice_snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "siigo_daily_invoice_snapshot"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "siigo_daily_invoice_item_snapshot_sync_run_id_fkey"
+            columns: ["sync_run_id"]
+            isOneToOne: false
+            referencedRelation: "siigo_sync_run"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      siigo_daily_invoice_snapshot: {
+        Row: {
+          balance: number
+          customer_branch_office: number | null
+          customer_id: string | null
+          customer_identification: string | null
+          customer_name: string | null
+          document_id: string | null
+          document_name: string | null
+          full_number: string | null
+          id: string
+          inserted_at: string
+          invoice_date: string | null
+          invoice_name: string | null
+          mail_status: string | null
+          number: string | null
+          observations: string | null
+          paid_value: number | null
+          prefix: string | null
+          public_url: string | null
+          raw_hash: string
+          raw_payload: Json
+          seller_id: string | null
+          siigo_created_at: string | null
+          siigo_invoice_id: string
+          siigo_updated_at: string | null
+          snapshot_date: string
+          stamp_status: string | null
+          sync_run_id: string | null
+          total: number
+          updated_at: string
+        }
+        Insert: {
+          balance?: number
+          customer_branch_office?: number | null
+          customer_id?: string | null
+          customer_identification?: string | null
+          customer_name?: string | null
+          document_id?: string | null
+          document_name?: string | null
+          full_number?: string | null
+          id?: string
+          inserted_at?: string
+          invoice_date?: string | null
+          invoice_name?: string | null
+          mail_status?: string | null
+          number?: string | null
+          observations?: string | null
+          paid_value?: number | null
+          prefix?: string | null
+          public_url?: string | null
+          raw_hash: string
+          raw_payload?: Json
+          seller_id?: string | null
+          siigo_created_at?: string | null
+          siigo_invoice_id: string
+          siigo_updated_at?: string | null
+          snapshot_date: string
+          stamp_status?: string | null
+          sync_run_id?: string | null
+          total?: number
+          updated_at?: string
+        }
+        Update: {
+          balance?: number
+          customer_branch_office?: number | null
+          customer_id?: string | null
+          customer_identification?: string | null
+          customer_name?: string | null
+          document_id?: string | null
+          document_name?: string | null
+          full_number?: string | null
+          id?: string
+          inserted_at?: string
+          invoice_date?: string | null
+          invoice_name?: string | null
+          mail_status?: string | null
+          number?: string | null
+          observations?: string | null
+          paid_value?: number | null
+          prefix?: string | null
+          public_url?: string | null
+          raw_hash?: string
+          raw_payload?: Json
+          seller_id?: string | null
+          siigo_created_at?: string | null
+          siigo_invoice_id?: string
+          siigo_updated_at?: string | null
+          snapshot_date?: string
+          stamp_status?: string | null
+          sync_run_id?: string | null
+          total?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "siigo_daily_invoice_snapshot_sync_run_id_fkey"
+            columns: ["sync_run_id"]
+            isOneToOne: false
+            referencedRelation: "siigo_sync_run"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      siigo_daily_payment_receipt_item_snapshot: {
+        Row: {
+          due_consecutive: string | null
+          due_date: string | null
+          due_prefix: string | null
+          due_quote: string | null
+          id: string
+          inserted_at: string
+          item_index: number
+          payment_receipt_snapshot_id: string | null
+          raw_hash: string
+          raw_payload: Json
+          siigo_payment_receipt_id: string
+          snapshot_date: string
+          sync_run_id: string | null
+          updated_at: string
+          value: number
+        }
+        Insert: {
+          due_consecutive?: string | null
+          due_date?: string | null
+          due_prefix?: string | null
+          due_quote?: string | null
+          id?: string
+          inserted_at?: string
+          item_index: number
+          payment_receipt_snapshot_id?: string | null
+          raw_hash: string
+          raw_payload?: Json
+          siigo_payment_receipt_id: string
+          snapshot_date: string
+          sync_run_id?: string | null
+          updated_at?: string
+          value?: number
+        }
+        Update: {
+          due_consecutive?: string | null
+          due_date?: string | null
+          due_prefix?: string | null
+          due_quote?: string | null
+          id?: string
+          inserted_at?: string
+          item_index?: number
+          payment_receipt_snapshot_id?: string | null
+          raw_hash?: string
+          raw_payload?: Json
+          siigo_payment_receipt_id?: string
+          snapshot_date?: string
+          sync_run_id?: string | null
+          updated_at?: string
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "siigo_daily_payment_receipt_it_payment_receipt_snapshot_id_fkey"
+            columns: ["payment_receipt_snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "siigo_daily_payment_receipt_snapshot"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "siigo_daily_payment_receipt_item_snapshot_sync_run_id_fkey"
+            columns: ["sync_run_id"]
+            isOneToOne: false
+            referencedRelation: "siigo_sync_run"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      siigo_daily_payment_receipt_snapshot: {
+        Row: {
+          document_id: string | null
+          document_name: string | null
+          id: string
+          inserted_at: string
+          number: string | null
+          payment_id: string | null
+          payment_name: string | null
+          payment_value: number
+          raw_hash: string
+          raw_payload: Json
+          receipt_date: string | null
+          receipt_name: string | null
+          receipt_type: string | null
+          siigo_created_at: string | null
+          siigo_payment_receipt_id: string
+          siigo_updated_at: string | null
+          snapshot_date: string
+          sync_run_id: string | null
+          third_party_branch_office: number | null
+          third_party_id: string | null
+          third_party_identification: string | null
+          third_party_name: string | null
+          updated_at: string
+        }
+        Insert: {
+          document_id?: string | null
+          document_name?: string | null
+          id?: string
+          inserted_at?: string
+          number?: string | null
+          payment_id?: string | null
+          payment_name?: string | null
+          payment_value?: number
+          raw_hash: string
+          raw_payload?: Json
+          receipt_date?: string | null
+          receipt_name?: string | null
+          receipt_type?: string | null
+          siigo_created_at?: string | null
+          siigo_payment_receipt_id: string
+          siigo_updated_at?: string | null
+          snapshot_date: string
+          sync_run_id?: string | null
+          third_party_branch_office?: number | null
+          third_party_id?: string | null
+          third_party_identification?: string | null
+          third_party_name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          document_id?: string | null
+          document_name?: string | null
+          id?: string
+          inserted_at?: string
+          number?: string | null
+          payment_id?: string | null
+          payment_name?: string | null
+          payment_value?: number
+          raw_hash?: string
+          raw_payload?: Json
+          receipt_date?: string | null
+          receipt_name?: string | null
+          receipt_type?: string | null
+          siigo_created_at?: string | null
+          siigo_payment_receipt_id?: string
+          siigo_updated_at?: string | null
+          snapshot_date?: string
+          sync_run_id?: string | null
+          third_party_branch_office?: number | null
+          third_party_id?: string | null
+          third_party_identification?: string | null
+          third_party_name?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "siigo_daily_payment_receipt_snapshot_sync_run_id_fkey"
+            columns: ["sync_run_id"]
+            isOneToOne: false
+            referencedRelation: "siigo_sync_run"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      siigo_sync_run: {
+        Row: {
+          changes_count: number
+          completed_at: string | null
+          created_at: string
+          customers_count: number
+          error_message: string | null
+          id: string
+          invoice_items_count: number
+          invoices_count: number
+          metadata: Json
+          payment_receipt_items_count: number
+          payment_receipts_count: number
+          run_type: string
+          source: string
+          started_at: string
+          status: string
+          sync_date: string
+          updated_at: string
+          window_end: string | null
+          window_start: string | null
+        }
+        Insert: {
+          changes_count?: number
+          completed_at?: string | null
+          created_at?: string
+          customers_count?: number
+          error_message?: string | null
+          id?: string
+          invoice_items_count?: number
+          invoices_count?: number
+          metadata?: Json
+          payment_receipt_items_count?: number
+          payment_receipts_count?: number
+          run_type?: string
+          source?: string
+          started_at?: string
+          status?: string
+          sync_date?: string
+          updated_at?: string
+          window_end?: string | null
+          window_start?: string | null
+        }
+        Update: {
+          changes_count?: number
+          completed_at?: string | null
+          created_at?: string
+          customers_count?: number
+          error_message?: string | null
+          id?: string
+          invoice_items_count?: number
+          invoices_count?: number
+          metadata?: Json
+          payment_receipt_items_count?: number
+          payment_receipts_count?: number
+          run_type?: string
+          source?: string
+          started_at?: string
+          status?: string
+          sync_date?: string
+          updated_at?: string
+          window_end?: string | null
+          window_start?: string | null
+        }
+        Relationships: []
+      }
       supplier: {
         Row: {
-          bank_accounts: Json | null
+          bank_accounts: Json
           contact: string | null
           created_at: string | null
           id: string
           name: string | null
           phone: string | null
-          user_id: string | null
+          user_id: string
         }
         Insert: {
-          bank_accounts?: Json | null
+          bank_accounts?: Json
           contact?: string | null
           created_at?: string | null
           id?: string
           name?: string | null
           phone?: string | null
-          user_id?: string | null
+          user_id: string
         }
         Update: {
-          bank_accounts?: Json | null
+          bank_accounts?: Json
           contact?: string | null
           created_at?: string | null
           id?: string
           name?: string | null
           phone?: string | null
-          user_id?: string | null
+          user_id?: string
         }
         Relationships: [
           {
@@ -716,13 +1484,189 @@ export type Database = {
         }
         Relationships: []
       }
+      siigo_latest_customer_balances: {
+        Row: {
+          balance_total: number | null
+          collected_total: number | null
+          customer_branch_office: number | null
+          customer_identification: string | null
+          customer_name: string | null
+          invoices_count: number | null
+          max_days_overdue: number | null
+          oldest_due_date: string | null
+          overdue_balance_total: number | null
+          sales_total: number | null
+          snapshot_date: string | null
+          updated_at: string | null
+        }
+        Relationships: []
+      }
+      siigo_latest_daily_indicators: {
+        Row: {
+          accounts_receivable_total: number | null
+          collections_month_to_date: number | null
+          collections_today: number | null
+          customers_overdue_count: number | null
+          customers_with_balance_count: number | null
+          invoices_count: number | null
+          overdue_receivable_total: number | null
+          payment_receipts_count: number | null
+          sales_month_to_date: number | null
+          sales_today: number | null
+          snapshot_date: string | null
+          updated_at: string | null
+        }
+        Relationships: []
+      }
+      siigo_latest_open_invoices_summary: {
+        Row: {
+          balance: number | null
+          customer_name: string | null
+          full_number: string | null
+          invoice_date: string | null
+          mail_status: string | null
+          paid_value: number | null
+          snapshot_date: string | null
+          stamp_status: string | null
+          total: number | null
+          updated_at: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
-      procesar_ofertas_por_plan: {
+      get_in_progress_operations: {
+        Args: never
+        Returns: {
+          customer_name: string
+          order_code: string
+          order_id: string
+          order_quantity: number
+          order_status: Database["public"]["Enums"]["sale_order_status"]
+          plan_code: string
+          plan_date: string
+          plan_id: string
+          plan_status: Database["public"]["Enums"]["distribution_plan_status"]
+          product_image: string
+          product_name: string
+          product_unit: Database["public"]["Enums"]["unit_type"]
+        }[]
+      }
+      get_invoice_values_by_plan: {
+        Args: { p_plan_code: string }
+        Returns: {
+          customer_id: string
+          customer_name: string
+          identification_number: string
+          identification_type: Database["public"]["Enums"]["idetification_type"]
+          line_total: number
+          order_code: string
+          order_id: string
+          order_quantity: number
+          plan_code: string
+          plan_date: string
+          product_id: string
+          product_name: string
+          product_unit: Database["public"]["Enums"]["unit_type"]
+          purchase_unit_price: number
+          service_fee_percentage: number
+          siigo_id: string
+          unit_price: number
+        }[]
+      }
+      get_invoicing_distribution_plan_code: { Args: never; Returns: string }
+      get_latest_unfinished_distribution_plan: {
+        Args: never
+        Returns: {
+          created_at: string
+          cutoff_at: string
+          id: string
+          notes: string
+          operator_id: string
+          plan_code: string
+          plan_date: string
+          plan_seq: number
+          service_fee_percentage: number
+          status: Database["public"]["Enums"]["distribution_plan_status"]
+          updated_at: string
+        }[]
+      }
+      get_open_plan_siigo_invoice_lines: {
+        Args: never
+        Returns: {
+          identification_number: string
+          name: string
+          order_code: string
+          order_quantity: number
+          plan_code: string
+          siigo_id: string
+          unit_price: number
+        }[]
+      }
+      get_siigo_customer_balances: {
+        Args: { p_date?: string; p_limit?: number }
+        Returns: {
+          balance_total: number
+          collected_total: number
+          customer_identification: string
+          customer_name: string
+          invoices_count: number
+          max_days_overdue: number
+          oldest_due_date: string
+          overdue_balance_total: number
+          sales_total: number
+          snapshot_date: string
+        }[]
+      }
+      get_siigo_daily_indicators: {
+        Args: { p_date?: string }
+        Returns: {
+          accounts_receivable_total: number
+          collections_today: number
+          customers_overdue_count: number
+          customers_with_balance_count: number
+          invoices_count: number
+          last_sync_completed_at: string
+          last_sync_started_at: string
+          last_sync_status: string
+          overdue_receivable_total: number
+          payment_receipts_count: number
+          sales_today: number
+          snapshot_date: string
+        }[]
+      }
+      get_siigo_overdue_customers: {
+        Args: { p_date?: string; p_limit?: number }
+        Returns: {
+          balance_total: number
+          customer_identification: string
+          customer_name: string
+          max_days_overdue: number
+          oldest_due_date: string
+          overdue_balance_total: number
+          snapshot_date: string
+        }[]
+      }
+      get_siigo_sales_collections_summary: {
+        Args: { p_end_date?: string; p_start_date?: string }
+        Returns: {
+          collections_total: number
+          days_count: number
+          end_date: string
+          invoices_count: number
+          latest_accounts_receivable_total: number
+          latest_overdue_receivable_total: number
+          latest_snapshot_date: string
+          net_receivable_change: number
+          payment_receipts_count: number
+          sales_total: number
+          start_date: string
+        }[]
+      }
+      initialize_invoice_review: {
         Args: { plan_id: string }
         Returns: undefined
       }
-      simular_procesamiento_plan: { Args: { plan_id: string }; Returns: Json }
       simulate_transition_to_completed_state: {
         Args: { plan_id: string }
         Returns: Json
@@ -741,6 +1685,13 @@ export type Database = {
         | "cancelled"
         | "invoicing"
       idetification_type: "CC" | "NIT" | "PPT" | "PEP"
+      invoice_cost_change_request_status: "pending" | "approved" | "rejected"
+      invoice_review_status:
+        | "pending_review"
+        | "approved"
+        | "invoicing"
+        | "invoiced"
+        | "failed"
       purchase_order_status:
         | "created"
         | "published"
@@ -754,7 +1705,7 @@ export type Database = {
         | "out_for_delivery"
         | "delivered"
         | "cancelled"
-      unit_type: "lb" | "kg" | "unidad" | "atado"
+      unit_type: "lb" | "kg" | "atado" | "unidad"
       user_role: "admin" | "operator" | "supplier" | "customer"
     }
     CompositeTypes: {
@@ -771,12 +1722,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -800,11 +1751,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -825,11 +1776,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -850,11 +1801,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -867,11 +1818,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -881,6 +1832,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       distribution_plan_status: [
@@ -892,6 +1846,14 @@ export const Constants = {
         "invoicing",
       ],
       idetification_type: ["CC", "NIT", "PPT", "PEP"],
+      invoice_cost_change_request_status: ["pending", "approved", "rejected"],
+      invoice_review_status: [
+        "pending_review",
+        "approved",
+        "invoicing",
+        "invoiced",
+        "failed",
+      ],
       purchase_order_status: [
         "created",
         "published",
@@ -907,7 +1869,7 @@ export const Constants = {
         "delivered",
         "cancelled",
       ],
-      unit_type: ["lb", "kg", "unidad", "atado"],
+      unit_type: ["lb", "kg", "atado", "unidad"],
       user_role: ["admin", "operator", "supplier", "customer"],
     },
   },
