@@ -1437,6 +1437,7 @@ export type Database = {
           contact: string | null
           created_at: string | null
           id: string
+          is_active: boolean
           name: string | null
           phone: string | null
           user_id: string
@@ -1446,6 +1447,7 @@ export type Database = {
           contact?: string | null
           created_at?: string | null
           id?: string
+          is_active?: boolean
           name?: string | null
           phone?: string | null
           user_id: string
@@ -1455,6 +1457,7 @@ export type Database = {
           contact?: string | null
           created_at?: string | null
           id?: string
+          is_active?: boolean
           name?: string | null
           phone?: string | null
           user_id?: string

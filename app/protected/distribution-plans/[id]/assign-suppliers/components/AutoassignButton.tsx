@@ -90,7 +90,7 @@ const AutoassignButton = ({
       for (const order of saleOrders || []) {
         for (const saleItem of (order as any).sale_items || []) {
           // Obtener ofertas disponibles para este producto
-          const { data: offers, error: offersError } = await supabase
+          const { data: offersData, error: offersError } = await supabase
             .from("offer")
             .select(
               `
@@ -98,7 +98,8 @@ const AutoassignButton = ({
               price,
               supplier:supplier_id(
                 id,
-                name
+                name,
+                is_active
               )
             `,
             )
@@ -106,6 +107,12 @@ const AutoassignButton = ({
             .eq("available", true);
 
           if (offersError) throw offersError;
+
+          // Los proveedores desactivados no se consideran para autoasignar.
+          const offers = (offersData || []).filter(
+            (offer: { supplier: { is_active: boolean } | null }) =>
+              offer.supplier?.is_active,
+          );
 
           // Si hay exactamente una oferta
           if (offers && offers.length === 1) {

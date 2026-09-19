@@ -45,6 +45,7 @@ interface Offer {
   supplier: {
     id: string;
     name: string | null;
+    is_active: boolean;
   };
 }
 const AsignSupplierDrawer = ({
@@ -131,7 +132,8 @@ const AsignSupplierDrawer = ({
             price,
             supplier: supplier_id(
               id,
-              name
+              name,
+              is_active
             )
             `,
         )
@@ -140,9 +142,19 @@ const AsignSupplierDrawer = ({
       if (offerError) {
         throw offerError;
       }
+      // Los proveedores desactivados no deben ofrecerse para asignaciones
+      // nuevas, aunque su oferta siga marcada como disponible. Si ya tenían
+      // una asignación en este ítem, se mantienen visibles para poder
+      // ajustarla o quitarla.
+      const offers = ((offerData as Offer[]) || []).filter((offer) => {
+        if (offer.supplier?.is_active) return true;
+        return saleItemData?.fulfillments?.some(
+          (f) => f.purchase_items.offer_id === offer.id,
+        );
+      });
       return {
         saleItem: saleItemData as SaleItem,
-        offers: offerData as Offer[],
+        offers,
       };
     },
   });
