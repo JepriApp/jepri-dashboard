@@ -146,7 +146,9 @@ export const createLiveSiigoClient = (): SiigoClient => {
           // se puede editar/anular). La validación es síncrona: el
           // resultado viene en este mismo response, en `stamp`.
           stamp: { send: true },
-          mail: { send: false },
+          // send: true -> Siigo envía la factura por correo al cliente
+          // automáticamente una vez aprobada por la DIAN.
+          mail: { send: true },
         }),
       });
       if (!response.ok) {
@@ -168,7 +170,7 @@ export const createLiveSiigoClient = (): SiigoClient => {
         {
           method: "POST",
           headers,
-          body: JSON.stringify({ mail: { send: false } }),
+          body: JSON.stringify({ mail: { send: true } }),
         },
       );
       if (!postResponse.ok) {
