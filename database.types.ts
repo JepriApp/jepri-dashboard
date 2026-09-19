@@ -117,6 +117,7 @@ export type Database = {
       }
       distribution_plan: {
         Row: {
+          auto_invoice_enabled: boolean
           created_at: string | null
           cutoff_at: string | null
           id: string
@@ -130,6 +131,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          auto_invoice_enabled?: boolean
           created_at?: string | null
           cutoff_at?: string | null
           id?: string
@@ -143,6 +145,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          auto_invoice_enabled?: boolean
           created_at?: string | null
           cutoff_at?: string | null
           id?: string
@@ -197,6 +200,77 @@ export type Database = {
             columns: ["sale_item_id"]
             isOneToOne: false
             referencedRelation: "sale_item"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      invoice_cost_change_request: {
+        Row: {
+          created_at: string
+          current_price: number | null
+          distribution_plan_id: string
+          id: string
+          purchase_item_id: string
+          reason: string | null
+          requested_by: string
+          requested_price: number
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: Database["public"]["Enums"]["invoice_cost_change_request_status"]
+        }
+        Insert: {
+          created_at?: string
+          current_price?: number | null
+          distribution_plan_id: string
+          id?: string
+          purchase_item_id: string
+          reason?: string | null
+          requested_by: string
+          requested_price: number
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: Database["public"]["Enums"]["invoice_cost_change_request_status"]
+        }
+        Update: {
+          created_at?: string
+          current_price?: number | null
+          distribution_plan_id?: string
+          id?: string
+          purchase_item_id?: string
+          reason?: string | null
+          requested_by?: string
+          requested_price?: number
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: Database["public"]["Enums"]["invoice_cost_change_request_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_cost_change_request_distribution_plan_id_fkey"
+            columns: ["distribution_plan_id"]
+            isOneToOne: false
+            referencedRelation: "distribution_plan"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_cost_change_request_purchase_item_id_fkey"
+            columns: ["purchase_item_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_item"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_cost_change_request_requested_by_fkey"
+            columns: ["requested_by"]
+            isOneToOne: false
+            referencedRelation: "admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_cost_change_request_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "admin"
             referencedColumns: ["id"]
           },
         ]
@@ -1611,6 +1685,7 @@ export type Database = {
         | "cancelled"
         | "invoicing"
       idetification_type: "CC" | "NIT" | "PPT" | "PEP"
+      invoice_cost_change_request_status: "pending" | "approved" | "rejected"
       invoice_review_status:
         | "pending_review"
         | "approved"
@@ -1771,6 +1846,7 @@ export const Constants = {
         "invoicing",
       ],
       idetification_type: ["CC", "NIT", "PPT", "PEP"],
+      invoice_cost_change_request_status: ["pending", "approved", "rejected"],
       invoice_review_status: [
         "pending_review",
         "approved",

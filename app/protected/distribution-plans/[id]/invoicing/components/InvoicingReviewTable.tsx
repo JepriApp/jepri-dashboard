@@ -1,22 +1,24 @@
 "use client";
 import { formatPriceAccounting } from "@/lib/formatPrice";
+import { useIsAdmin } from "@/lib/hooks/useIsAdmin";
 import { createClient } from "@/lib/supabase/client";
 import {
   ExclamationCircleOutlined,
   LockOutlined,
   SearchOutlined,
-  WarningOutlined,
 } from "@ant-design/icons";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   App,
   Button,
   Checkbox,
+  Form,
   Input,
   InputNumber,
   Modal,
   Space,
+  Switch,
   Table,
   TableColumnType,
   TableColumnsType,
@@ -33,6 +35,13 @@ interface MissingSiigoCustomer {
   name: string | null;
   identificationType: string | null;
   identificationNumber: string | null;
+}
+
+interface PendingChangeRequest {
+  id: string;
+  purchase_item_id: string;
+  requested_price: number;
+  reason: string | null;
 }
 
 type InvoiceReviewStatus =
@@ -99,21 +108,71 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
   const queryClient = useQueryClient();
   const { token } = theme.useToken();
   const { message } = App.useApp();
+  const { isAdmin, adminId } = useIsAdmin();
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
   const [bulkChecked, setBulkChecked] = useState(false);
   const [bulkRunning, setBulkRunning] = useState(false);
-  const [retryingOrderId, setRetryingOrderId] = useState<string | null>(null);
+  const [invoicingOrderId, setInvoicingOrderId] = useState<string | null>(
+    null,
+  );
+  const [changeRequestModalItem, setChangeRequestModalItem] = useState<{
+    purchaseItemId: string;
+    productName: string;
+    currentPrice: number | null;
+  } | null>(null);
+  const [changeRequestForm] = Form.useForm<{
+    requestedPrice: number;
+    reason?: string;
+  }>();
 
   const distributionPlanQuery = useQuery({
     queryKey: ["invoicing", "distribution-plan", id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("distribution_plan")
-        .select(`id, status, service_fee_percentage`)
+        .select(`id, status, service_fee_percentage, auto_invoice_enabled`)
         .eq("id", id)
         .single();
       if (error) throw error;
       return data;
+    },
+  });
+
+  const changeRequestsQueryKey = [
+    "invoicing",
+    "components",
+    "change-requests",
+    id,
+  ];
+  const changeRequestsQuery = useQuery<PendingChangeRequest[]>({
+    queryKey: changeRequestsQueryKey,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("invoice_cost_change_request")
+        .select("id, purchase_item_id, requested_price, reason")
+        .eq("distribution_plan_id", id)
+        .eq("status", "pending");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const autoInvoiceMutation = useMutation({
+    mutationFn: async (nextValue: boolean) => {
+      const { error } = await supabase
+        .from("distribution_plan")
+        .update({ auto_invoice_enabled: nextValue })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["invoicing", "distribution-plan", id],
+      });
+      queryClient.invalidateQueries({ queryKey: ["distribution-plan", id] });
+    },
+    onError: () => {
+      message.error("No se pudo actualizar la autofacturación");
     },
   });
 
@@ -199,7 +258,8 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
   if (
     distributionPlanQuery.isPending ||
     invoiceReviewQuery.isPending ||
-    salesQuery.isPending
+    salesQuery.isPending ||
+    changeRequestsQuery.isPending
   )
     return "Loading...";
   if (distributionPlanQuery.error)
@@ -208,15 +268,42 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
     return "An error has occurred: " + invoiceReviewQuery.error.message;
   if (salesQuery.error)
     return "An error has occurred: " + salesQuery.error.message;
+  if (changeRequestsQuery.error)
+    return "An error has occurred: " + changeRequestsQuery.error.message;
+
+  const autoInvoiceToggle = (
+    <Space style={{ marginBottom: 16 }}>
+      <Switch
+        checked={distributionPlanQuery.data.auto_invoice_enabled}
+        disabled={!isAdmin}
+        loading={autoInvoiceMutation.isPending}
+        onChange={(checked) => autoInvoiceMutation.mutate(checked)}
+      />
+      <Typography.Text>
+        Autofacturación{" "}
+        {distributionPlanQuery.data.auto_invoice_enabled
+          ? "activada"
+          : "desactivada"}
+      </Typography.Text>
+      {!isAdmin && (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          (solo un administrador puede cambiarla)
+        </Typography.Text>
+      )}
+    </Space>
+  );
 
   if (invoiceReviewQuery.data.length === 0) {
     return (
-      <Alert
-        type="info"
-        showIcon
-        title="Este plan aún no ha llegado a la etapa de facturación"
-        description='La revisión de precios se genera automáticamente cuando el plan pasa al estado "Procesando cuentas".'
-      />
+      <>
+        <div>{autoInvoiceToggle}</div>
+        <Alert
+          type="info"
+          showIcon
+          title="Este plan aún no ha llegado a la etapa de facturación"
+          description='La revisión de precios se genera automáticamente cuando el plan pasa al estado "Procesando cuentas". Si activas la autofacturación, se facturarán todas las órdenes automáticamente al llegar a esa etapa si ninguna necesita correcciones.'
+        />
+      </>
     );
   }
 
@@ -246,10 +333,15 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
   const isInvalidCost = (actualPrice: number | null) =>
     !(Number(actualPrice) > 0);
 
+  // Las líneas con cantidad recibida 0 no se muestran ni se facturan (nada
+  // que cobrar), así que su costo no cuenta para decidir si la orden
+  // necesita corrección.
   const orderHasInvalidCost = (order: SaleOrder) =>
     order.sale_items.some((saleItem) =>
-      saleItem.fulfillment.some((fulfillment) =>
-        isInvalidCost(fulfillment.purchase_item.actual_price),
+      saleItem.fulfillment.some(
+        (fulfillment) =>
+          Number(fulfillment.purchase_item.received_quantity) > 0 &&
+          isInvalidCost(fulfillment.purchase_item.actual_price),
       ),
     );
 
@@ -258,13 +350,28 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
   const missingCustomers = customerValidationQuery.data?.missing ?? [];
   const missingCustomerIds = new Set(missingCustomers.map((c) => c.id));
 
+  const pendingRequestsByPurchaseItemId = new Map(
+    changeRequestsQuery.data.map((request) => [
+      request.purchase_item_id,
+      request,
+    ]),
+  );
+
+  const orderHasPendingChangeRequest = (order: SaleOrder) =>
+    order.sale_items.some((saleItem) =>
+      saleItem.fulfillment.some((fulfillment) =>
+        pendingRequestsByPurchaseItemId.has(fulfillment.purchase_item.id),
+      ),
+    );
+
   const isOrderApprovable = (order: SaleOrder) => {
     const review = invoiceReviewByOrderId.get(order.id);
     return (
       !!review &&
       (review.status === "pending_review" || review.status === "failed") &&
       !orderHasInvalidCost(order) &&
-      !missingCustomerIds.has(order.customer.id)
+      !missingCustomerIds.has(order.customer.id) &&
+      !orderHasPendingChangeRequest(order)
     );
   };
   const approvableOrders = salesQuery.data.filter(isOrderApprovable);
@@ -291,16 +398,101 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
     return body;
   };
 
-  const handleRetry = async (saleOrderId: string) => {
-    setRetryingOrderId(saleOrderId);
+  const handleManualInvoice = async (saleOrderId: string) => {
+    setInvoicingOrderId(saleOrderId);
     try {
       await approveOrder(saleOrderId);
     } catch {
       // el detalle del error queda reflejado en invoice_review.error_message
     } finally {
       refreshInvoicing();
-      setRetryingOrderId(null);
+      setInvoicingOrderId(null);
     }
+  };
+
+  const openChangeRequestModal = (item: {
+    purchaseItemId: string;
+    productName: string;
+    actualPrice: number | null;
+  }) => {
+    setChangeRequestModalItem({
+      purchaseItemId: item.purchaseItemId,
+      productName: item.productName,
+      currentPrice: item.actualPrice,
+    });
+    changeRequestForm.resetFields();
+  };
+
+  const submitChangeRequest = async (values: {
+    requestedPrice: number;
+    reason?: string;
+  }) => {
+    if (!changeRequestModalItem || !adminId) return;
+    const { error } = await supabase.from("invoice_cost_change_request").insert({
+      distribution_plan_id: id,
+      purchase_item_id: changeRequestModalItem.purchaseItemId,
+      current_price: changeRequestModalItem.currentPrice,
+      requested_price: values.requestedPrice,
+      reason: values.reason || null,
+      requested_by: adminId,
+    });
+    if (error) {
+      message.error("No se pudo crear la solicitud de cambio");
+      return;
+    }
+    message.success("Solicitud de cambio creada");
+    setChangeRequestModalItem(null);
+    queryClient.invalidateQueries({ queryKey: changeRequestsQueryKey });
+  };
+
+  const handleApproveChangeRequest = async (request: PendingChangeRequest) => {
+    if (!adminId) return;
+    const { error: priceError } = await supabase
+      .from("purchase_item")
+      .update({ actual_price: request.requested_price })
+      .eq("id", request.purchase_item_id);
+    if (priceError) {
+      message.error("No se pudo aplicar el nuevo costo");
+      return;
+    }
+    const { error: reviewError } = await supabase
+      .from("invoice_cost_change_request")
+      .update({
+        status: "approved",
+        reviewed_by: adminId,
+        reviewed_at: new Date().toISOString(),
+      })
+      .eq("id", request.id);
+    if (reviewError) {
+      message.error("El costo se actualizó, pero no se pudo cerrar la solicitud");
+    }
+    queryClient.invalidateQueries({ queryKey: changeRequestsQueryKey });
+    queryClient.invalidateQueries({ queryKey: salesQueryKey });
+    queryClient.invalidateQueries({
+      queryKey: [
+        "suppliers-reception",
+        "components",
+        "purchase-item-actual-price-form",
+        { purchaseItemId: request.purchase_item_id },
+      ],
+    });
+  };
+
+  const handleRejectChangeRequest = async (request: PendingChangeRequest) => {
+    if (!adminId) return;
+    const { error } = await supabase
+      .from("invoice_cost_change_request")
+      .update({
+        status: "rejected",
+        reviewed_by: adminId,
+        reviewed_at: new Date().toISOString(),
+      })
+      .eq("id", request.id);
+    if (error) {
+      message.error("No se pudo rechazar la solicitud");
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: changeRequestsQueryKey });
   };
 
   const handleBulkApprove = async () => {
@@ -430,17 +622,30 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
         { text: "Error", value: "failed" },
         { text: "Costo inválido", value: "invalid_cost" },
         { text: "Cliente no existe en Siigo", value: "missing_customer" },
+        { text: "Cambio pendiente de aprobación", value: "pending_change" },
       ],
       onFilter: (value, record) => {
         if (value === "invalid_cost") return orderHasInvalidCost(record);
         if (value === "missing_customer")
           return missingCustomerIds.has(record.customer.id);
+        if (value === "pending_change")
+          return orderHasPendingChangeRequest(record);
         return invoiceReviewByOrderId.get(record.id)?.status === value;
       },
       render: (_, record) => {
         const review = invoiceReviewByOrderId.get(record.id);
         if (!review) return <Tag>Sin iniciar</Tag>;
         const meta = invoiceReviewStatusMeta[review.status];
+        const isBlocked =
+          orderHasInvalidCost(record) ||
+          missingCustomerIds.has(record.customer.id) ||
+          orderHasPendingChangeRequest(record);
+        const canManuallyInvoice =
+          isAdmin &&
+          !isBlocked &&
+          (review.status === "pending_review" ||
+            review.status === "approved" ||
+            review.status === "failed");
         return (
           <Space orientation="vertical" size={0}>
             <Tag color={meta.color}>{meta.label}</Tag>
@@ -454,35 +659,35 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
                 Cliente no existe en Siigo
               </Tag>
             )}
+            {orderHasPendingChangeRequest(record) && (
+              <Tag color="gold" icon={<ExclamationCircleOutlined />}>
+                Cambio pendiente de aprobación
+              </Tag>
+            )}
             {review.status === "invoiced" && review.siigo_invoice_number && (
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 {review.siigo_invoice_number}
               </Typography.Text>
             )}
-            {review.status === "failed" && (
-              <>
-                {review.error_message && (
-                  <Tooltip title={review.error_message}>
-                    <Typography.Text
-                      type="danger"
-                      style={{ fontSize: 12, cursor: "help" }}
-                    >
-                      Ver error
-                    </Typography.Text>
-                  </Tooltip>
-                )}
-                <Button
-                  size="small"
-                  loading={retryingOrderId === record.id}
-                  disabled={
-                    orderHasInvalidCost(record) ||
-                    missingCustomerIds.has(record.customer.id)
-                  }
-                  onClick={() => handleRetry(record.id)}
+            {review.status === "failed" && review.error_message && (
+              <Tooltip title={review.error_message}>
+                <Typography.Text
+                  type="danger"
+                  style={{ fontSize: 12, cursor: "help" }}
                 >
-                  Reintentar
-                </Button>
-              </>
+                  Ver error
+                </Typography.Text>
+              </Tooltip>
+            )}
+            {canManuallyInvoice && (
+              <Button
+                size="small"
+                loading={invoicingOrderId === record.id}
+                onClick={() => handleManualInvoice(record.id)}
+                style={{ marginTop: 4 }}
+              >
+                {review.status === "failed" ? "Reintentar" : "Facturar"}
+              </Button>
             )}
           </Space>
         );
@@ -603,9 +808,10 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
         style={{
           marginBottom: 16,
           display: "flex",
-          justifyContent: "flex-end",
+          justifyContent: "space-between",
         }}
       >
+        {autoInvoiceToggle}
         <Button
           type="primary"
           disabled={approvableOrders.length === 0}
@@ -670,18 +876,23 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
         expandable={{
         expandedRowRender: (order) => (
           <Table
-            dataSource={order.sale_items.flatMap((saleItem) =>
-              saleItem.fulfillment.map((fulfillment) => ({
-                fulfillmentId: fulfillment.id,
-                productName: saleItem.products.name,
-                unit: saleItem.products.unit,
-                supplierName: fulfillment.purchase_item.offer?.supplier?.name,
-                purchaseItemId: fulfillment.purchase_item.id,
-                referencePrice: fulfillment.purchase_item.offer?.price,
-                actualPrice: fulfillment.purchase_item.actual_price,
-                quantity: fulfillment.purchase_item.received_quantity,
-              })),
-            )}
+            dataSource={order.sale_items
+              .flatMap((saleItem) =>
+                saleItem.fulfillment.map((fulfillment) => ({
+                  fulfillmentId: fulfillment.id,
+                  productName: saleItem.products.name,
+                  unit: saleItem.products.unit,
+                  supplierName:
+                    fulfillment.purchase_item.offer?.supplier?.name,
+                  purchaseItemId: fulfillment.purchase_item.id,
+                  referencePrice: fulfillment.purchase_item.offer?.price,
+                  actualPrice: fulfillment.purchase_item.actual_price,
+                  quantity: fulfillment.purchase_item.received_quantity,
+                })),
+              )
+              // Un producto pedido pero no recibido no se factura, así que
+              // tampoco tiene sentido mostrarlo en la revisión.
+              .filter((row) => Number(row.quantity) > 0)}
             rowKey="fulfillmentId"
             pagination={false}
             size="small"
@@ -707,32 +918,68 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
               {
                 title: "Cantidad",
                 key: "quantity",
-                render: (_, it) => (
-                  <>
-                    {Number(it.quantity || 0)}
-                    {Number(it.quantity || 0) === 0 && (
-                      <Tooltip title="Cantidad entregada es cero">
-                        <WarningOutlined
-                          style={{ color: token.colorWarning, marginLeft: 4 }}
-                        />
-                      </Tooltip>
-                    )}
-                  </>
-                ),
+                render: (_, it) => Number(it.quantity || 0),
               },
               {
                 title: "Costo unitario",
                 key: "actual_price",
                 render: (_, it) => {
-                  const isLocked = invoicedPurchaseItemIds.has(
+                  const isInvoicedLocked = invoicedPurchaseItemIds.has(
                     it.purchaseItemId,
                   );
+                  const pendingRequest = pendingRequestsByPurchaseItemId.get(
+                    it.purchaseItemId,
+                  );
+                  const hasError = isInvalidCost(it.actualPrice);
+
+                  if (pendingRequest) {
+                    return (
+                      <Space orientation="vertical" size={4}>
+                        <Typography.Text>
+                          {formatPriceAccounting(it.actualPrice || 0)}
+                        </Typography.Text>
+                        <Tag color="gold">
+                          Cambio solicitado:{" "}
+                          {formatPriceAccounting(pendingRequest.requested_price)}
+                        </Tag>
+                        {isAdmin && (
+                          <Space size={4}>
+                            <Button
+                              size="small"
+                              type="primary"
+                              onClick={() =>
+                                handleApproveChangeRequest(pendingRequest)
+                              }
+                            >
+                              Aprobar
+                            </Button>
+                            <Button
+                              size="small"
+                              danger
+                              onClick={() =>
+                                handleRejectChangeRequest(pendingRequest)
+                              }
+                            >
+                              Rechazar
+                            </Button>
+                          </Space>
+                        )}
+                      </Space>
+                    );
+                  }
+
+                  // Locked-por-facturada (ya se envió a Siigo) es
+                  // definitivo. Locked-por-válido (sin error) es editable
+                  // solo vía solicitud de cambio, para no permitir tocar
+                  // costos que ya pasaron la revisión.
+                  const isLockedForNoError = !isInvoicedLocked && !hasError;
+
                   return (
                     <Space>
                       <PurchaseItemActualPriceForm
                         purchaseItemId={it.purchaseItemId}
                         planId={id}
-                        disabled={isLocked}
+                        disabled={isInvoicedLocked || isLockedForNoError}
                         referencePrice={it.referencePrice || 0}
                         isFocused={false}
                         getRef={() => {}}
@@ -747,12 +994,26 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
                           });
                         }}
                       />
-                      {isLocked && (
+                      {isInvoicedLocked && (
                         <Tooltip title="Este producto ya fue incluido en una factura de Siigo (de esta u otra orden que comparte el mismo costo). No se puede editar para no desalinear esa factura.">
                           <LockOutlined style={{ color: token.colorTextDisabled }} />
                         </Tooltip>
                       )}
-                      {!isLocked && isInvalidCost(it.actualPrice) && (
+                      {isLockedForNoError && isAdmin && (
+                        <Button
+                          size="small"
+                          onClick={() =>
+                            openChangeRequestModal({
+                              purchaseItemId: it.purchaseItemId,
+                              productName: it.productName,
+                              actualPrice: it.actualPrice,
+                            })
+                          }
+                        >
+                          Solicitar cambio
+                        </Button>
+                      )}
+                      {hasError && (
                         <Tooltip title="El costo debe ser mayor a $0 para poder aprobar esta orden">
                           <ExclamationCircleOutlined
                             style={{ color: token.colorError }}
@@ -783,6 +1044,34 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
         ),
         }}
       />
+      <Modal
+        title={`Solicitar cambio de costo${changeRequestModalItem ? ` — ${changeRequestModalItem.productName}` : ""}`}
+        open={!!changeRequestModalItem}
+        onCancel={() => setChangeRequestModalItem(null)}
+        onOk={() => changeRequestForm.submit()}
+        okText="Enviar solicitud"
+      >
+        <Typography.Paragraph type="secondary">
+          Costo actual:{" "}
+          {formatPriceAccounting(changeRequestModalItem?.currentPrice || 0)}
+        </Typography.Paragraph>
+        <Form
+          form={changeRequestForm}
+          layout="vertical"
+          onFinish={submitChangeRequest}
+        >
+          <Form.Item
+            name="requestedPrice"
+            label="Nuevo costo"
+            rules={[{ required: true, message: "Ingresa el nuevo costo" }]}
+          >
+            <InputNumber min={0} prefix="$" style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item name="reason" label="Motivo (opcional)">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
     </>
   );
 };
