@@ -132,10 +132,16 @@ export const createLiveSiigoClient = (): SiigoClient => {
           payments: [
             {
               id: payload.paymentId,
-              value: payload.items.reduce(
-                (acc, item) => acc + item.quantity * item.price,
-                0,
-              ),
+              // Redondeado a 2 decimales: sumar en JS puede dejar residuos
+              // de precisión binaria (p.ej. 66040.92000000001) que Siigo
+              // rechaza con "invalid_amount" por no ser un valor exacto.
+              value:
+                Math.round(
+                  payload.items.reduce(
+                    (acc, item) => acc + item.quantity * item.price,
+                    0,
+                  ) * 100,
+                ) / 100,
               ...(payload.paymentDueDate
                 ? { due_date: payload.paymentDueDate }
                 : {}),
