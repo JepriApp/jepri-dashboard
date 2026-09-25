@@ -718,17 +718,24 @@ const InvoicingReviewTable = ({ id }: { id: string }) => {
         return (
           <Space orientation="vertical" size={0}>
             <Tag color={meta.color}>{meta.label}</Tag>
-            {orderHasInvalidCost(record) && (
+            {/* Estas alertas avisan de algo que corregir ANTES de facturar.
+                Una vez la orden ya está invoiced, la factura real es la
+                fuente de verdad — seguir mostrándolas (p.ej. porque la
+                identificación guardada localmente no coincide con la que
+                terminó usándose en Siigo, como al vincular una factura
+                creada manualmente) es ruido, no una alerta accionable. */}
+            {review.status !== "invoiced" && orderHasInvalidCost(record) && (
               <Tag color="error" icon={<ExclamationCircleOutlined />}>
                 Costo inválido
               </Tag>
             )}
-            {missingCustomerIds.has(record.customer.id) && (
-              <Tag color="error" icon={<ExclamationCircleOutlined />}>
-                Cliente no existe en Siigo
-              </Tag>
-            )}
-            {orderHasPendingChangeRequest(record) && (
+            {review.status !== "invoiced" &&
+              missingCustomerIds.has(record.customer.id) && (
+                <Tag color="error" icon={<ExclamationCircleOutlined />}>
+                  Cliente no existe en Siigo
+                </Tag>
+              )}
+            {review.status !== "invoiced" && orderHasPendingChangeRequest(record) && (
               <Tag color="gold" icon={<ExclamationCircleOutlined />}>
                 Cambio pendiente de aprobación
               </Tag>
