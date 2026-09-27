@@ -8,6 +8,7 @@ export async function listCustomers(supabaseClient: SupabaseClient) {
           id,
           name,
           phone,
+          whatsapp_id,
           contact,
           identification_type,
           identification_number

@@ -82,6 +82,7 @@ export type Database = {
           phone: string | null
           preferred_store: string | null
           user_id: string | null
+          whatsapp_id: string | null
         }
         Insert: {
           contact?: string | null
@@ -93,6 +94,7 @@ export type Database = {
           phone?: string | null
           preferred_store?: string | null
           user_id?: string | null
+          whatsapp_id?: string | null
         }
         Update: {
           contact?: string | null
@@ -104,6 +106,7 @@ export type Database = {
           phone?: string | null
           preferred_store?: string | null
           user_id?: string | null
+          whatsapp_id?: string | null
         }
         Relationships: [
           {
@@ -111,6 +114,67 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: true
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      customer_change_request: {
+        Row: {
+          created_at: string
+          current_data: Json
+          customer_id: string
+          id: string
+          reason: string | null
+          requested_by: string
+          requested_data: Json
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: Database["public"]["Enums"]["customer_change_request_status"]
+        }
+        Insert: {
+          created_at?: string
+          current_data: Json
+          customer_id: string
+          id?: string
+          reason?: string | null
+          requested_by: string
+          requested_data: Json
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: Database["public"]["Enums"]["customer_change_request_status"]
+        }
+        Update: {
+          created_at?: string
+          current_data?: Json
+          customer_id?: string
+          id?: string
+          reason?: string | null
+          requested_by?: string
+          requested_data?: Json
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: Database["public"]["Enums"]["customer_change_request_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_change_request_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customer"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_change_request_requested_by_fkey"
+            columns: ["requested_by"]
+            isOneToOne: false
+            referencedRelation: "admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_change_request_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "admin"
             referencedColumns: ["id"]
           },
         ]
@@ -1687,6 +1751,7 @@ export type Database = {
         | "completed"
         | "cancelled"
         | "invoicing"
+      customer_change_request_status: "pending" | "approved" | "rejected"
       idetification_type: "CC" | "NIT" | "PPT" | "PEP"
       invoice_cost_change_request_status: "pending" | "approved" | "rejected"
       invoice_review_status:
