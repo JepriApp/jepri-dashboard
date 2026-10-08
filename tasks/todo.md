@@ -64,22 +64,51 @@ Esto es fundación: no prueba nada del bot todavía, solo deja el harness listo 
 Fases 1-5 lo usen en vez de verificación manual.
 
 **Acceptance criteria:**
-- [ ] `npm run test` ejecuta Vitest (aunque sea con una suite trivial de ejemplo que se borra después)
-- [ ] `supabase test db` corre pgTAP contra la instancia local sin errores de configuración
-- [ ] Documentado en un comentario o en `tasks/plan.md` cómo correr ambos localmente
+- [x] `npm run test` ejecuta Vitest (validado con una suite trivial que se corrió y se borró)
+- [x] Las funciones pgTAP corren contra la instancia real (validado con una suite trivial de éxito y una de fallo forzado, ambas borradas)
+- [x] Documentado cómo correr ambos (abajo, en esta tarea, y en `scripts/run_pgtap_tests.sh`)
 
 **Verification:**
-- [ ] `npm run test` sale en verde con la suite de ejemplo
-- [ ] `supabase test db` corre sin errores de configuración (puede no tener asserts todavía)
-- [ ] `npm run build` sigue pasando
+- [x] `npm run test` salió en verde con la suite de ejemplo (y en rojo con "No test files found" al borrarla — comportamiento esperado hasta la Tarea 5+)
+- [x] `npm run test:db` corrió pgTAP contra staging sin errores de configuración, y detectó correctamente una falla forzada (exit code 1)
+- [x] `npm run build` sigue pasando
+
+**Desviación del diseño original (documentada):** `supabase test db --db-url` (pensado
+originalmente para esto) **fuerza TLS**, y el self-hosted de staging no lo soporta — falla
+con `tls error (server refused TLS connection)` incluso en una versión más nueva del CLI.
+En vez de depender de `supabase start` (que necesita Docker, no disponible en este entorno)
+o de ese flag, se construyó `scripts/run_pgtap_tests.sh`: corre cada archivo
+`supabase/tests/database/*.sql` directo con `psql` contra `STAGING_DATABASE_URL` (nueva
+variable en `.env.local`/`.env.local.example`), parseando la salida TAP (`not ok` → falla).
+Cada archivo de test sigue envuelto en `begin; ... rollback;`, así que el rollback
+automático por test se mantiene igual que lo diseñado, solo cambia el runner. La extensión
+`pgtap` ya quedó habilitada (`create extension pgtap`) en la base de staging.
+
+**Hallazgo incidental corregido:** al correr `npm run lint` para verificar que nada se
+rompiera, apareció con **64,202 problemas** — resultó ser que `eslint.config.mjs` (flat
+config de ESLint 9) nunca tuvo un `ignores` explícito, así que no respetaba `/.next/` de
+`.gitignore` y lint-eaba el build generado completo. Es un bug preexistente, no causado por
+esta tarea, pero bloqueaba verificar el lint real — se corrigió agregando
+`{ ignores: [".next/**", "out/**", "build/**", "supabase/.temp/**"] }`. Tras el fix quedan
+59 problemas reales, todos en archivos no relacionados con el bot (deuda de lint
+preexistente, fuera de alcance).
+
+**Cómo correr localmente:**
+```bash
+npm run test        # Vitest, una vez (CI-friendly)
+npm run test:watch  # Vitest en modo watch
+npm run test:db     # pgTAP contra STAGING_DATABASE_URL (supabase/tests/database/*.sql)
+```
 
 **Dependencies:** None (puede hacerse en paralelo con la Tarea 1)
 
 **Files likely touched:**
-- `vitest.config.ts`
-- `package.json` (scripts, devDependencies: `vitest`)
-- `supabase/tests/database/.gitkeep` o un primer test trivial
-- `supabase/config.toml` (habilitar pgTAP si hace falta)
+- `vitest.config.mts` (`.mts`, no `.ts` — evita el warning de Vite sobre ESM/CJS)
+- `package.json` (scripts `test`/`test:watch`/`test:db`; devDependency `vitest`, vía pnpm)
+- `pnpm-lock.yaml`, `pnpm-workspace.yaml` (nuevo, registra los build scripts aprobados: core-js, sharp, supabase, unrs-resolver)
+- `scripts/run_pgtap_tests.sh`
+- `.env.local` (nueva var `STAGING_DATABASE_URL`, no commiteada) / `.env.local.example` (documentada)
+- `eslint.config.mjs` (fix incidental de `ignores`, ver arriba)
 
 **Estimated scope:** M (varios archivos de configuración, cero lógica de negocio)
 

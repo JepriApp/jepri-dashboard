@@ -34,12 +34,15 @@ para verificar solo a mano.
   offline, con un LLM revisado por un admin — nunca en vivo en el chat). Las RPCs agrupan
   por `coalesce(canonical_group_id, product.id)`, así que funcionan correctamente aunque la
   agrupación todavía no haya corrido — esa tarea no bloquea el resto del plan.
-- **Pruebas automatizadas, nuevas en el repo**: `pgTAP` (vía `supabase test db`, ya hay
-  `supabase` como devDependency) para las 9 funciones `SECURITY DEFINER` — es la lógica más
-  crítica (dinero/pedidos sin humano de por medio) y se prueba directo contra Postgres, con
-  rollback automático entre tests. `Vitest` para la capa TypeScript (servicios, adaptador,
-  manejo de estado/errores) — se elige sobre Jest por ser nativo ESM/TS y más liviano,
-  encaja mejor con Next.js 16 + Turbopack que ya usa el proyecto.
+- **Pruebas automatizadas, nuevas en el repo**: `pgTAP` para las 9 funciones
+  `SECURITY DEFINER` — es la lógica más crítica (dinero/pedidos sin humano de por medio).
+  Corre vía `scripts/run_pgtap_tests.sh` (`npm run test:db`) directo con `psql` contra
+  `STAGING_DATABASE_URL`, no vía `supabase test db` — ese comando fuerza TLS y el
+  self-hosted de staging no lo soporta, y `supabase start` necesita Docker (no disponible en
+  este entorno). Cada archivo sigue envuelto en `begin;...rollback;`, mismo efecto de
+  aislamiento. `Vitest` para la capa TypeScript (servicios, adaptador, manejo de
+  estado/errores) — se elige sobre Jest por ser nativo ESM/TS y más liviano, encaja mejor
+  con Next.js 16 + Turbopack que ya usa el proyecto.
 - **Staging propio antes de Vercel**: Telegram no puede llamar a `localhost`. El servidor
   local del usuario (con reverse proxy + HTTPS ya configurado, detrás de un dominio propio)
   se usa como entorno de staging real vía Docker — resuelve de raíz el problema de probar
@@ -63,7 +66,7 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
 - [x] Tarea 1: Provisión de credenciales de Telegram y datos de prueba
 
 ### Fase 0.5: Infraestructura de pruebas y staging (nueva en el repo)
-- [ ] Tarea 2: Harness de pruebas automatizadas (Vitest + pgTAP)
+- [x] Tarea 2: Harness de pruebas automatizadas (Vitest + pgTAP)
 - [ ] Tarea 3: Staging con Docker en el servidor propio
 
 ### Checkpoint: Fase 0 / 0.5
