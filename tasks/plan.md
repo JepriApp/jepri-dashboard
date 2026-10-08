@@ -159,9 +159,8 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
 - ~~¿El Supabase self-hosted en `10.85.96.51:8000` ya tiene el esquema actualizado al día
   con Neptuno?~~ Resuelto en la Tarea 1: estaba desactualizado (faltaba `whatsapp_id`), se
   restauró y quedó confirmado al día.
-- `supabase-db` (el Postgres real de ese servidor) no tiene puerto expuesto al host, y el
-  pooler (`supabase-pooler`/Supavisor en 5432/6543) tiene su tenant `realtime-dev` sin
-  registrar correctamente — la conexión directa por `psql` falla. Por ahora todo el acceso
-  de escritura se relaya por `docker exec` a través del usuario. Antes de las Tareas 4-6
-  (migraciones + pgTAP, que necesitan iterar mucho más rápido) hay que decidir si conviene
-  exponer un puerto directo al contenedor `supabase-db` en ese servidor.
+- ~~Acceso directo por `psql` al self-hosted~~ Resuelto: el pooler (`supabase-pooler`,
+  puerto 5432) sí funciona — el tenant correcto es el placeholder por defecto
+  `your-tenant-id` (nunca personalizado en ese servidor), con usuario
+  `postgres.your-tenant-id` y `DEV_POSTGRES_PASSWORD`. No hizo falta exponer ningún puerto
+  nuevo ni tocar `docker-compose.yml`.

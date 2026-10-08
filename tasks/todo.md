@@ -26,13 +26,18 @@ instancia está al día con Neptuno antes de seguir.
 - [x] Manual, contra `10.85.96.51:8000`: fila de `customer` confirmada vía `docker exec -it supabase-db psql -U postgres`
 - [x] Manual, contra `10.85.96.51:8000`: fila de `distribution_plan` confirmada de la misma forma
 
-**Nota de infraestructura:** `supabase-db` (Postgres real) no tiene puerto mapeado al host —
-solo `supabase-pooler` (Supavisor, puertos 5432/6543) lo tiene, y su tenant `realtime-dev`
-no está registrado correctamente (conexión directa por `psql` falla con
-`tenant/user not found`). Mientras no se resuelva eso, el acceso de escritura a esta
-instancia se hace relayando comandos `docker exec -it supabase-db psql -U postgres -c "..."`
-a través del usuario. Si esto se vuelve lento para las Tareas 4-6, considerar exponer un
-puerto directo al contenedor `supabase-db` (ver conversación de la Tarea 1).
+**Nota de infraestructura (resuelta):** `supabase-db` no tiene puerto propio mapeado al
+host, pero `supabase-pooler` (Supavisor, puerto 5432) sí funciona — el tenant no es
+`realtime-dev` (ese es solo el nombre del contenedor de `realtime`), es el placeholder por
+defecto del self-hosted de Supabase: `your-tenant-id`, nunca personalizado al levantar el
+servidor. Conexión directa que funciona:
+
+```bash
+PGPASSWORD="$DEV_POSTGRES_PASSWORD" psql "host=10.85.96.51 port=5432 user=postgres.your-tenant-id dbname=postgres"
+```
+
+Con esto ya no hace falta relayar por `docker exec` ni exponer un puerto nuevo — las
+Tareas 4-6 pueden iterar directo contra esta instancia.
 
 **Dependencies:** None
 
