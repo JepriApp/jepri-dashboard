@@ -1,0 +1,32 @@
+%% Arquitectura del canal conversacional (Telegram PoC, desacoplable a WhatsApp)
+%% Referencia: documentacion/chatbot_diseno.md
+
+flowchart LR
+    TG["Telegram Bot API"] -->|webhook POST| R1["/api/bot/telegram\n(route.ts)"]
+    WA["WhatsApp Cloud API\n(futuro)"] -.->|webhook POST\nmismo contrato| R2["/api/bot/whatsapp\n(route.ts, futuro)"]
+
+    R1 --> ADAPT["Adaptador de canal\nparseInbound / sendMessage"]
+    R2 -.-> ADAPT
+
+    ADAPT --> DOMAIN["Dominio del bot\n(channel-agnostic)"]
+
+    DOMAIN -->|Telegram: llamada\nen memoria, mismo proceso| SVC["lib/bot/services/*.ts\ngetFrequentProducts · searchCatalog\ngetCurrentOrder · createOrder\nupdateOrder · cancelOrder"]
+
+    EXT["Adaptador futuro\nfuera de proceso\n(ej. Evolution API\nen su propio contenedor)"] -.->|HTTP +\nAuthorization: Bearer api_key| R3["/api/bot/orders\n/api/bot/products/*"]
+    R3 -.-> SVC
+
+    SVC --> RPC["Funciones Postgres\nSECURITY DEFINER\nbot_resolve_customer\nbot_validate_api_key\nbot_get_active_plan\nbot_get_frequent_products\nbot_search_catalog\nbot_get_current_order\nbot_create_order\nbot_update_order\nbot_cancel_order"]
+
+    RPC --> DB[("Supabase / Postgres\ncustomer, product,\ndistribution_plan,\nsale_order, sale_item")]
+
+    DOMAIN -->|mensaje de salida| ADAPT
+    ADAPT -->|respuesta| TG
+    ADAPT -.->|respuesta| WA
+
+    subgraph OFFLINE["Proceso offline, fuera del flujo de chat"]
+        LLM["LLM (una sola vez /\nal cambiar el catálogo)\nagrupa product.name\npor producto canónico"]
+        ADMIN["Admin revisa/ajusta\nla agrupación propuesta"]
+        LLM --> ADMIN
+    end
+    ADMIN -.->|escribe| DB
+

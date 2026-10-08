@@ -1,0 +1,657 @@
+# Tareas: Chatbot de pedidos (Telegram PoC)
+
+Referencia de diseño: `documentacion/chatbot_diseno.md`. Plan narrativo y checklist por
+fase: `tasks/plan.md`. Cada tarea abajo sigue la estructura de la skill de planning —
+descripción, criterios de aceptación, verificación, dependencias, archivos y tamaño.
+
+---
+
+## Tarea 1: Provisión de credenciales de Telegram y datos de prueba
+
+**Descripción:** Crear el bot de Telegram vía BotFather, obtener su token, y preparar al
+menos un `customer` de prueba con `whatsapp_id` apuntando al `chat_id` de una cuenta de
+Telegram de prueba — **en el Supabase self-hosted de `10.85.96.51:8000`, nunca en Neptuno**
+(producción). Confirmar también que existe (o crear a mano, ahí mismo) un
+`distribution_plan` en estado `planned` con `plan_date` futura, y que el esquema de esa
+instancia está al día con Neptuno antes de seguir.
+
+**Acceptance criteria:**
+- [ ] `TELEGRAM_BOT_TOKEN` obtenido y guardado en `.env.local` (no commiteado)
+- [ ] Un `customer` de prueba existe en `10.85.96.51:8000` con `whatsapp_id` = chat_id numérico de una cuenta de Telegram de prueba
+- [ ] Existe un `distribution_plan` en `10.85.96.51:8000` con `status='planned'` y `plan_date` mayor a hoy
+- [ ] El esquema de `10.85.96.51:8000` (tablas/vistas de `sale_order`, `distribution_plan`, `customer`) está al día con Neptuno — si no, sincronizarlo antes de la Tarea 4
+
+**Verification:**
+- [ ] Manual: `curl https://api.telegram.org/bot<token>/getMe` responde con los datos del bot
+- [ ] Manual, contra `10.85.96.51:8000`: `select * from customer where whatsapp_id = '<chat_id de prueba>'` devuelve la fila
+- [ ] Manual, contra `10.85.96.51:8000`: `select * from distribution_plan where status='planned' order by plan_date` muestra el plan de prueba
+
+**Dependencies:** None
+
+**Files likely touched:**
+- `.env.local` (no versionado)
+
+**Estimated scope:** XS (sin código)
+
+---
+
+## Tarea 2: Harness de pruebas automatizadas (Vitest + pgTAP)
+
+**Descripción:** Montar el sistema de pruebas desde cero (el repo no tiene ninguno hoy).
+Dos piezas:
+- **Vitest** para la capa TypeScript — `vitest.config.ts` con soporte del alias `@/*`
+  (igual que `tsconfig.json`), script `"test": "vitest run"` y `"test:watch": "vitest"` en
+  `package.json`.
+- **pgTAP** para las funciones de Postgres — habilitar la extensión en el proyecto local de
+  Supabase y usar `supabase test db` (el CLI ya es devDependency) para correr archivos
+  `.sql` de test contra una instancia local (`supabase start`), con rollback automático por
+  test.
+
+Esto es fundación: no prueba nada del bot todavía, solo deja el harness listo para que las
+Fases 1-5 lo usen en vez de verificación manual.
+
+**Acceptance criteria:**
+- [ ] `npm run test` ejecuta Vitest (aunque sea con una suite trivial de ejemplo que se borra después)
+- [ ] `supabase test db` corre pgTAP contra la instancia local sin errores de configuración
+- [ ] Documentado en un comentario o en `tasks/plan.md` cómo correr ambos localmente
+
+**Verification:**
+- [ ] `npm run test` sale en verde con la suite de ejemplo
+- [ ] `supabase test db` corre sin errores de configuración (puede no tener asserts todavía)
+- [ ] `npm run build` sigue pasando
+
+**Dependencies:** None (puede hacerse en paralelo con la Tarea 1)
+
+**Files likely touched:**
+- `vitest.config.ts`
+- `package.json` (scripts, devDependencies: `vitest`)
+- `supabase/tests/database/.gitkeep` o un primer test trivial
+- `supabase/config.toml` (habilitar pgTAP si hace falta)
+
+**Estimated scope:** M (varios archivos de configuración, cero lógica de negocio)
+
+---
+
+## Tarea 3: Staging con Docker en el servidor propio
+
+**Descripción:** `Dockerfile` multi-stage para la app de Next.js (deps → build → runtime,
+usando `output: 'standalone'` en `next.config.ts` para una imagen liviana) y
+`docker-compose.yml` para desplegarla en el servidor local del usuario, detrás de su reverse
+proxy + HTTPS ya existente. Esto resuelve que Telegram no puede llamar a `localhost`: el
+dominio propio del usuario es el entorno donde se prueban los webhooks reales en las Fases
+3-5, antes de llegar a Vercel.
+
+**Acceptance criteria:**
+- [ ] `docker build` produce una imagen que arranca con `docker run` y sirve la app en el puerto configurado
+- [ ] El contenedor lee toda su configuración de variables de entorno (`.env` en el servidor, no commiteado) — ningún secreto queda horneado en la imagen
+- [ ] El `.env` de staging apunta `NEXT_PUBLIC_SUPABASE_URL` (y las demás variables de Supabase) al self-hosted `10.85.96.51:8000`, **nunca** a Neptuno
+- [ ] El dominio propio del usuario, por HTTPS, sirve la app a través del reverse proxy existente apuntando a este contenedor
+- [ ] El build y el deploy a Vercel siguen funcionando igual que antes (el `output: 'standalone'` no rompe nada ahí)
+
+**Verification:**
+- [ ] Manual: `docker build . -t jepri-dashboard:staging && docker run ...` levanta la app localmente
+- [ ] Manual: `curl https://<dominio-staging>/` responde 200 a través del reverse proxy
+- [ ] Manual: un deploy de prueba a Vercel después de este cambio sigue funcionando (confirma que `output: 'standalone'` es inocuo ahí)
+
+**Dependencies:** None (puede hacerse en paralelo con la Tarea 1/2)
+
+**Files likely touched:**
+- `Dockerfile`
+- `docker-compose.yml`
+- `.dockerignore`
+- `next.config.ts` (agregar `output: 'standalone'`)
+
+**Estimated scope:** M (4 archivos, infraestructura nueva)
+
+---
+
+## Checkpoint: Fase 0 / 0.5 — Fundaciones listas
+
+- [ ] Credenciales de prueba, harness de tests y staging en Docker, los 3 funcionando
+- [ ] Revisión antes de tocar el esquema de base de datos
+
+---
+
+## Tarea 4: Migración — tablas nuevas del bot + RLS sin policies
+
+**Descripción:** Crear la migración de Supabase con las 5 tablas nuevas del diseño:
+`product_canonical_group`, `product.canonical_group_id` (columna nueva, nullable, FK),
+`bot_conversation_state`, `bot_processed_update`, `bot_interaction_log`, `bot_api_key`. RLS
+activado y sin ninguna policy en las 5 (§11 del diseño) — deny-by-default. Se aplica primero
+contra el self-hosted `10.85.96.51:8000` (staging) — Neptuno (producción) no se toca hasta
+la Tarea 22.
+
+**Acceptance criteria:**
+- [ ] Las 5 tablas/columna existen con exactamente los campos de §5.1, §8, §9, §10, §4.1 del diseño
+- [ ] RLS activado en las 5, sin ninguna policy creada
+- [ ] Ninguna tabla/columna existente se modifica ni se borra
+
+**Verification:**
+- [ ] `supabase db push` (o el flujo de migración del proyecto) aplica sin errores en el proyecto de desarrollo
+- [ ] Caso de pgTAP (Tarea 2): como rol anon/authenticated normal, un `select` directo contra cualquiera de las 5 falla por RLS
+- [ ] `npm run build` sigue pasando
+
+**Dependencies:** Tarea 1, Tarea 2 (harness listo para escribir el test de RLS)
+
+**Files likely touched:**
+- `supabase/migrations/<timestamp>_bot_schema.sql`
+- `supabase/tests/database/bot_schema_rls.sql`
+
+**Estimated scope:** S (1-2 archivos)
+
+---
+
+## Tarea 5: Funciones Postgres `SECURITY DEFINER` — lecturas
+
+**Descripción:** Implementar las 6 funciones de lectura de §5 del diseño:
+`bot_resolve_customer`, `bot_validate_api_key`, `bot_get_active_plan`,
+`bot_get_frequent_products`, `bot_search_catalog`, `bot_get_current_order`. Todas con
+`SET search_path = public` fijo. `bot_get_frequent_products` y `bot_search_catalog` agrupan
+por `coalesce(canonical_group_id, product.id)`.
+
+**Acceptance criteria:**
+- [ ] Las 6 funciones existen, devuelven las columnas exactas especificadas en §5
+- [ ] `bot_search_catalog` usa `unaccent` si está disponible, con fallback a `ilike` simple si no
+- [ ] `bot_get_current_order` está acotado al plan activo (§3.1), no a todo el historial
+
+**Verification:**
+- [ ] pgTAP: un test por función con datos de prueba (incluyendo "no match" para `bot_resolve_customer`/`bot_validate_api_key`) — `supabase test db` en verde
+- [ ] pgTAP: caso explícito para ambas ramas de `bot_search_catalog` (con y sin `unaccent`)
+
+**Dependencies:** Tarea 4
+
+**Files likely touched:**
+- `supabase/migrations/<timestamp>_bot_read_functions.sql`
+- `supabase/tests/database/bot_read_functions.sql`
+
+**Estimated scope:** M (2 archivos, lógica SQL no trivial)
+
+---
+
+## Tarea 6: Funciones Postgres `SECURITY DEFINER` — escrituras transaccionales
+
+**Descripción:** Implementar `bot_create_order`, `bot_update_order`, `bot_cancel_order` (§5),
+con las validaciones exactas de §3.1-§3.4. Cada función es una sola transacción (atómica).
+
+**Acceptance criteria:**
+- [ ] Las 3 funciones existen y usan los códigos de error exactos de §5/§7
+- [ ] `bot_create_order` nunca setea `created_by_admin_id`
+- [ ] `bot_cancel_order` nunca ejecuta `DELETE`, solo `update status='cancelled'`
+- [ ] Ninguna función permite tocar un `sale_order` con `created_by_admin_id` no nulo
+
+**Verification:**
+- [ ] pgTAP: un test por cada uno de los 8 códigos de error, más el camino feliz de crear/editar/cancelar — `supabase test db` en verde
+- [ ] pgTAP: test que confirma que `bot_cancel_order` nunca ejecuta `DELETE` (verificando `sale_order` sigue existiendo tras cancelar)
+
+**Dependencies:** Tarea 5
+
+**Files likely touched:**
+- `supabase/migrations/<timestamp>_bot_write_functions.sql`
+- `supabase/tests/database/bot_write_functions.sql`
+
+**Estimated scope:** M (2 archivos, es la lógica más crítica del sistema)
+
+---
+
+## Checkpoint: Fase 1 — Base de datos completa
+
+- [ ] `supabase test db` cubre las 9 funciones en verde
+- [ ] `npm run build` pasa
+- [ ] Revisión antes de pasar a la capa TypeScript
+
+---
+
+## Tarea 7: Servicio de catálogo (`lib/bot/services/products.ts`)
+
+**Descripción:** Funciones TypeScript `getFrequentProducts(customerId)` y
+`searchCatalog(query)` que llaman a `bot_get_frequent_products`/`bot_search_catalog` vía el
+cliente Supabase de servidor (`lib/supabase/server.ts`), tipadas con `Database` de
+`database.types.ts`.
+
+**Acceptance criteria:**
+- [ ] Ambas funciones devuelven tipos TS explícitos (no `any`)
+- [ ] Manejan el caso de 0 resultados sin lanzar
+
+**Verification:**
+- [ ] Vitest: ambas funciones probadas contra el proyecto Supabase de desarrollo (o un mock del cliente) — `npm run test` en verde
+- [ ] `npm run build` y `npm run lint` pasan
+
+**Dependencies:** Tarea 5
+
+**Files likely touched:**
+- `lib/bot/services/products.ts`
+- `lib/bot/services/products.test.ts`
+
+**Estimated scope:** S (2 archivos)
+
+---
+
+## Tarea 8: Servicio de pedidos (`lib/bot/services/orders.ts`)
+
+**Descripción:** Funciones `getCurrentOrder`, `createOrder`, `updateOrder`, `cancelOrder`
+que llaman a las RPCs de la Tarea 6, parseando el código estable antes de `:` en cada
+`RAISE EXCEPTION` hacia un tipo de error TS (`BotServiceError`) en vez de dejar pasar el
+mensaje SQL crudo.
+
+**Acceptance criteria:**
+- [ ] Las 4 funciones existen con las firmas de §4
+- [ ] Cualquier error de Postgres se traduce a `BotServiceError` con uno de los 8 códigos conocidos, nunca se re-lanza el texto SQL crudo
+
+**Verification:**
+- [ ] Vitest: un caso por cada uno de los 8 códigos de error, confirmando que `BotServiceError.code` los captura — `npm run test` en verde
+- [ ] `npm run build` y `npm run lint` pasan
+
+**Dependencies:** Tarea 6
+
+**Files likely touched:**
+- `lib/bot/services/orders.ts`
+- `lib/bot/services/orders.test.ts`
+- `lib/bot/errors.ts`
+
+**Estimated scope:** M (3 archivos, mapeo de errores no trivial)
+
+---
+
+## Tarea 9: Servicio de whitelist (`lib/bot/services/auth.ts`)
+
+**Descripción:** Función `resolveCustomer(externalId)` que llama a `bot_resolve_customer`,
+y `validateApiKey(rawKey)` que hashea y llama a `bot_validate_api_key` (usada recién en la
+Tarea 20, implementada aquí junto al resto de auth).
+
+**Acceptance criteria:**
+- [ ] `resolveCustomer` devuelve `null` (no lanza) cuando no hay match
+- [ ] `validateApiKey` nunca compara el key en texto plano, solo su hash (sha256)
+
+**Verification:**
+- [ ] Vitest: `resolveCustomer` con match y sin match; `validateApiKey` con key válida, inválida y revocada — `npm run test` en verde
+- [ ] `npm run build` y `npm run lint` pasan
+
+**Dependencies:** Tarea 5
+
+**Files likely touched:**
+- `lib/bot/services/auth.ts`
+- `lib/bot/services/auth.test.ts`
+
+**Estimated scope:** S (2 archivos)
+
+---
+
+## Checkpoint: Fase 2 — Capa de servicio TypeScript completa
+
+- [ ] `npm run test` cubre las 7 funciones de servicio en verde
+- [ ] `npm run build` y `npm run lint` pasan sin warnings nuevos
+- [ ] Revisión antes de tocar nada de Telegram
+
+---
+
+## Tarea 10: Tipos de desacoplamiento de canal (`lib/bot/channel.ts`)
+
+**Descripción:** Definir `InboundMessage`, `BotMessage`, `ChannelAdapter` exactamente como en
+§6 del diseño. Solo el contrato, sin implementación.
+
+**Acceptance criteria:**
+- [ ] Los 3 tipos existen con los campos exactos de §6
+- [ ] No hay ninguna referencia a Telegram en este archivo
+
+**Verification:**
+- [ ] `npm run build` pasa
+
+**Dependencies:** None (puede hacerse en paralelo con Fase 1/2)
+
+**Files likely touched:**
+- `lib/bot/channel.ts`
+
+**Estimated scope:** XS (1 archivo, solo tipos)
+
+---
+
+## Tarea 11: Adaptador de Telegram (`lib/bot/adapters/telegram.ts`)
+
+**Descripción:** Implementar `ChannelAdapter` para Telegram: `parseInbound`, `sendMessage`
+(traduce `BotMessage.buttons` a teclado inline), y `notifyOps` (usado desde la Tarea 19).
+
+**Acceptance criteria:**
+- [ ] `parseInbound` maneja mensajes de texto y `callback_query`
+- [ ] `sendMessage` genera el JSON correcto de `reply_markup.inline_keyboard` cuando hay botones
+- [ ] `notifyOps(message)` llama a `sendMessage` con el `TELEGRAM_OPS_CHAT_ID`
+
+**Verification:**
+- [ ] Vitest: `parseInbound` con fixtures de updates reales de Telegram (texto y callback_query); `sendMessage` mockeando `fetch` y verificando el payload — `npm run test` en verde
+- [ ] Manual, una sola vez: con `curl` directo a la Bot API desde una consola Node, confirmar que un mensaje de prueba llega al chat_id de prueba
+
+**Dependencies:** Tarea 10, Tarea 1 (token)
+
+**Files likely touched:**
+- `lib/bot/adapters/telegram.ts`
+- `lib/bot/adapters/telegram.test.ts`
+
+**Estimated scope:** M (2 archivos, varias formas de update que traducir)
+
+---
+
+## Tarea 12: Webhook `/api/bot/telegram` — secreto, idempotencia, whitelist
+
+**Descripción:** Ruta `app/api/bot/telegram/route.ts`: valida
+`X-Telegram-Bot-Api-Secret-Token` contra `TELEGRAM_WEBHOOK_SECRET` (§9), chequeo de
+idempotencia contra `bot_processed_update` (§9) antes de llamar cualquier servicio, resuelve
+whitelist e ignora en silencio si no hay match. Todavía sin lógica de menú.
+
+**Acceptance criteria:**
+- [ ] Un request sin el header secreto correcto devuelve 401 sin tocar ninguna tabla
+- [ ] Un `update_id` repetido responde 200 sin reprocesar
+- [ ] Un `chat_id` no whitelisteado no genera ninguna respuesta visible
+
+**Verification:**
+- [ ] Vitest: llamar al handler de la ruta directamente (import del `route.ts`) con distintos payloads/headers simulados, cubriendo los 3 criterios de aceptación — `npm run test` en verde
+- [ ] Manual, en staging (Tarea 3): registrar el webhook con `setWebhook` contra el dominio propio y enviar un mensaje real desde el chat_id de prueba
+- [ ] Manual: reenviar el mismo payload de update dos veces y confirmar una sola fila nueva en `bot_processed_update`
+
+**Dependencies:** Tarea 9, Tarea 11, Tarea 4 (tabla `bot_processed_update`), Tarea 3 (staging)
+
+**Files likely touched:**
+- `app/api/bot/telegram/route.ts`
+- `app/api/bot/telegram/route.test.ts`
+
+**Estimated scope:** M (2 archivos, pero con varias validaciones secuenciales críticas)
+
+---
+
+## Tarea 13: Flujo "ver pedido" de punta a punta (vertical slice mínimo)
+
+**Descripción:** Mostrar el Menú Principal (§7) tras whitelist + verificación de ventana
+activa, y conectar "📋 Ver / modificar mi pedido de hoy" solo para lectura
+(`getCurrentOrder`) — primera prueba de que toda la plumbing funciona de punta a punta.
+
+**Acceptance criteria:**
+- [ ] El Menú Principal se muestra tal cual el guion de §7
+- [ ] "Ver mi pedido" muestra el pedido actual si existe, o invita a crear uno si no
+
+**Verification:**
+- [ ] Vitest: lógica de menú en `lib/bot/domain.ts` probada con mocks de los servicios — `npm run test` en verde
+- [ ] Manual, en staging: desde el chat de prueba, navegar el menú y confirmar ambos casos
+
+**Dependencies:** Tarea 8, Tarea 12
+
+**Files likely touched:**
+- `lib/bot/domain.ts`
+- `lib/bot/domain.test.ts`
+- `app/api/bot/telegram/route.ts`
+
+**Estimated scope:** M (3 archivos)
+
+---
+
+## Checkpoint: Fase 3 — Canal Telegram verificado de punta a punta
+
+- [ ] Mensaje real de un chat_id whitelisteado (en staging) recibe la respuesta correcta
+- [ ] Mensaje de un chat_id no whitelisteado es ignorado sin respuesta
+- [ ] Reenviar el mismo `update_id` no duplica nada
+- [ ] Revisión antes de construir los flujos de escritura
+
+---
+
+## Tarea 14: Estado de conversación (`bot_conversation_state`) en el dominio del bot
+
+**Descripción:** Lógica en `lib/bot/domain.ts` para leer/escribir `bot_conversation_state`
+entre pasos (§8): transición de estados, expiración por inactividad (15 min), reinicio a
+`idle` al terminar o abandonar un flujo.
+
+**Acceptance criteria:**
+- [ ] Cada transición de estado persiste con el `context` correcto
+- [ ] Una conversación con `updated_at` de más de 15 minutos vuelve al Menú Principal
+- [ ] No hay fugas de estado entre distintos `customer_id`
+
+**Verification:**
+- [ ] Vitest: transiciones de estado y expiración, con tiempo simulado (`vi.useFakeTimers`) — `npm run test` en verde
+
+**Dependencies:** Tarea 13, Tarea 4 (tabla)
+
+**Files likely touched:**
+- `lib/bot/domain.ts`
+- `lib/bot/services/conversation.ts`
+- `lib/bot/services/conversation.test.ts`
+
+**Estimated scope:** M (3 archivos)
+
+---
+
+## Tarea 15: Flujo "crear pedido" de punta a punta
+
+**Descripción:** Guion completo de §7 para "🛒 Crear nuevo pedido": frecuentes → búsqueda →
+selección de unidad si aplica → cantidad → resumen → confirmación → `createOrder`.
+
+**Acceptance criteria:**
+- [ ] Los 8 productos frecuentes se muestran cuando existen; se salta a búsqueda si no hay
+- [ ] La pregunta de unidad solo aparece cuando el grupo tiene más de una variante
+- [ ] El pedido creado tiene exactamente los productos/cantidades confirmados
+- [ ] Cada código de error se traduce al mensaje amigable correspondiente
+
+**Verification:**
+- [ ] Vitest: cada paso del flujo con mocks de servicios, incluyendo los branches de "sin frecuentes" y "una sola variante" — `npm run test` en verde
+- [ ] Manual, en staging, crítico: crear un pedido real de punta a punta y confirmar en `app/protected/sale-orders` del panel admin (mismo `order_code`, `created_by_customer_id` seteado, `created_by_admin_id` nulo)
+
+**Dependencies:** Tarea 7, Tarea 8, Tarea 14
+
+**Files likely touched:**
+- `lib/bot/domain.ts`
+- `lib/bot/domain.test.ts`
+
+**Estimated scope:** L — considerar partir si al implementar resulta tocar más de 5 archivos
+
+---
+
+## Tarea 16: Flujo "modificar pedido" de punta a punta
+
+**Descripción:** Extender "📋 Ver / modificar" para editar cantidades de un pedido
+existente, reutilizando selección de producto/unidad/cantidad de la Tarea 15, llamando a
+`updateOrder`.
+
+**Acceptance criteria:**
+- [ ] Editar actualiza exactamente los items confirmados
+- [ ] `PLAN_NOT_EDITABLE` y `PAST_CUTOFF` se traducen a mensajes distintos y correctos
+- [ ] Nunca permite editar un pedido con `created_by_admin_id` no nulo
+
+**Verification:**
+- [ ] Vitest: casos de edición exitosa y de los 2 códigos de error — `npm run test` en verde
+- [ ] Manual, en staging: editar un pedido real y confirmar en el panel admin; forzar `PLAN_NOT_EDITABLE` moviendo el plan a `preparing` a mano
+
+**Dependencies:** Tarea 8, Tarea 15
+
+**Files likely touched:**
+- `lib/bot/domain.ts`
+
+**Estimated scope:** M (reutiliza lo de la Tarea 15)
+
+---
+
+## Tarea 17: Flujo "cancelar pedido" de punta a punta
+
+**Descripción:** Implementar "❌ Cancelar pedido" de §7: confirmación explícita antes de
+llamar `cancelOrder`.
+
+**Acceptance criteria:**
+- [ ] Requiere confirmación explícita antes de cancelar
+- [ ] El pedido cancelado queda con `status='cancelled'`, nunca se borra la fila
+- [ ] `PLAN_NOT_CANCELLABLE` se traduce correctamente
+
+**Verification:**
+- [ ] Vitest: flujo de confirmación y el código de error — `npm run test` en verde
+- [ ] Manual, en staging: cancelar un pedido real y confirmar en el panel admin que la fila sigue existiendo con `status='cancelled'`, correctamente excluida de `InvoicingReviewTable`
+
+**Dependencies:** Tarea 8, Tarea 13
+
+**Files likely touched:**
+- `lib/bot/domain.ts`
+
+**Estimated scope:** S
+
+---
+
+## Checkpoint: Fase 4 — PoC funcionalmente completo
+
+- [ ] Los 3 flujos funcionan de punta a punta contra el bot real en staging
+- [ ] Verificado en el panel admin que ninguno rompe o altera el comportamiento existente
+- [ ] Suite completa de Vitest + pgTAP en verde
+- [ ] Revisión con el humano antes de pasar a dureza operativa
+
+---
+
+## Tarea 18: Auditoría — `bot_interaction_log` en cada acción de dominio
+
+**Descripción:** Instrumentar cada servicio de escritura/búsqueda para insertar una fila en
+`bot_interaction_log` (§10), sin bloquear la respuesta al cliente si el insert de auditoría
+falla.
+
+**Acceptance criteria:**
+- [ ] Cada `create_order`/`update_order`/`cancel_order`/`search` deja exactamente una fila
+- [ ] Un fallo al escribir la auditoría no impide responder al cliente
+
+**Verification:**
+- [ ] Vitest: confirmar la fila de auditoría tras cada acción, y que un mock de fallo en el insert no propaga — `npm run test` en verde
+
+**Dependencies:** Tarea 8, Tarea 15, Tarea 16, Tarea 17
+
+**Files likely touched:**
+- `lib/bot/services/orders.ts`
+- `lib/bot/services/products.ts`
+- `lib/bot/services/audit.ts`
+- `lib/bot/services/audit.test.ts`
+
+**Estimated scope:** M (4 archivos)
+
+---
+
+## Tarea 19: Alertas de fallos — `notifyOps` en errores no controlados
+
+**Descripción:** Manejo global de excepciones que distingue errores de negocio esperados
+(los 8 códigos de §7) de errores no controlados, y solo estos últimos disparan `notifyOps`.
+
+**Acceptance criteria:**
+- [ ] Un error no controlado dispara un mensaje en el chat de ops
+- [ ] Ninguno de los 8 códigos de error de negocio dispara esa alerta
+- [ ] El cliente igual recibe una respuesta amigable aunque haya ocurrido un error no controlado
+
+**Verification:**
+- [ ] Vitest: mock de un error no controlado confirma la llamada a `notifyOps`; mock de cada código de negocio confirma que NO se llama — `npm run test` en verde
+- [ ] Manual, en staging: forzar un error real y confirmar el mensaje en el chat de ops
+
+**Dependencies:** Tarea 11, Tarea 12
+
+**Files likely touched:**
+- `app/api/bot/telegram/route.ts`
+- `lib/bot/domain.ts`
+
+**Estimated scope:** S
+
+---
+
+## Tarea 20: Sistema de API keys + rutas HTTP `/api/bot/orders`, `/api/bot/products/*`
+
+**Descripción:** §4.1: generación de API key (script que la muestra una sola vez), middleware que valida `Authorization: Bearer <key>`, y las rutas HTTP equivalentes de §4 como wrappers sobre los servicios de las Tareas 7-8. No usadas por Telegram (que sigue en proceso).
+
+**Acceptance criteria:**
+- [ ] Sin `Authorization` o con key inválida/revocada → 401 sin ejecutar nada
+- [ ] Con key válida ejecuta la acción y devuelve el mismo resultado que la función de servicio
+- [ ] Revocar una key la invalida inmediatamente
+
+**Verification:**
+- [ ] Vitest: requests simulados con/sin key válida/revocada a cada ruta — `npm run test` en verde
+- [ ] Manual: `curl` a cada ruta con y sin key válida, y con una key revocada
+
+**Dependencies:** Tarea 9, Tarea 7, Tarea 8
+
+**Files likely touched:**
+- `scripts/generate_bot_api_key.ts`
+- `app/api/bot/orders/route.ts`
+- `app/api/bot/orders/[id]/route.ts`
+- `app/api/bot/products/frequent/route.ts`
+- `app/api/bot/products/search/route.ts`
+
+**Estimated scope:** L — 5 archivos; si crece, separar "generación de key" de "rutas HTTP"
+
+---
+
+## Checkpoint: Fase 5 — Dureza operativa completa
+
+- [ ] Auditoría, alertas y API keys verificados (automatizado + manual)
+- [ ] Revisión antes de la mejora de catálogo (no bloqueante) y producción
+
+---
+
+## Tarea 21: Agrupación canónica de catálogo asistida por LLM (offline)
+
+**Descripción:** Script puntual (§5.1) que lee `product.name`/`description`/`unit`, le pide
+a un LLM que proponga agrupaciones, exporta la propuesta para revisión humana, y aplica el
+resultado revisado poblando `product_canonical_group`/`product.canonical_group_id`.
+
+**Acceptance criteria:**
+- [ ] El script nunca se ejecuta como parte de una request del bot — es manual, offline
+- [ ] La propuesta se puede revisar/editar antes de aplicarse
+- [ ] Tras aplicar, buscar "tomate" en `bot_search_catalog` agrupa sus variantes bajo un solo `canonical_group_id`
+
+**Verification:**
+- [ ] `npm run build` pasa (si el script usa TS del repo)
+- [ ] Manual: correr contra el catálogo real (o copia), revisar, aplicar, confirmar el agrupamiento
+- [ ] Manual: confirmar que el panel admin de productos sigue sin cambios
+
+**Dependencies:** Tarea 4; no depende de las Fases 2-5
+
+**Files likely touched:**
+- `scripts/generate_product_canonical_groups.ts`
+
+**Estimated scope:** M (1 archivo, revisión humana en el medio)
+
+---
+
+## Tarea 22: Promoción a producción en Vercel
+
+**Descripción:** Aplicar las migraciones de las Tareas 4-6 contra Neptuno (producción) por
+primera vez — hasta aquí solo existían en el self-hosted de staging. Configurar
+`TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_OPS_CHAT_ID` en Vercel
+(`scripts/use-jepri-cli.sh`), desplegar, y registrar el webhook de producción con
+`setWebhook` apuntando a la URL de Vercel — reemplazando el webhook de staging.
+
+**Acceptance criteria:**
+- [ ] Las migraciones del bot aplicadas en Neptuno, con el mismo resultado que en staging
+- [ ] Las 3 variables configuradas en Vercel
+- [ ] `getWebhookInfo` confirma la URL de producción y `pending_update_count: 0`
+- [ ] El webhook de staging queda desregistrado o explícitamente documentado como entorno secundario
+- [ ] Ningún `customer`/`distribution_plan` de prueba de staging existe en Neptuno (datos reales únicamente)
+
+**Verification:**
+- [ ] Manual: `curl https://api.telegram.org/bot<token>/getWebhookInfo` muestra la URL de Vercel
+
+**Dependencies:** Todas las de las Fases 1-5 verificadas en staging
+
+**Files likely touched:** Ninguno en el repo (configuración en Vercel/Telegram)
+
+**Estimated scope:** XS
+
+---
+
+## Tarea 23: Prueba de aceptación manual de punta a punta contra `todo/ChatBot.md`
+
+**Descripción:** Recorrer la spec original punto por punto contra producción, con el o los
+clientes de prueba reales.
+
+**Acceptance criteria:**
+- [ ] Cada punto de la sección 2-4 de `todo/ChatBot.md` tiene una verificación explícita documentada
+- [ ] Ningún hallazgo bloqueante queda sin registrar
+
+**Verification:**
+- [ ] Manual, exhaustivo: ejecutar cada escenario contra producción y registrar el resultado
+
+**Dependencies:** Todas las anteriores
+
+**Files likely touched:** Ninguno
+
+**Estimated scope:** M (sin código, cobertura amplia)
+
+---
+
+## Checkpoint: Completo
+
+- [ ] Todos los criterios de aceptación de las 23 tareas cumplidos
+- [ ] `npm run test` + `supabase test db` en verde
+- [ ] `documentacion/chatbot_diseno.md` actualizado si algo cambió durante la implementación
+- [ ] Listo para que el humano decida si el PoC pasa a clientes reales
