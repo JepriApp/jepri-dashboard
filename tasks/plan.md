@@ -60,7 +60,7 @@ secciones).
 Tareas detalladas en `tasks/todo.md`. Índice por fase:
 
 ### Fase 0: Credenciales y datos de prueba
-- [ ] Tarea 1: Provisión de credenciales de Telegram y datos de prueba
+- [x] Tarea 1: Provisión de credenciales de Telegram y datos de prueba
 
 ### Fase 0.5: Infraestructura de pruebas y staging (nueva en el repo)
 - [ ] Tarea 2: Harness de pruebas automatizadas (Vitest + pgTAP)
@@ -156,7 +156,12 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
   siguiente *antes* de que abra la ventana de pedidos, de forma consistente? La Tarea 1 debe
   confirmar esto con al menos un plan de prueba creado a mano.
 - ¿Con cuántos clientes reales (no solo de prueba) se activa el PoC inicialmente?
-- ¿El Supabase self-hosted en `10.85.96.51:8000` ya tiene el esquema actualizado al día con
-  Neptuno (mismas tablas/vistas de `sale_order`, `distribution_plan`, etc.), o hay que
-  sincronizarlo primero? Si está desactualizado, la Tarea 4 debe confirmarlo antes de
-  aplicar las migraciones nuevas del bot ahí.
+- ~~¿El Supabase self-hosted en `10.85.96.51:8000` ya tiene el esquema actualizado al día
+  con Neptuno?~~ Resuelto en la Tarea 1: estaba desactualizado (faltaba `whatsapp_id`), se
+  restauró y quedó confirmado al día.
+- `supabase-db` (el Postgres real de ese servidor) no tiene puerto expuesto al host, y el
+  pooler (`supabase-pooler`/Supavisor en 5432/6543) tiene su tenant `realtime-dev` sin
+  registrar correctamente — la conexión directa por `psql` falla. Por ahora todo el acceso
+  de escritura se relaya por `docker exec` a través del usuario. Antes de las Tareas 4-6
+  (migraciones + pgTAP, que necesitan iterar mucho más rápido) hay que decidir si conviene
+  exponer un puerto directo al contenedor `supabase-db` en ese servidor.

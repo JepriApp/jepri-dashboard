@@ -16,15 +16,23 @@ Telegram de prueba — **en el Supabase self-hosted de `10.85.96.51:8000`, nunca
 instancia está al día con Neptuno antes de seguir.
 
 **Acceptance criteria:**
-- [ ] `TELEGRAM_BOT_TOKEN` obtenido y guardado en `.env.local` (no commiteado)
-- [ ] Un `customer` de prueba existe en `10.85.96.51:8000` con `whatsapp_id` = chat_id numérico de una cuenta de Telegram de prueba
-- [ ] Existe un `distribution_plan` en `10.85.96.51:8000` con `status='planned'` y `plan_date` mayor a hoy
-- [ ] El esquema de `10.85.96.51:8000` (tablas/vistas de `sale_order`, `distribution_plan`, `customer`) está al día con Neptuno — si no, sincronizarlo antes de la Tarea 4
+- [x] `TELEGRAM_BOT_TOKEN` obtenido y guardado en `.env.local` (no commiteado) — bot `@Jepridevbot`
+- [x] Un `customer` de prueba existe en `10.85.96.51:8000` con `whatsapp_id` = chat_id numérico de una cuenta de Telegram de prueba — `id=28679e91-8caa-45f4-b5f5-3ed04f9decf9`, `whatsapp_id=8703567026`
+- [x] Existe un `distribution_plan` en `10.85.96.51:8000` con `status='planned'` y `plan_date` mayor a hoy — `id=b309a891-cfab-48e7-b2a1-f0c44e59971f`, `plan_date=2026-10-09`
+- [x] El esquema de `10.85.96.51:8000` (tablas/vistas de `sale_order`, `distribution_plan`, `customer`) está al día con Neptuno — confirmado tras restauración, `customer.whatsapp_id` presente
 
 **Verification:**
-- [ ] Manual: `curl https://api.telegram.org/bot<token>/getMe` responde con los datos del bot
-- [ ] Manual, contra `10.85.96.51:8000`: `select * from customer where whatsapp_id = '<chat_id de prueba>'` devuelve la fila
-- [ ] Manual, contra `10.85.96.51:8000`: `select * from distribution_plan where status='planned' order by plan_date` muestra el plan de prueba
+- [x] Manual: `curl https://api.telegram.org/bot<token>/getMe` respondió con los datos del bot
+- [x] Manual, contra `10.85.96.51:8000`: fila de `customer` confirmada vía `docker exec -it supabase-db psql -U postgres`
+- [x] Manual, contra `10.85.96.51:8000`: fila de `distribution_plan` confirmada de la misma forma
+
+**Nota de infraestructura:** `supabase-db` (Postgres real) no tiene puerto mapeado al host —
+solo `supabase-pooler` (Supavisor, puertos 5432/6543) lo tiene, y su tenant `realtime-dev`
+no está registrado correctamente (conexión directa por `psql` falla con
+`tenant/user not found`). Mientras no se resuelva eso, el acceso de escritura a esta
+instancia se hace relayando comandos `docker exec -it supabase-db psql -U postgres -c "..."`
+a través del usuario. Si esto se vuelve lento para las Tareas 4-6, considerar exponer un
+puerto directo al contenedor `supabase-db` (ver conversación de la Tarea 1).
 
 **Dependencies:** None
 
