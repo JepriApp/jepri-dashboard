@@ -239,14 +239,27 @@ exponga como RPC callables sin este grant explícito.
 con las validaciones exactas de §3.1-§3.4. Cada función es una sola transacción (atómica).
 
 **Acceptance criteria:**
-- [ ] Las 3 funciones existen y usan los códigos de error exactos de §5/§7
-- [ ] `bot_create_order` nunca setea `created_by_admin_id`
-- [ ] `bot_cancel_order` nunca ejecuta `DELETE`, solo `update status='cancelled'`
-- [ ] Ninguna función permite tocar un `sale_order` con `created_by_admin_id` no nulo
+- [x] Las 3 funciones existen y usan los códigos de error exactos de §5/§7
+- [x] `bot_create_order` nunca setea `created_by_admin_id`
+- [x] `bot_cancel_order` nunca ejecuta `DELETE`, solo `update status='cancelled'`
+- [x] Ninguna función permite tocar un `sale_order` con `created_by_admin_id` no nulo (ownership estricto — probado explícitamente contra un pedido creado por un admin real de staging)
 
 **Verification:**
-- [ ] pgTAP: un test por cada uno de los 8 códigos de error, más el camino feliz de crear/editar/cancelar — `supabase test db` en verde
-- [ ] pgTAP: test que confirma que `bot_cancel_order` nunca ejecuta `DELETE` (verificando `sale_order` sigue existiendo tras cancelar)
+- [x] pgTAP (`bot_write_functions.sql`, 20 asserts): los 8 códigos de error (`NO_ACTIVE_PLAN`, `PAST_CUTOFF` x2, `ORDER_ALREADY_EXISTS`, `ORDER_NOT_FOUND` x3, `ORDER_NOT_EDITABLE`, `PLAN_NOT_EDITABLE`, `PLAN_NOT_CANCELLABLE`, `ORDER_NOT_CANCELLABLE`) + caminos felices de crear/editar/cancelar — `npm run test:db` en verde, 48/48 asserts totales
+- [x] pgTAP confirma que `bot_cancel_order` nunca ejecuta `DELETE` (la fila sigue existiendo, `count=1`, tras cancelar) y que cancelar funciona incluso después del cutoff (§3.4, a diferencia de editar)
+- [x] Smoke-test manual previo del camino feliz (crear + intento de duplicado) contra datos reales de staging
+- [x] Confirmado que ningún test dejó datos filtrados (sin `sale_order` del cliente de prueba, plan de la Tarea 1 intacto)
+
+**Notas de implementación:**
+- Helper interno `bot_is_within_cutoff(cutoff_at)` (no expuesto a `anon` — solo lo llaman
+  las funciones `bot_create_order`/`bot_update_order`, que ya corren como el dueño) para no
+  duplicar la lógica de §3.2 entre las dos.
+- Las pruebas de error usan `throws_like()` de pgTAP (captura la excepción en su propia
+  sub-transacción, sin abortar el resto del test) y `SAVEPOINT`/`ROLLBACK TO` alrededor de
+  cada escenario que rompe estado a propósito (status inválido, plan fuera de `planned`),
+  para no afectar los asserts siguientes dentro del mismo archivo.
+- El fallback de horario sin `cutoff_at` (§3.2) se probó recalculando la misma fórmula en
+  el test en vez de un valor fijo, para no depender de qué día de la semana corra la suite.
 
 **Dependencies:** Tarea 5
 
