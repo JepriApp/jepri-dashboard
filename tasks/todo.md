@@ -720,6 +720,10 @@ resuelto.
 - [x] pgTAP (`bot_read_functions.sql`) — nuevo assert: 2 `customer` con el mismo
       `whatsapp_id` → `bot_resolve_customer` devuelve las 2 filas
 - [x] `npm run build` y `npm run lint` sin errores nuevos
+- [x] Manual, en staging, contra @Jepridevbot: se creó temporalmente un segundo
+      `customer` con el mismo `whatsapp_id` que el cliente de prueba — tocar una opción
+      del Menú Principal mostró el menú de desambiguación con los dos nombres; cliente
+      de prueba temporal borrado al confirmar
 
 **Decisión de diseño (sin estado nuevo):** la desambiguación de "para cuál cliente es
 esto" vive enteramente codificada en el `callbackData` del botón que el propio bot
