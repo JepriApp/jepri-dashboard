@@ -942,7 +942,11 @@ migración + pgTAP nuevos) antes de poder insertarle filas desde el bot.
       cada uno de los 8 códigos de negocio confirma que NO se llama — `npm run test` en
       verde, 140/140
 - [x] `npx tsc --noEmit`, `npm run build` y `npm run lint` sin errores nuevos
-- [ ] Manual, en staging: forzar un error real y confirmar el mensaje en el chat de ops
+- [x] Manual, en staging: se creó el grupo "Jepri Bot - Ops" con @Jepridevbot como
+      miembro, se configuró `TELEGRAM_OPS_CHAT_ID` en el `.env` del servidor, y se forzó
+      un error real revocando temporalmente `EXECUTE` sobre `bot_get_active_plan_status`
+      para `anon`/`authenticated`/`public` (restaurado al terminar) — la alerta llegó al
+      grupo de ops y el cliente recibió el mensaje genérico, ambos confirmados en vivo
 
 **Decisión de diseño — dos capas de red de seguridad:**
 1. **Capa interna** (`createOrder.ts`/`domain.ts`): los catches que ya existían alrededor
