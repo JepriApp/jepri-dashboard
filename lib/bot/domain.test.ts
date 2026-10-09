@@ -3,7 +3,12 @@ import { handleInboundMessage, handleInboundMessageForChannel } from "@/lib/bot/
 import { getActivePlanStatus } from "@/lib/bot/services/plan";
 import { cancelOrder, getCurrentOrder } from "@/lib/bot/services/orders";
 import { getConversationState, resetConversationState, setConversationState } from "@/lib/bot/services/conversation";
-import { handleCreateOrderStep, startCreateOrderFlow, startEditOrderFlow } from "@/lib/bot/flows/createOrder";
+import {
+  CONVERSATION_ENDED_NOTE,
+  handleCreateOrderStep,
+  startCreateOrderFlow,
+  startEditOrderFlow,
+} from "@/lib/bot/flows/createOrder";
 import { BotServiceError } from "@/lib/bot/errors";
 
 vi.mock("@/lib/bot/services/plan", () => ({
@@ -20,6 +25,7 @@ vi.mock("@/lib/bot/services/conversation", () => ({
   resetConversationState: vi.fn(),
 }));
 vi.mock("@/lib/bot/flows/createOrder", () => ({
+  CONVERSATION_ENDED_NOTE: "\n\nEsta conversación terminó. Escríbeme cuando quieras hacer algo más.",
   CREATE_FLOW_STATES: {
     CHOOSING_PRODUCT: "create:choosing_product",
     CHOOSING_UNIT: "create:choosing_unit",
@@ -214,6 +220,7 @@ describe('handleInboundMessage — "Cancelar pedido" (Tarea 18)', () => {
     expect(mockCancelOrder).toHaveBeenCalledWith(fakeSupabase, "order-1", "cust-1");
     expect(result.text).toContain("1326");
     expect(result.text).toMatch(/cancelado/i);
+    expect(result.text).toContain(CONVERSATION_ENDED_NOTE.trim());
     expect(mockResetConversationState).toHaveBeenCalledWith(fakeSupabase, "cust-1", "telegram");
   });
 

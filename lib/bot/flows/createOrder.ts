@@ -15,6 +15,11 @@ import { SupabaseClient } from "@supabase/supabase-js";
  * vez de `createOrder` (se distingue por si el context carga `order_id`/`order_code`).
  */
 
+/** Se agrega al final de cualquier mensaje que termina la conversación (nextState
+ * idle) — para que quede claro que hay que escribir de nuevo para seguir usando el bot,
+ * en vez de dejarlo ambiguo. */
+export const CONVERSATION_ENDED_NOTE = "\n\nEsta conversación terminó. Escríbeme cuando quieras hacer algo más.";
+
 export const CREATE_FLOW_STATES = {
   CHOOSING_PRODUCT: "create:choosing_product",
   CHOOSING_UNIT: "create:choosing_unit",
@@ -428,8 +433,9 @@ async function handleReviewingOrder(
   const orderMeta = getOrderMeta(context);
 
   if (inbound.callbackData === CALLBACK_ABORT) {
+    const text = orderMeta ? "No se guardó ningún cambio." : "Pedido cancelado, no se guardó nada.";
     return {
-      reply: { text: orderMeta ? "No se guardó ningún cambio." : "Pedido cancelado, no se guardó nada." },
+      reply: { text: `${text}${CONVERSATION_ENDED_NOTE}` },
       nextState: "idle",
       nextContext: {},
     };
@@ -507,7 +513,7 @@ async function handleReviewingOrder(
         await updateOrder(supabaseClient, orderMeta.order_id, customerId, itemInputs);
         return {
           reply: {
-            text: `✅ Pedido ${orderMeta.order_code} actualizado. Se entrega el ${planDate}.\n\n${formatItemLines(items)}`,
+            text: `✅ Pedido ${orderMeta.order_code} actualizado. Se entrega el ${planDate}.\n\n${formatItemLines(items)}${CONVERSATION_ENDED_NOTE}`,
           },
           nextState: "idle",
           nextContext: {},
@@ -517,14 +523,14 @@ async function handleReviewingOrder(
       const created = await createOrder(supabaseClient, customerId, itemInputs);
       return {
         reply: {
-          text: `✅ Pedido ${created.order_code} creado. Se entrega el ${planDate}.\n\n${formatItemLines(items)}`,
+          text: `✅ Pedido ${created.order_code} creado. Se entrega el ${planDate}.\n\n${formatItemLines(items)}${CONVERSATION_ENDED_NOTE}`,
         },
         nextState: "idle",
         nextContext: {},
       };
     } catch (error) {
       return {
-        reply: { text: orderErrorMessage(error, orderMeta !== null) },
+        reply: { text: `${orderErrorMessage(error, orderMeta !== null)}${CONVERSATION_ENDED_NOTE}` },
         nextState: "idle",
         nextContext: {},
       };

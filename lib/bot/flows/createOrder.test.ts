@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  CONVERSATION_ENDED_NOTE,
   CREATE_FLOW_STATES,
   handleCreateOrderStep,
   startCreateOrderFlow,
@@ -378,6 +379,7 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
     expect(result.reply.text).toContain("1326");
     expect(result.reply.text).toContain(PLAN_DATE);
     expect(result.reply.text).toContain('3 kg de "Tomate chonto"');
+    expect(result.reply.text).toContain(CONVERSATION_ENDED_NOTE.trim());
     expect(result.nextState).toBe("idle");
   });
 
@@ -558,6 +560,7 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
     expect(result.reply.text).toContain("1326");
     expect(result.reply.text).toContain("actualizado");
     expect(result.reply.text).toContain('3 kg de "Tomate chonto"');
+    expect(result.reply.text).toContain(CONVERSATION_ENDED_NOTE.trim());
     expect(result.nextState).toBe("idle");
   });
 
@@ -662,6 +665,7 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
 
     expect(mockCreateOrder).not.toHaveBeenCalled();
     expect(result.reply.text).toMatch(/cancelado/i);
+    expect(result.reply.text).toContain(CONVERSATION_ENDED_NOTE.trim());
     expect(result.nextState).toBe("idle");
   });
 

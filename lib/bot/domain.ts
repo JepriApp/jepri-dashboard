@@ -1,6 +1,7 @@
 import { Database } from "@/database.types";
 import { BotMessage } from "@/lib/bot/channel";
 import {
+  CONVERSATION_ENDED_NOTE,
   CREATE_FLOW_STATES,
   handleCreateOrderStep,
   startCreateOrderFlow,
@@ -96,14 +97,14 @@ async function handleCancelConfirmStep(
   if (inbound.callbackData === CALLBACK_CANCEL_CONFIRM) {
     try {
       await cancelOrder(supabaseClient, orderId, customerId);
-      return idleTurn({ text: `❌ Pedido ${orderCode} cancelado.` });
+      return idleTurn({ text: `❌ Pedido ${orderCode} cancelado.${CONVERSATION_ENDED_NOTE}` });
     } catch (error) {
-      return idleTurn({ text: cancelErrorMessage(error) });
+      return idleTurn({ text: `${cancelErrorMessage(error)}${CONVERSATION_ENDED_NOTE}` });
     }
   }
 
   if (inbound.callbackData === CALLBACK_CANCEL_DENY) {
-    return idleTurn({ text: "Ok, no se canceló nada." });
+    return idleTurn({ text: `Ok, no se canceló nada.${CONVERSATION_ENDED_NOTE}` });
   }
 
   // Ni confirmar ni rechazar (ej. escribió texto suelto): vuelve a preguntar.
