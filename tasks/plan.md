@@ -75,7 +75,7 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
 - [x] Contenedor de staging responde en el dominio propio por HTTPS
 
 ### Fase 1: Base de datos
-- [ ] Tarea 4: Migración — tablas nuevas del bot + RLS sin policies
+- [x] Tarea 4: Migración — tablas nuevas del bot + RLS sin policies
 - [ ] Tarea 5: Funciones `SECURITY DEFINER` — lecturas
 - [ ] Tarea 6: Funciones `SECURITY DEFINER` — escrituras transaccionales
 

@@ -171,14 +171,15 @@ contra el self-hosted `10.85.96.51:8000` (staging) — Neptuno (producción) no 
 la Tarea 22.
 
 **Acceptance criteria:**
-- [ ] Las 5 tablas/columna existen con exactamente los campos de §5.1, §8, §9, §10, §4.1 del diseño
-- [ ] RLS activado en las 5, sin ninguna policy creada
-- [ ] Ninguna tabla/columna existente se modifica ni se borra
+- [x] Las 5 tablas/columna existen con exactamente los campos de §5.1, §8, §9, §10, §4.1 del diseño
+- [x] RLS activado en las 5, sin ninguna policy creada
+- [x] Ninguna tabla/columna existente se modifica ni se borra (solo `ALTER TABLE product ADD COLUMN`, nullable)
 
 **Verification:**
-- [ ] `supabase db push` (o el flujo de migración del proyecto) aplica sin errores en el proyecto de desarrollo
-- [ ] Caso de pgTAP (Tarea 2): como rol anon/authenticated normal, un `select` directo contra cualquiera de las 5 falla por RLS
-- [ ] `npm run build` sigue pasando
+- [x] Migración aplicada directo con `psql` contra staging (mismo motivo que Tarea 2: `supabase db push` tendría el mismo problema de TLS) — sin errores
+- [x] pgTAP (`supabase/tests/database/bot_schema_rls.sql`, 12 asserts): RLS activado + 0 policies en las 5 tablas — `npm run test:db` en verde
+- [x] Confirmado también con un cliente anon real vía REST: `SELECT` devuelve `[]` (filtrado por RLS), `INSERT` devuelve `401`/`42501 "new row violates row-level security policy"`
+- [x] `npm run build` sigue pasando
 
 **Dependencies:** Tarea 1, Tarea 2 (harness listo para escribir el test de RLS)
 
