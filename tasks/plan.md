@@ -67,12 +67,12 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
 
 ### Fase 0.5: Infraestructura de pruebas y staging (nueva en el repo)
 - [x] Tarea 2: Harness de pruebas automatizadas (Vitest + pgTAP)
-- [ ] Tarea 3: Staging con Docker en el servidor propio
+- [x] Tarea 3: Staging con Docker en el servidor propio — `https://jepri-staging.lab.ryumanakano.com`
 
 ### Checkpoint: Fase 0 / 0.5
-- [ ] Token de bot funcionando, cliente de prueba whitelisteado
-- [ ] `npm run test` corre (aunque sin tests todavía, el harness existe)
-- [ ] Contenedor de staging responde en el dominio propio por HTTPS
+- [x] Token de bot funcionando, cliente de prueba whitelisteado
+- [x] `npm run test` corre (aunque sin tests todavía, el harness existe)
+- [x] Contenedor de staging responde en el dominio propio por HTTPS
 
 ### Fase 1: Base de datos
 - [ ] Tarea 4: Migración — tablas nuevas del bot + RLS sin policies

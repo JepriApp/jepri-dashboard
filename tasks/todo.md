@@ -124,16 +124,21 @@ dominio propio del usuario es el entorno donde se prueban los webhooks reales en
 3-5, antes de llegar a Vercel.
 
 **Acceptance criteria:**
-- [ ] `docker build` produce una imagen que arranca con `docker run` y sirve la app en el puerto configurado
-- [ ] El contenedor lee toda su configuración de variables de entorno (`.env` en el servidor, no commiteado) — ningún secreto queda horneado en la imagen
-- [ ] El `.env` de staging apunta `NEXT_PUBLIC_SUPABASE_URL` (y las demás variables de Supabase) al self-hosted `10.85.96.51:8000`, **nunca** a Neptuno
-- [ ] El dominio propio del usuario, por HTTPS, sirve la app a través del reverse proxy existente apuntando a este contenedor
-- [ ] El build y el deploy a Vercel siguen funcionando igual que antes (el `output: 'standalone'` no rompe nada ahí)
+- [x] `docker build` produce una imagen que arranca con `docker run` y sirve la app en el puerto configurado
+- [x] El contenedor lee toda su configuración de variables de entorno (`.env` en el servidor, no commiteado) — ningún secreto queda horneado en la imagen
+- [x] El `.env` de staging apunta `NEXT_PUBLIC_SUPABASE_URL` (y las demás variables de Supabase) al self-hosted `10.85.96.51:8000`, **nunca** a Neptuno
+- [x] El dominio propio del usuario, por HTTPS, sirve la app a través del reverse proxy existente apuntando a este contenedor — `https://jepri-staging.lab.ryumanakano.com`
+- [x] El build y el deploy a Vercel siguen funcionando igual que antes (el `output: 'standalone'` no rompe nada ahí)
 
 **Verification:**
-- [ ] Manual: `docker build . -t jepri-dashboard:staging && docker run ...` levanta la app localmente
-- [ ] Manual: `curl https://<dominio-staging>/` responde 200 a través del reverse proxy
-- [ ] Manual: un deploy de prueba a Vercel después de este cambio sigue funcionando (confirma que `output: 'standalone'` es inocuo ahí)
+- [x] Un agente en el servidor propio clonó la rama, construyó la imagen con `docker compose up -d --build` y la conectó a su reverse proxy (Caddy) existente
+- [x] `curl -I https://jepri-staging.lab.ryumanakano.com/` → `200`, `via: Caddy`, título "Jepri" confirmado, `/auth/login` → `200`
+- [x] `vercel deploy` (preview, no producción) de esta rama → `READY` en ~1 min, confirma que `output: 'standalone'` es inocuo en Vercel
+
+**Automatización del deploy:** `scripts/deploy_staging.sh` (en el servidor, mismo clon):
+`git fetch/reset --hard` a la rama + `docker compose up -d --build` + `docker image prune`,
+en un solo comando. Documentado en el propio script cómo volverlo 100% automático por
+cron si se quiere.
 
 **Dependencies:** None (puede hacerse en paralelo con la Tarea 1/2)
 
@@ -141,7 +146,9 @@ dominio propio del usuario es el entorno donde se prueban los webhooks reales en
 - `Dockerfile`
 - `docker-compose.yml`
 - `.dockerignore`
-- `next.config.ts` (agregar `output: 'standalone'`)
+- `.env.staging.example`
+- `scripts/deploy_staging.sh`
+- `next.config.ts` (`output: 'standalone'`, y `ALLOW_SELF_HOSTED_SUPABASE_IMAGES` para que las fotos de producto del self-hosted carguen en un build de producción, no solo en `next dev`)
 
 **Estimated scope:** M (4 archivos, infraestructura nueva)
 
