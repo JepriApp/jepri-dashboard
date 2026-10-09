@@ -989,22 +989,44 @@ diferencia de las respuestas al cliente, que sí son 100% channel-agnostic vía
 **Descripción:** §4.1: generación de API key (script que la muestra una sola vez), middleware que valida `Authorization: Bearer <key>`, y las rutas HTTP equivalentes de §4 como wrappers sobre los servicios de las Tareas 7-8. No usadas por Telegram (que sigue en proceso).
 
 **Acceptance criteria:**
-- [ ] Sin `Authorization` o con key inválida/revocada → 401 sin ejecutar nada
-- [ ] Con key válida ejecuta la acción y devuelve el mismo resultado que la función de servicio
-- [ ] Revocar una key la invalida inmediatamente
+- [x] Sin `Authorization` o con key inválida/revocada → 401 sin ejecutar nada
+- [x] Con key válida ejecuta la acción y devuelve el mismo resultado que la función de servicio
+- [x] Revocar una key la invalida inmediatamente
 
 **Verification:**
-- [ ] Vitest: requests simulados con/sin key válida/revocada a cada ruta — `npm run test` en verde
-- [ ] Manual: `curl` a cada ruta con y sin key válida, y con una key revocada
+- [x] Vitest: requests simulados con/sin key válida/revocada/sin parámetros requeridos,
+      a cada una de las 5 rutas (incluido el mapeo de `BotServiceError` a 400 y de un
+      error no controlado a 500) — `npm run test` en verde, 170/170
+- [x] `npx tsc --noEmit`, `npm run build` (las 5 rutas aparecen en el listado de build) y
+      `npm run lint` sin errores nuevos
+- [x] pgTAP — sin cambios de esquema en esta tarea (`bot_api_key`/`bot_validate_api_key`
+      ya existían desde la Tarea 9), en verde igual
+- [x] Manual: `node scripts/generate_bot_api_key.mjs` generó una key real contra
+      staging; `curl` a `/api/bot/products/search` sin `Authorization` (401), con una key
+      inexistente (401), con la key válida (200, catálogo real de staging), y otra vez
+      con la misma key ya revocada vía `update bot_api_key set revoked_at=now()` (401
+      inmediato) — key de prueba borrada al terminar
+
+**Decisión de diseño:** se agregó `lib/bot/httpApi.ts` (no estaba en el plan original)
+para no repetir la validación de `Authorization: Bearer` y el mapeo de errores en cada
+una de las 5 rutas — `isAuthorizedRequest`/`unauthorizedResponse`/`apiErrorResponse`,
+reutilizando `validateApiKey` de la Tarea 9 tal cual. El script de generación quedó en
+`.mjs` (Node puro, sin TypeScript) en vez de `.ts` — reutiliza `pg` (ya es dependencia)
+y `node:crypto` directo, sin necesitar agregar `tsx`/`ts-node` solo para un script
+puntual que se corre a mano.
 
 **Dependencies:** Tarea 9, Tarea 7, Tarea 8
 
 **Files likely touched:**
-- `scripts/generate_bot_api_key.ts`
-- `app/api/bot/orders/route.ts`
-- `app/api/bot/orders/[id]/route.ts`
-- `app/api/bot/products/frequent/route.ts`
-- `app/api/bot/products/search/route.ts`
+- `scripts/generate_bot_api_key.mjs` (nuevo, `.mjs` en vez de `.ts` — ver nota de diseño)
+- `lib/bot/httpApi.ts` (nuevo)
+- `app/api/bot/orders/route.ts`, `app/api/bot/orders/route.test.ts`
+- `app/api/bot/orders/[id]/route.ts`, `app/api/bot/orders/[id]/route.test.ts`
+- `app/api/bot/orders/current/route.ts`, `app/api/bot/orders/current/route.test.ts`
+- `app/api/bot/products/frequent/route.ts`, `app/api/bot/products/frequent/route.test.ts`
+- `app/api/bot/products/search/route.ts`, `app/api/bot/products/search/route.test.ts`
+- `lib/bot/test-fixtures.ts` (nuevo: `withApiKey`/`withRevokedApiKey`)
+- `package.json` (nuevo script `generate-bot-api-key`)
 
 **Estimated scope:** L — 5 archivos; si crece, separar "generación de key" de "rutas HTTP"
 
@@ -1012,7 +1034,7 @@ diferencia de las respuestas al cliente, que sí son 100% channel-agnostic vía
 
 ## Checkpoint: Fase 5 — Dureza operativa completa
 
-- [ ] Auditoría, alertas y API keys verificados (automatizado + manual)
+- [x] Auditoría, alertas y API keys verificados (automatizado + manual)
 - [ ] Revisión antes de la mejora de catálogo (no bloqueante) y producción
 
 ---

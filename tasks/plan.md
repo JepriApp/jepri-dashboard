@@ -123,12 +123,12 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
 ### Fase 5: Dureza operativa
 - [x] Tarea 19: Auditoría — `bot_interaction_log` en cada acción de dominio
 - [x] Tarea 20: Alertas de fallos — `notifyOps` en errores no controlados
-- [ ] Tarea 21: Sistema de API keys + rutas HTTP `/api/bot/orders`, `/api/bot/products/*`
+- [x] Tarea 21: Sistema de API keys + rutas HTTP `/api/bot/orders`, `/api/bot/products/*`
 
 ### Checkpoint: Fase 5
-- [ ] Cada acción de dominio deja una fila en `bot_interaction_log`
-- [ ] Forzar un error no controlado dispara alerta de ops; un error de negocio esperado no
-- [ ] Las rutas HTTP responden 401 sin API key válida y 200 con una
+- [x] Cada acción de dominio deja una fila en `bot_interaction_log`
+- [x] Forzar un error no controlado dispara alerta de ops; un error de negocio esperado no
+- [x] Las rutas HTTP responden 401 sin API key válida y 200 con una
 
 ### Fase 6: Catálogo — mejora
 - [ ] Tarea 22: Agrupación canónica de catálogo asistida por LLM (offline)

@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:db": "bash scripts/run_pgtap_tests.sh",
-    "update-supabase-types": "npx supabase gen types typescript --project-id acuofxciywrktkckokqo > database.types.ts"
+    "update-supabase-types": "npx supabase gen types typescript --project-id acuofxciywrktkckokqo > database.types.ts",
+    "generate-bot-api-key": "node scripts/generate_bot_api_key.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "6.x",

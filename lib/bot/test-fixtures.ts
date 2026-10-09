@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from "node:crypto";
 import { Client } from "pg";
 
 /**
@@ -128,4 +129,36 @@ export async function cleanupCustomerOrders(customerId: string): Promise<void> {
       [customerId],
     );
   });
+}
+
+async function withTemporaryApiKey<T>(
+  revoked: boolean,
+  fn: (rawKey: string) => Promise<T>,
+): Promise<T> {
+  const rawKey = randomBytes(16).toString("hex");
+  const keyHash = createHash("sha256").update(rawKey).digest("hex");
+
+  return withPrivilegedClient(async (client) => {
+    await client.query(
+      revoked
+        ? "insert into bot_api_key (name, key_hash, revoked_at) values ('test-adapter', $1, now())"
+        : "insert into bot_api_key (name, key_hash) values ('test-adapter', $1)",
+      [keyHash],
+    );
+    try {
+      return await fn(rawKey);
+    } finally {
+      await client.query("delete from bot_api_key where key_hash = $1", [keyHash]);
+    }
+  });
+}
+
+/** Crea una API key de prueba activa (Tarea 21), la pasa en texto plano, y la borra al terminar. */
+export async function withApiKey<T>(fn: (rawKey: string) => Promise<T>): Promise<T> {
+  return withTemporaryApiKey(false, fn);
+}
+
+/** Igual que `withApiKey`, pero la key ya nace revocada — para probar que eso basta para 401. */
+export async function withRevokedApiKey<T>(fn: (rawKey: string) => Promise<T>): Promise<T> {
+  return withTemporaryApiKey(true, fn);
 }
