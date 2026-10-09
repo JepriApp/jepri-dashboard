@@ -58,6 +58,7 @@ describe("startCreateOrderFlow", () => {
     // el grupo con 1 sola variante salta directo a variant:, no a group:
     expect(result.reply.buttons?.[1].value).toBe("create:variant:p-onion-kg");
     expect(result.reply.buttons?.[0].value).toBe("create:group:group-tomato");
+    expect((result.nextContext as Record<string, unknown>).items).toEqual([]);
   });
 
   it("sin productos frecuentes, invita a escribir en vez de mostrar botones", async () => {
@@ -72,7 +73,7 @@ describe("startCreateOrderFlow", () => {
 });
 
 describe("handleCreateOrderStep — CHOOSING_PRODUCT", () => {
-  const context = { groups: [TOMATO_GROUP, ONION_GROUP] };
+  const context = { groups: [TOMATO_GROUP, ONION_GROUP], items: [] };
 
   it('tocar "buscar" solo pide que escriban, sin tocar el context', async () => {
     const result = await handleCreateOrderStep(
@@ -89,12 +90,13 @@ describe("handleCreateOrderStep — CHOOSING_PRODUCT", () => {
     expect(result.nextContext).toBe(context);
   });
 
-  it("elegir una variante directo (grupo de una sola unidad) pasa a pedir cantidad", async () => {
+  it("elegir una variante directo (grupo de una sola unidad) pasa a pedir cantidad, conservando los items previos", async () => {
+    const existingItem = { product_id: "p-x", product_name: "Papa", unit: "kg", quantity: 2 };
     const result = await handleCreateOrderStep(
       fakeSupabase,
       CUSTOMER_ID,
       CREATE_FLOW_STATES.CHOOSING_PRODUCT,
-      context,
+      { ...context, items: [existingItem] },
       { text: "", callbackData: "create:variant:p-onion-kg" },
       PLAN_DATE,
     );
@@ -104,6 +106,7 @@ describe("handleCreateOrderStep — CHOOSING_PRODUCT", () => {
       product_id: "p-onion-kg",
       product_name: "Cebolla cabezona",
       unit: "kg",
+      items: [existingItem],
     });
     expect(result.reply.text).toContain("Cebolla cabezona");
     expect(result.reply.text).toContain("kg");
@@ -193,7 +196,7 @@ describe("handleCreateOrderStep — CHOOSING_PRODUCT", () => {
 });
 
 describe("handleCreateOrderStep — CHOOSING_UNIT", () => {
-  const context = { groups: [TOMATO_GROUP] };
+  const context = { groups: [TOMATO_GROUP], items: [] };
 
   it("elegir una unidad pasa a pedir cantidad con el product_id correcto", async () => {
     const result = await handleCreateOrderStep(
@@ -210,6 +213,7 @@ describe("handleCreateOrderStep — CHOOSING_UNIT", () => {
       product_id: "p-tomato-caja",
       product_name: "Tomate chonto",
       unit: "caja x20",
+      items: [],
     });
   });
 
@@ -229,9 +233,9 @@ describe("handleCreateOrderStep — CHOOSING_UNIT", () => {
 });
 
 describe("handleCreateOrderStep — AWAITING_QUANTITY", () => {
-  const context = { product_id: "p-tomato-kg", product_name: "Tomate chonto", unit: "kg" };
+  const context = { product_id: "p-tomato-kg", product_name: "Tomate chonto", unit: "kg", items: [] };
 
-  it("un número entero válido pasa a confirmación con el resumen correcto", async () => {
+  it("un número entero válido agrega el item y pasa a revisión con el resumen correcto", async () => {
     const result = await handleCreateOrderStep(
       fakeSupabase,
       CUSTOMER_ID,
@@ -241,9 +245,35 @@ describe("handleCreateOrderStep — AWAITING_QUANTITY", () => {
       PLAN_DATE,
     );
 
-    expect(result.nextState).toBe(CREATE_FLOW_STATES.AWAITING_CONFIRMATION);
-    expect(result.nextContext).toEqual({ ...context, quantity: 3 });
+    expect(result.nextState).toBe(CREATE_FLOW_STATES.REVIEWING_ORDER);
+    expect(result.nextContext).toEqual({
+      items: [{ product_id: "p-tomato-kg", product_name: "Tomate chonto", unit: "kg", quantity: 3 }],
+    });
     expect(result.reply.text).toContain("3 kg");
+    expect(result.reply.text).toContain("Tomate chonto");
+    expect(result.reply.buttons?.map((b) => b.value)).toEqual([
+      "create:add_more",
+      "create:confirm",
+      "create:abort",
+    ]);
+  });
+
+  it("acumula sobre los items que ya existían (segundo producto del pedido)", async () => {
+    const existingItem = { product_id: "p-onion-kg", product_name: "Cebolla cabezona", unit: "kg", quantity: 2 };
+    const result = await handleCreateOrderStep(
+      fakeSupabase,
+      CUSTOMER_ID,
+      CREATE_FLOW_STATES.AWAITING_QUANTITY,
+      { ...context, items: [existingItem] },
+      { text: "3" },
+      PLAN_DATE,
+    );
+
+    expect((result.nextContext as Record<string, unknown>).items).toEqual([
+      existingItem,
+      { product_id: "p-tomato-kg", product_name: "Tomate chonto", unit: "kg", quantity: 3 },
+    ]);
+    expect(result.reply.text).toContain("Cebolla cabezona");
     expect(result.reply.text).toContain("Tomate chonto");
   });
 
@@ -257,7 +287,7 @@ describe("handleCreateOrderStep — AWAITING_QUANTITY", () => {
       PLAN_DATE,
     );
 
-    expect(result.nextContext.quantity).toBe(2.5);
+    expect((result.nextContext as Record<string, unknown>).items).toMatchObject([{ quantity: 2.5 }]);
   });
 
   it.each(["abc", "0", "-1", ""])("rechaza una cantidad inválida (%s) y vuelve a pedirla", async (text) => {
@@ -272,20 +302,25 @@ describe("handleCreateOrderStep — AWAITING_QUANTITY", () => {
 
     expect(result.nextState).toBe(CREATE_FLOW_STATES.AWAITING_QUANTITY);
     expect(result.reply.text).toMatch(/escribe solo un número mayor a 0/i);
+    expect(result.nextContext).toBe(context);
   });
 });
 
-describe("handleCreateOrderStep — AWAITING_CONFIRMATION", () => {
-  const context = { product_id: "p-tomato-kg", product_name: "Tomate chonto", unit: "kg", quantity: 3 };
+describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
+  const oneItem = [{ product_id: "p-tomato-kg", product_name: "Tomate chonto", unit: "kg", quantity: 3 }];
+  const twoItems = [
+    ...oneItem,
+    { product_id: "p-onion-kg", product_name: "Cebolla cabezona", unit: "kg", quantity: 2 },
+  ];
 
-  it("confirmar crea el pedido con el product_id/cantidad correctos y responde con el order_code", async () => {
+  it("confirmar con un solo item crea el pedido y responde con el order_code", async () => {
     mockCreateOrder.mockResolvedValue({ order_id: "order-1", order_code: "1326" });
 
     const result = await handleCreateOrderStep(
       fakeSupabase,
       CUSTOMER_ID,
-      CREATE_FLOW_STATES.AWAITING_CONFIRMATION,
-      context,
+      CREATE_FLOW_STATES.REVIEWING_ORDER,
+      { items: oneItem },
       { text: "", callbackData: "create:confirm" },
       PLAN_DATE,
     );
@@ -298,6 +333,41 @@ describe("handleCreateOrderStep — AWAITING_CONFIRMATION", () => {
     expect(result.nextState).toBe("idle");
   });
 
+  it("confirmar con varios items los manda todos juntos a createOrder", async () => {
+    mockCreateOrder.mockResolvedValue({ order_id: "order-2", order_code: "1327" });
+
+    await handleCreateOrderStep(
+      fakeSupabase,
+      CUSTOMER_ID,
+      CREATE_FLOW_STATES.REVIEWING_ORDER,
+      { items: twoItems },
+      { text: "", callbackData: "create:confirm" },
+      PLAN_DATE,
+    );
+
+    expect(mockCreateOrder).toHaveBeenCalledWith(fakeSupabase, CUSTOMER_ID, [
+      { product_id: "p-tomato-kg", required_quantity: 3 },
+      { product_id: "p-onion-kg", required_quantity: 2 },
+    ]);
+  });
+
+  it('"agregar otro producto" vuelve a elegir producto conservando los items acumulados', async () => {
+    mockGetFrequentProducts.mockResolvedValue([{ ...ONION_GROUP, times_ordered: 1 }]);
+
+    const result = await handleCreateOrderStep(
+      fakeSupabase,
+      CUSTOMER_ID,
+      CREATE_FLOW_STATES.REVIEWING_ORDER,
+      { items: oneItem },
+      { text: "", callbackData: "create:add_more" },
+      PLAN_DATE,
+    );
+
+    expect(result.nextState).toBe(CREATE_FLOW_STATES.CHOOSING_PRODUCT);
+    expect((result.nextContext as Record<string, unknown>).items).toEqual(oneItem);
+    expect(mockCreateOrder).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["NO_ACTIVE_PLAN", /ya no hay una ventana/i],
     ["PAST_CUTOFF", /pasó la hora límite/i],
@@ -308,8 +378,8 @@ describe("handleCreateOrderStep — AWAITING_CONFIRMATION", () => {
     const result = await handleCreateOrderStep(
       fakeSupabase,
       CUSTOMER_ID,
-      CREATE_FLOW_STATES.AWAITING_CONFIRMATION,
-      context,
+      CREATE_FLOW_STATES.REVIEWING_ORDER,
+      { items: oneItem },
       { text: "", callbackData: "create:confirm" },
       PLAN_DATE,
     );
@@ -325,8 +395,8 @@ describe("handleCreateOrderStep — AWAITING_CONFIRMATION", () => {
     const result = await handleCreateOrderStep(
       fakeSupabase,
       CUSTOMER_ID,
-      CREATE_FLOW_STATES.AWAITING_CONFIRMATION,
-      context,
+      CREATE_FLOW_STATES.REVIEWING_ORDER,
+      { items: oneItem },
       { text: "", callbackData: "create:confirm" },
       PLAN_DATE,
     );
@@ -340,8 +410,8 @@ describe("handleCreateOrderStep — AWAITING_CONFIRMATION", () => {
     const result = await handleCreateOrderStep(
       fakeSupabase,
       CUSTOMER_ID,
-      CREATE_FLOW_STATES.AWAITING_CONFIRMATION,
-      context,
+      CREATE_FLOW_STATES.REVIEWING_ORDER,
+      { items: oneItem },
       { text: "", callbackData: "create:abort" },
       PLAN_DATE,
     );
@@ -351,17 +421,17 @@ describe("handleCreateOrderStep — AWAITING_CONFIRMATION", () => {
     expect(result.nextState).toBe("idle");
   });
 
-  it("un callback no reconocido vuelve a preguntar la confirmación", async () => {
+  it("un callback no reconocido vuelve a mostrar la revisión", async () => {
     const result = await handleCreateOrderStep(
       fakeSupabase,
       CUSTOMER_ID,
-      CREATE_FLOW_STATES.AWAITING_CONFIRMATION,
-      context,
+      CREATE_FLOW_STATES.REVIEWING_ORDER,
+      { items: oneItem },
       { text: "", callbackData: "algo-raro" },
       PLAN_DATE,
     );
 
-    expect(result.nextState).toBe(CREATE_FLOW_STATES.AWAITING_CONFIRMATION);
+    expect(result.nextState).toBe(CREATE_FLOW_STATES.REVIEWING_ORDER);
     expect(mockCreateOrder).not.toHaveBeenCalled();
   });
 });

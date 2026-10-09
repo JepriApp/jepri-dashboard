@@ -8,17 +8,16 @@ import { SupabaseClient } from "@supabase/supabase-js";
 
 /**
  * Flujo "🛒 Crear nuevo pedido" (documentacion/chatbot_diseno.md §7), aislado de
- * domain.ts por tamaño. Soporta UN producto por pedido en esta primera versión — el
- * guion de §7 nunca describe un loop de "agregar otro producto", y si el cliente
- * quiere varios, puede crear uno y de inmediato usar "📋 Ver / modificar mi pedido"
- * (Tarea 16, que reemplaza la lista completa de items) para agregar los demás.
+ * domain.ts por tamaño. Acumula uno o más productos (elegir → [unidad] → cantidad →
+ * "¿agregar otro o confirmar?") antes de llamar a createOrder una sola vez con la
+ * lista completa.
  */
 
 export const CREATE_FLOW_STATES = {
   CHOOSING_PRODUCT: "create:choosing_product",
   CHOOSING_UNIT: "create:choosing_unit",
   AWAITING_QUANTITY: "create:awaiting_quantity",
-  AWAITING_CONFIRMATION: "create:awaiting_confirmation",
+  REVIEWING_ORDER: "create:reviewing_order",
 } as const;
 
 type CreateFlowState = (typeof CREATE_FLOW_STATES)[keyof typeof CREATE_FLOW_STATES];
@@ -27,6 +26,13 @@ function isCreateFlowState(state: string): state is CreateFlowState {
   return (Object.values(CREATE_FLOW_STATES) as string[]).includes(state);
 }
 
+type PendingItem = {
+  product_id: string;
+  product_name: string;
+  unit: string;
+  quantity: number;
+};
+
 type StepResult = {
   reply: BotMessage;
   nextState: string; // IDLE_STATE ("idle") cuando el flujo termina o se aborta
@@ -34,6 +40,7 @@ type StepResult = {
 };
 
 const CALLBACK_SEARCH = "create:search";
+const CALLBACK_ADD_MORE = "create:add_more";
 const CALLBACK_CONFIRM = "create:confirm";
 const CALLBACK_ABORT = "create:abort";
 const GROUP_PREFIX = "create:group:";
@@ -53,14 +60,19 @@ function groupButtons(groups: CatalogGroup[]) {
   }));
 }
 
+function getItems(context: ConversationContext): PendingItem[] {
+  return (context.items as unknown as PendingItem[]) ?? [];
+}
+
 /** Serializa solo lo necesario para resolver el próximo paso sin otro round-trip a la base. */
-function serializeGroups(groups: CatalogGroup[]): ConversationContext {
+function withGroups(groups: CatalogGroup[], items: PendingItem[]): ConversationContext {
   return {
     groups: groups.map((g) => ({
       canonical_group_id: g.canonical_group_id,
       canonical_name: g.canonical_name,
       variants: g.variants,
     })),
+    items,
   } as unknown as ConversationContext;
 }
 
@@ -84,6 +96,7 @@ function findGroup(context: ConversationContext, groupId: string): CatalogGroup 
 async function showProductChoices(
   supabaseClient: SupabaseClient<Database>,
   customerId: string,
+  items: PendingItem[],
   intro: string,
 ): Promise<StepResult> {
   const frequent = await getFrequentProducts(supabaseClient, customerId);
@@ -94,7 +107,7 @@ async function showProductChoices(
         text: `${intro}\n\nTodavía no tienes productos frecuentes. Escribe el nombre del producto que buscas.`,
       },
       nextState: CREATE_FLOW_STATES.CHOOSING_PRODUCT,
-      nextContext: serializeGroups([]),
+      nextContext: withGroups([], items),
     };
   }
 
@@ -104,7 +117,7 @@ async function showProductChoices(
       buttons: [...groupButtons(frequent), { label: "🔍 Buscar otro producto", value: CALLBACK_SEARCH }],
     },
     nextState: CREATE_FLOW_STATES.CHOOSING_PRODUCT,
-    nextContext: serializeGroups(frequent),
+    nextContext: withGroups(frequent, items),
   };
 }
 
@@ -112,7 +125,7 @@ export async function startCreateOrderFlow(
   supabaseClient: SupabaseClient<Database>,
   customerId: string,
 ): Promise<StepResult> {
-  return showProductChoices(supabaseClient, customerId, "🛒 Vamos a crear tu pedido.");
+  return showProductChoices(supabaseClient, customerId, [], "🛒 Vamos a crear tu pedido.");
 }
 
 async function handleChoosingProduct(
@@ -121,6 +134,8 @@ async function handleChoosingProduct(
   context: ConversationContext,
   inbound: { text: string; callbackData?: string },
 ): Promise<StepResult> {
+  const items = getItems(context);
+
   if (inbound.callbackData === CALLBACK_SEARCH) {
     return {
       reply: { text: "Escribe el nombre del producto que buscas." },
@@ -133,7 +148,7 @@ async function handleChoosingProduct(
     const productId = inbound.callbackData.slice(VARIANT_PREFIX.length);
     const found = findVariantAmongGroups(context, productId);
     if (!found) {
-      return showProductChoices(supabaseClient, customerId, "No reconocí esa opción, probemos de nuevo.");
+      return showProductChoices(supabaseClient, customerId, items, "No reconocí esa opción, probemos de nuevo.");
     }
     return {
       reply: {
@@ -144,7 +159,8 @@ async function handleChoosingProduct(
         product_id: found.variant.product_id,
         product_name: found.groupName,
         unit: found.variant.unit,
-      },
+        items,
+      } as unknown as ConversationContext,
     };
   }
 
@@ -152,7 +168,7 @@ async function handleChoosingProduct(
     const groupId = inbound.callbackData.slice(GROUP_PREFIX.length);
     const group = findGroup(context, groupId);
     if (!group) {
-      return showProductChoices(supabaseClient, customerId, "No reconocí esa opción, probemos de nuevo.");
+      return showProductChoices(supabaseClient, customerId, items, "No reconocí esa opción, probemos de nuevo.");
     }
     return {
       reply: {
@@ -163,14 +179,14 @@ async function handleChoosingProduct(
         })),
       },
       nextState: CREATE_FLOW_STATES.CHOOSING_UNIT,
-      nextContext: serializeGroups([group]),
+      nextContext: withGroups([group], items),
     };
   }
 
   // Ni un botón reconocido ni vacío: texto libre, se trata como búsqueda.
   const query = inbound.text.trim();
   if (!query) {
-    return showProductChoices(supabaseClient, customerId, "No entendí eso, probemos de nuevo.");
+    return showProductChoices(supabaseClient, customerId, items, "No entendí eso, probemos de nuevo.");
   }
 
   const results = await searchCatalog(supabaseClient, query);
@@ -188,11 +204,13 @@ async function handleChoosingProduct(
       buttons: groupButtons(results),
     },
     nextState: CREATE_FLOW_STATES.CHOOSING_PRODUCT,
-    nextContext: serializeGroups(results),
+    nextContext: withGroups(results, items),
   };
 }
 
 function handleChoosingUnit(context: ConversationContext, inbound: { callbackData?: string }): StepResult {
+  const items = getItems(context);
+
   if (inbound.callbackData?.startsWith(VARIANT_PREFIX)) {
     const productId = inbound.callbackData.slice(VARIANT_PREFIX.length);
     const found = findVariantAmongGroups(context, productId);
@@ -206,7 +224,8 @@ function handleChoosingUnit(context: ConversationContext, inbound: { callbackDat
           product_id: found.variant.product_id,
           product_name: found.groupName,
           unit: found.variant.unit,
-        },
+          items,
+        } as unknown as ConversationContext,
       };
     }
   }
@@ -225,6 +244,18 @@ function handleChoosingUnit(context: ConversationContext, inbound: { callbackDat
   };
 }
 
+function reviewMessage(items: PendingItem[]): BotMessage {
+  const lines = items.map((item) => `• ${item.quantity} ${item.unit} de "${item.product_name}"`);
+  return {
+    text: `Tu pedido hasta ahora:\n${lines.join("\n")}\n\n¿Agregas otro producto o confirmas el pedido?`,
+    buttons: [
+      { label: "➕ Agregar otro producto", value: CALLBACK_ADD_MORE },
+      { label: "✅ Confirmar pedido", value: CALLBACK_CONFIRM },
+      { label: "❌ Cancelar", value: CALLBACK_ABORT },
+    ],
+  };
+}
+
 function handleAwaitingQuantity(context: ConversationContext, inbound: { text: string }): StepResult {
   const normalized = inbound.text.trim().replace(",", ".");
   const quantity = Number(normalized);
@@ -237,19 +268,18 @@ function handleAwaitingQuantity(context: ConversationContext, inbound: { text: s
     };
   }
 
-  const productName = context.product_name as string;
-  const unit = context.unit as string;
+  const newItem: PendingItem = {
+    product_id: context.product_id as string,
+    product_name: context.product_name as string,
+    unit: context.unit as string,
+    quantity,
+  };
+  const items = [...getItems(context), newItem];
 
   return {
-    reply: {
-      text: `Resumen: ${quantity} ${unit} de "${productName}".\n¿Confirmas el pedido?`,
-      buttons: [
-        { label: "✅ Confirmar pedido", value: CALLBACK_CONFIRM },
-        { label: "❌ Cancelar", value: CALLBACK_ABORT },
-      ],
-    },
-    nextState: CREATE_FLOW_STATES.AWAITING_CONFIRMATION,
-    nextContext: { ...context, quantity },
+    reply: reviewMessage(items),
+    nextState: CREATE_FLOW_STATES.REVIEWING_ORDER,
+    nextContext: { items } as unknown as ConversationContext,
   };
 }
 
@@ -267,13 +297,15 @@ function createOrderErrorMessage(error: unknown): string {
   return "Ocurrió un error inesperado creando tu pedido. Por favor intenta de nuevo.";
 }
 
-async function handleAwaitingConfirmation(
+async function handleReviewingOrder(
   supabaseClient: SupabaseClient<Database>,
   customerId: string,
   context: ConversationContext,
   inbound: { callbackData?: string },
   planDate: string,
 ): Promise<StepResult> {
+  const items = getItems(context);
+
   if (inbound.callbackData === CALLBACK_ABORT) {
     return {
       reply: { text: "Pedido cancelado, no se guardó nada." },
@@ -282,11 +314,17 @@ async function handleAwaitingConfirmation(
     };
   }
 
+  if (inbound.callbackData === CALLBACK_ADD_MORE) {
+    return showProductChoices(supabaseClient, customerId, items, "Elige otro producto:");
+  }
+
   if (inbound.callbackData === CALLBACK_CONFIRM) {
     try {
-      const created = await createOrder(supabaseClient, customerId, [
-        { product_id: context.product_id as string, required_quantity: context.quantity as number },
-      ]);
+      const created = await createOrder(
+        supabaseClient,
+        customerId,
+        items.map((item) => ({ product_id: item.product_id, required_quantity: item.quantity })),
+      );
       return {
         reply: { text: `✅ Pedido ${created.order_code} creado. Se entrega el ${planDate}.` },
         nextState: "idle",
@@ -302,14 +340,8 @@ async function handleAwaitingConfirmation(
   }
 
   return {
-    reply: {
-      text: "No reconocí esa opción. ¿Confirmas el pedido?",
-      buttons: [
-        { label: "✅ Confirmar pedido", value: CALLBACK_CONFIRM },
-        { label: "❌ Cancelar", value: CALLBACK_ABORT },
-      ],
-    },
-    nextState: CREATE_FLOW_STATES.AWAITING_CONFIRMATION,
+    reply: reviewMessage(items),
+    nextState: CREATE_FLOW_STATES.REVIEWING_ORDER,
     nextContext: context,
   };
 }
@@ -339,7 +371,7 @@ export async function handleCreateOrderStep(
       return handleChoosingUnit(context, inbound);
     case CREATE_FLOW_STATES.AWAITING_QUANTITY:
       return handleAwaitingQuantity(context, inbound);
-    case CREATE_FLOW_STATES.AWAITING_CONFIRMATION:
-      return handleAwaitingConfirmation(supabaseClient, customerId, context, inbound, planDate);
+    case CREATE_FLOW_STATES.REVIEWING_ORDER:
+      return handleReviewingOrder(supabaseClient, customerId, context, inbound, planDate);
   }
 }

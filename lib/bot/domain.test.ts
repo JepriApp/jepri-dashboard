@@ -22,7 +22,7 @@ vi.mock("@/lib/bot/flows/createOrder", () => ({
     CHOOSING_PRODUCT: "create:choosing_product",
     CHOOSING_UNIT: "create:choosing_unit",
     AWAITING_QUANTITY: "create:awaiting_quantity",
-    AWAITING_CONFIRMATION: "create:awaiting_confirmation",
+    REVIEWING_ORDER: "create:reviewing_order",
   },
   startCreateOrderFlow: vi.fn(),
   handleCreateOrderStep: vi.fn(),
@@ -206,7 +206,7 @@ describe('handleInboundMessage — "Crear pedido" (Tarea 15, dispatch hacia lib/
     });
     mockHandleCreateOrderStep.mockResolvedValue({
       reply: { text: "resumen..." },
-      nextState: "create:awaiting_confirmation",
+      nextState: "create:reviewing_order",
       nextContext: { product_id: "p1", quantity: 3 },
     });
 
@@ -228,7 +228,7 @@ describe('handleInboundMessage — "Crear pedido" (Tarea 15, dispatch hacia lib/
       fakeSupabase,
       "cust-1",
       "telegram",
-      "create:awaiting_confirmation",
+      "create:reviewing_order",
       { product_id: "p1", quantity: 3 },
     );
   });
@@ -236,7 +236,7 @@ describe('handleInboundMessage — "Crear pedido" (Tarea 15, dispatch hacia lib/
   it("cuando el paso del flujo termina (nextState idle), se reinicia en vez de guardar un estado", async () => {
     mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
     mockGetConversationState.mockResolvedValue({
-      state: "create:awaiting_confirmation",
+      state: "create:reviewing_order",
       context: { product_id: "p1", quantity: 3 },
     });
     mockHandleCreateOrderStep.mockResolvedValue({
