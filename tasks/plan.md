@@ -113,11 +113,12 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
 - [x] Tarea 18: Flujo "cancelar pedido" de punta a punta
 
 ### Checkpoint: Fase 4 — PoC funcionalmente completo
-- [ ] Un pedido creado vía Telegram (en staging) aparece correcto en
+- [x] Un pedido creado vía Telegram (en staging) aparece correcto en
   `app/protected/sale-orders` del panel admin
-- [ ] Un pedido cancelado vía bot se ve como `cancelled` sin romper `InvoicingReviewTable`
-  ni `sale_order_with_total_and_status`
-- [ ] Los 3 flujos funcionan de punta a punta contra el bot real en staging
+- [x] Un pedido cancelado vía bot se ve como `cancelled` sin romper `InvoicingReviewTable`
+  (pedido `1505`: `status='cancelled'`, excluido por el `.neq("status", "cancelled")`
+  que ya trae esa tabla)
+- [x] Los 3 flujos funcionan de punta a punta contra el bot real en staging
 
 ### Fase 5: Dureza operativa
 - [ ] Tarea 19: Auditoría — `bot_interaction_log` en cada acción de dominio

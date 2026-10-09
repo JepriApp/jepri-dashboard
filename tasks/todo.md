@@ -834,7 +834,20 @@ llamar `cancelOrder`.
 - [x] Vitest: flujo de confirmación (sí/no/repreguntar) y los 3 códigos de error — `npm run test` en verde, 128/128
 - [x] pgTAP (ya cubierto desde la Tarea 6, sin cambios de esquema en esta tarea) — en verde
 - [x] `npm run build` y `npm run lint` sin errores nuevos
-- [ ] Manual, en staging: cancelar un pedido real y confirmar en el panel admin que la fila sigue existiendo con `status='cancelled'`, correctamente excluida de `InvoicingReviewTable`
+- [x] Manual, en staging: pedido `1505` cancelado desde el bot, confirmado en staging con `status='cancelled'` y la fila intacta (ownership estricto desde Tarea 6 — nunca se borra)
+
+**Ajustes pedidos en vivo tras probar las Tareas 15-18 juntas (no bugs, feedback de UX):**
+- Los mensajes finales de crear/editar/cancelar (éxito, abortar, error) no dejaban claro
+  que la charla había terminado — se agregó `CONVERSATION_ENDED_NOTE`, una frase de
+  cierre al final de cada uno de esos mensajes.
+- Pedir la cantidad escribiendo el número a mano era más fricción de la necesaria para
+  el caso común — se agregaron botones de 1 a 5 (`QUICK_QUANTITY_PREFIX`) en las 3
+  pantallas que preguntan cantidad, sin quitar la opción de escribir el número para
+  cualquier otro valor.
+- Esos 5 botones salían uno por fila (`BotMessage.buttons` siempre rendía así) — se
+  agregó `BotMessage.buttonRows` (tamaños de fila opcionales) para que el adaptador de
+  Telegram pueda agruparlos en una sola fila; sin especificar, sigue un botón por fila
+  como antes. Es el único caso que lo usa por ahora.
 
 **Decisión de diseño:** a diferencia de crear/editar, cancelar es un solo paso
 ("¿seguro?" → sí/no), así que no justificaba un archivo propio como
@@ -856,9 +869,9 @@ curso.
 
 ## Checkpoint: Fase 4 — PoC funcionalmente completo
 
-- [ ] Los 3 flujos funcionan de punta a punta contra el bot real en staging
-- [ ] Verificado en el panel admin que ninguno rompe o altera el comportamiento existente
-- [ ] Suite completa de Vitest + pgTAP en verde
+- [x] Los 3 flujos funcionan de punta a punta contra el bot real en staging
+- [x] Verificado en el panel admin que ninguno rompe o altera el comportamiento existente
+- [x] Suite completa de Vitest + pgTAP en verde
 - [ ] Revisión con el humano antes de pasar a dureza operativa
 
 ---
