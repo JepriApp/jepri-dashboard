@@ -137,3 +137,89 @@ export async function handleInboundMessage(
 
   return reply;
 }
+
+const CALLBACK_CHOOSE_CUSTOMER_PREFIX = "bot:choose_customer:"; // + "<action>:<customer_id>"
+
+type PendingAction = "create" | "view" | "cancel";
+
+const ACTION_TO_CALLBACK: Record<PendingAction, string> = {
+  create: CALLBACK_CREATE_ORDER,
+  view: CALLBACK_VIEW_ORDER,
+  cancel: CALLBACK_CANCEL_ORDER,
+};
+
+const CALLBACK_TO_ACTION: Record<string, PendingAction> = {
+  [CALLBACK_CREATE_ORDER]: "create",
+  [CALLBACK_VIEW_ORDER]: "view",
+  [CALLBACK_CANCEL_ORDER]: "cancel",
+};
+
+function disambiguationMessage(candidates: ResolvedCustomer[], action: PendingAction): BotMessage {
+  return {
+    text: "Este número tiene más de una cuenta asociada. ¿Para cuál es esto?",
+    buttons: candidates.map((c) => ({
+      label: c.name ?? "(sin nombre)",
+      value: `${CALLBACK_CHOOSE_CUSTOMER_PREFIX}${action}:${c.customer_id}`,
+    })),
+  };
+}
+
+/**
+ * Un mismo whatsapp_id/external_id de canal puede resolver a más de un `customer`
+ * (varios clientes o puntos de entrega compartiendo un número — ver
+ * `lib/bot/services/auth.ts`, `resolveCustomerCandidates`). Este es el punto de entrada
+ * real que debe usar el webhook de cada canal; decide primero *para cuál* `customer_id`
+ * es el turno antes de delegar en `handleInboundMessage`.
+ *
+ * Sin estado nuevo: si alguno de los candidatos está a mitad del flujo de crear pedido,
+ * el mensaje es para ese (tiene prioridad, igual que hoy un botón del Menú Principal
+ * abandona un flujo en curso). Si nadie está a mitad de flujo y tocan una acción del
+ * Menú Principal, primero se pregunta para cuál cliente es — la respuesta llega
+ * codificada en el propio callbackData del botón que generamos, así que no hace falta
+ * persistir nada. Terminado o cancelado el pedido, todos vuelven a quedar en idle y la
+ * próxima acción se vuelve a preguntar.
+ */
+export async function handleInboundMessageForChannel(
+  supabaseClient: SupabaseClient<Database>,
+  candidates: ResolvedCustomer[],
+  inbound: InboundForDomain,
+): Promise<BotMessage> {
+  if (candidates.length === 1) {
+    return handleInboundMessage(supabaseClient, candidates[0], inbound);
+  }
+
+  const states = await Promise.all(
+    candidates.map((c) => getConversationState(supabaseClient, c.customer_id, inbound.channel)),
+  );
+  const activeIndex = states.findIndex((s) => CREATE_FLOW_STATE_VALUES.includes(s.state));
+  if (activeIndex !== -1) {
+    return handleInboundMessage(supabaseClient, candidates[activeIndex], inbound);
+  }
+
+  if (inbound.callbackData?.startsWith(CALLBACK_CHOOSE_CUSTOMER_PREFIX)) {
+    const rest = inbound.callbackData.slice(CALLBACK_CHOOSE_CUSTOMER_PREFIX.length);
+    const lastColon = rest.lastIndexOf(":");
+    const action = rest.slice(0, lastColon) as PendingAction;
+    const customerId = rest.slice(lastColon + 1);
+    // Nunca confiar en el customer_id del callback sin validar que de verdad pertenece
+    // a este número — el payload del webhook es input no confiable.
+    const chosen = candidates.find((c) => c.customer_id === customerId);
+    if (chosen && action in ACTION_TO_CALLBACK) {
+      return handleInboundMessage(supabaseClient, chosen, {
+        ...inbound,
+        text: "",
+        callbackData: ACTION_TO_CALLBACK[action],
+      });
+    }
+    // customer_id ajeno a este número o acción corrupta: cae al menú genérico de abajo.
+  }
+
+  const action = CALLBACK_TO_ACTION[inbound.callbackData ?? ""];
+  if (action) {
+    return disambiguationMessage(candidates, action);
+  }
+
+  // Ni acción ni elección reconocida (ej. "hola" en frío): menú genérico, sin nombre
+  // porque todavía no sabemos de cuál cliente se trata.
+  return mainMenu(null);
+}

@@ -9,25 +9,24 @@ export type ResolvedCustomer = {
 };
 
 /**
- * Resuelve la whitelist (§2): busca un customer por su whatsapp_id/external_id de
- * canal (chat_id de Telegram, etc). Sin match devuelve null — nunca lanza; el
- * llamador debe ignorar el mensaje en silencio, no responder nada (tal como pide
- * la spec: nada de interacción con desconocidos).
+ * Resuelve la whitelist (§2): busca los customer que tengan ese whatsapp_id/external_id
+ * de canal (chat_id de Telegram, etc). Un mismo número puede representar a más de un
+ * customer (varios clientes o puntos de entrega compartiendo un número) — el llamador
+ * decide qué hacer con la lista (lib/bot/domain.ts, handleInboundMessageForChannel).
+ * Sin match devuelve [] — nunca lanza; el llamador debe ignorar el mensaje en silencio,
+ * no responder nada (tal como pide la spec: nada de interacción con desconocidos).
  */
-export async function resolveCustomer(
+export async function resolveCustomerCandidates(
   supabaseClient: SupabaseClient<Database>,
   externalId: string,
-): Promise<ResolvedCustomer | null> {
+): Promise<ResolvedCustomer[]> {
   const { data, error } = await supabaseClient.rpc("bot_resolve_customer", {
     p_external_id: externalId,
   });
 
   if (error) throw parsePostgresError(error);
 
-  const row = data?.[0];
-  if (!row) return null;
-
-  return { customer_id: row.customer_id, name: row.name };
+  return (data ?? []).map((row) => ({ customer_id: row.customer_id, name: row.name }));
 }
 
 /**

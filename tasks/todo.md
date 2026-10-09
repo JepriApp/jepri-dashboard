@@ -168,7 +168,7 @@ cron si se quiere.
 `bot_conversation_state`, `bot_processed_update`, `bot_interaction_log`, `bot_api_key`. RLS
 activado y sin ninguna policy en las 5 (§11 del diseño) — deny-by-default. Se aplica primero
 contra el self-hosted `10.85.96.51:8000` (staging) — Neptuno (producción) no se toca hasta
-la Tarea 22.
+la Tarea 23.
 
 **Acceptance criteria:**
 - [x] Las 5 tablas/columna existen con exactamente los campos de §5.1, §8, §9, §10, §4.1 del diseño
@@ -303,11 +303,11 @@ channel-agnostic de verdad: el webhook de Telegram (Tarea 12+) crea el cliente u
 lo pasa a cada función de servicio.
 
 `database.types.ts` no tenía las funciones/tablas nuevas del bot (se genera desde Neptuno,
-que no las tiene hasta la Tarea 22) — intenté regenerarlo apuntando a staging
+que no las tiene hasta la Tarea 23) — intenté regenerarlo apuntando a staging
 (`supabase gen types --db-url`), pero también necesita Docker (no disponible aquí). Se
 extendió el archivo a mano, siguiendo exactamente el formato que genera el CLI (mismo
 orden alfabético de columnas/funciones que ya tiene el resto del archivo): las 5 tablas,
-la columna nueva de `product`, y las 9 funciones `bot_*`. Cuando la Tarea 22 corra el
+la columna nueva de `product`, y las 9 funciones `bot_*`. Cuando la Tarea 23 corra el
 `update-supabase-types` real contra Neptuno (ya migrada), el regenerado automático
 coincidirá con esto.
 
@@ -381,7 +381,7 @@ interrumpía el `finally` *antes* de reinsertar el plan original guardado, se pe
 
 **Descripción:** Función `resolveCustomer(externalId)` que llama a `bot_resolve_customer`,
 y `validateApiKey(rawKey)` que hashea y llama a `bot_validate_api_key` (usada recién en la
-Tarea 20, implementada aquí junto al resto de auth).
+Tarea 21, implementada aquí junto al resto de auth).
 
 **Acceptance criteria:**
 - [x] `resolveCustomer` devuelve `null` (no lanza) cuando no hay match
@@ -393,7 +393,7 @@ Tarea 20, implementada aquí junto al resto de auth).
 - [x] Confirmado que `bot_api_key` queda vacío en staging después de la suite (cleanup por `afterEach`)
 
 **Nota:** `hashApiKey` queda exportada desde `auth.ts` — la reutiliza tanto
-`validateApiKey` como (Tarea 20) el script que genera una API key nueva, para que el
+`validateApiKey` como (Tarea 21) el script que genera una API key nueva, para que el
 hash que se guarda en `bot_api_key.key_hash` sea siempre el mismo que se valida acá.
 Igual que en la Tarea 8, los errores de Postgres se envuelven con `parsePostgresError`
 en vez de dejarlos pasar crudos, por consistencia con el resto de la capa de servicio.
@@ -440,7 +440,7 @@ en vez de dejarlos pasar crudos, por consistencia con el resto de la capa de ser
 ## Tarea 11: Adaptador de Telegram (`lib/bot/adapters/telegram.ts`)
 
 **Descripción:** Implementar `ChannelAdapter` para Telegram: `parseInbound`, `sendMessage`
-(traduce `BotMessage.buttons` a teclado inline), y `notifyOps` (usado desde la Tarea 19).
+(traduce `BotMessage.buttons` a teclado inline), y `notifyOps` (usado desde la Tarea 20).
 
 **Acceptance criteria:**
 - [x] `parseInbound` maneja mensajes de texto y `callback_query`
@@ -489,7 +489,7 @@ la Tarea 5/6 (migración + pgTAP nuevos, 51/51 asserts totales).
 `lib/supabase/proxy.ts`) redirigía con 307 cualquier request sin sesión de Supabase que
 no fuera `/`, `/login` o `/auth/*` — Telegram nunca tiene sesión, así que el webhook
 quedaba bloqueado *antes* de llegar al handler. Se excluyó todo el prefijo `/api/bot/*`
-(no solo `/telegram`, ya que los endpoints de las Tareas 18/20 también usan su propio
+(no solo `/telegram`, ya que los endpoints de las Tareas 19/21 también usan su propio
 mecanismo de auth, nunca sesión de Supabase) — cero impacto en el resto de `/api/*`.
 
 **Infraestructura de staging ajustada:** `jepri-staging.lab.ryumanakano.com` (Tarea 3)
@@ -640,26 +640,120 @@ así que esto solo lo encontró `npm run build`. Se corrigió con un alias
 selección de unidad si aplica → cantidad → resumen → confirmación → `createOrder`.
 
 **Acceptance criteria:**
-- [ ] Los 8 productos frecuentes se muestran cuando existen; se salta a búsqueda si no hay
-- [ ] La pregunta de unidad solo aparece cuando el grupo tiene más de una variante
-- [ ] El pedido creado tiene exactamente los productos/cantidades confirmados
-- [ ] Cada código de error se traduce al mensaje amigable correspondiente
+- [x] Los 8 productos frecuentes se muestran cuando existen; se salta a búsqueda si no hay
+- [x] La pregunta de unidad solo aparece cuando el grupo tiene más de una variante
+- [x] El pedido creado tiene exactamente los productos/cantidades confirmados
+- [x] Cada código de error se traduce al mensaje amigable correspondiente
 
 **Verification:**
-- [ ] Vitest: cada paso del flujo con mocks de servicios, incluyendo los branches de "sin frecuentes" y "una sola variante" — `npm run test` en verde
-- [ ] Manual, en staging, crítico: crear un pedido real de punta a punta y confirmar en `app/protected/sale-orders` del panel admin (mismo `order_code`, `created_by_customer_id` seteado, `created_by_admin_id` nulo)
+- [x] Vitest: cada paso del flujo con mocks de servicios, incluyendo los branches de "sin frecuentes" y "una sola variante" — `npm run test` en verde
+- [x] Manual, en staging, crítico: crear un pedido real de punta a punta y confirmar en `app/protected/sale-orders` del panel admin (mismo `order_code`, `created_by_customer_id` seteado, `created_by_admin_id` nulo)
+
+**Cambio de alcance pedido en vivo (feedback del usuario, no un bug):** el diseño inicial
+creaba un pedido por producto (1 producto → confirmar → si querías otro, usabas
+"modificar" después). Probando en vivo contra @Jepridevbot, el usuario pidió "Cebolla
+cabezona" y el bot cerró el pedido sin dejarlo agregar más productos (pedido real
+`1423`). El usuario fue explícito: *"prefiero que lo hagamos desde este momento, no que
+el usuario tenga que modificarlo después para agregar mas pedidos"* — se rediseñó el
+flujo para acumular varios items (`PendingItem[]` en el context de la conversación) con
+un loop "➕ Agregar otro producto" / "✅ Confirmar pedido" antes de llamar a `createOrder`
+una sola vez con todos los items juntos.
+
+**Segundo ajuste pedido en vivo:** el mensaje final de confirmación solo mostraba el
+`order_code` y la fecha de entrega. El usuario pidió que incluyera también el resumen de
+productos — se agregó `formatItemLines()` al mensaje de éxito.
+
+**Bug real encontrado y corregido en la misma tarea:** `showProductChoices` repetía
+"Todavía no tienes productos frecuentes" en *cada* vuelta del loop de "agregar otro
+producto" para clientes sin historial — esa frase describe el historial del cliente, no
+el pedido en curso. Se corrigió para que solo aparezca cuando el pedido todavía está
+vacío (inicio de la charla).
 
 **Dependencies:** Tarea 7, Tarea 8, Tarea 14
 
 **Files likely touched:**
 - `lib/bot/domain.ts`
 - `lib/bot/domain.test.ts`
+- `lib/bot/flows/createOrder.ts` (nuevo — el flujo se extrajo de `domain.ts` por tamaño)
+- `lib/bot/flows/createOrder.test.ts` (nuevo)
 
-**Estimated scope:** L — considerar partir si al implementar resulta tocar más de 5 archivos
+**Estimated scope:** L — se partió como se esperaba: la lógica del flujo vive en su
+propio módulo (`lib/bot/flows/createOrder.ts`), `domain.ts` solo despacha hacia él
 
 ---
 
-## Tarea 16: Flujo "modificar pedido" de punta a punta
+## Tarea 16: Identidad — un número puede representar varios clientes/puntos de entrega
+
+**Descripción:** El diseño original (§2) asumía 1 número de WhatsApp/Telegram = 1
+`customer`, reforzado por `customer.whatsapp_id UNIQUE`. Probando en vivo, el usuario
+señaló dos casos no contemplados: un mismo número puede operar a nombre de varios
+clientes distintos, o de varios puntos de entrega del mismo cliente. Como no existe
+ningún concepto de "punto de entrega" en el modelo de datos, cada punto/cliente ya es en
+la práctica una fila distinta de `customer` — el fix es a nivel de identidad del canal,
+no una entidad nueva. Se decidió resolverlo antes de construir las Tareas 17-18
+(modificar/cancelar pedido), que se iban a construir asumiendo un único cliente
+resuelto.
+
+**Acceptance criteria:**
+- [x] `customer.whatsapp_id` ya no es `UNIQUE` — puede haber varias filas de `customer`
+      con el mismo `whatsapp_id`
+- [x] `resolveCustomerCandidates` devuelve todas las filas que calcen (antes tomaba
+      `data?.[0]` y devolvía como máximo una)
+- [x] Con un solo candidato (el caso de siempre), el comportamiento es idéntico al de
+      antes — cero regresión
+- [x] Con varios candidatos, tocar una acción del Menú Principal (crear/ver/cancelar)
+      pregunta primero para cuál cliente es, mostrando `customer.name` como etiqueta
+- [x] Un `customer_id` elegido desde el menú de desambiguación que no pertenece a los
+      candidatos resueltos para ese número se ignora (nunca se le atribuye el turno a
+      alguien fuera de la whitelist de ese número)
+- [x] Si alguno de los candidatos está a mitad del flujo de crear pedido, el mensaje se
+      despacha a ese sin volver a preguntar (abandonar/continuar el flujo tiene
+      prioridad, igual que ya pasa hoy con un solo cliente)
+- [x] Terminado o cancelado un pedido, la siguiente acción desde el Menú Principal
+      vuelve a preguntar para cuál cliente es (sin persistencia nueva, por decisión
+      explícita del usuario)
+
+**Verification:**
+- [x] Vitest (`lib/bot/domain.test.ts`, 6 tests nuevos para `handleInboundMessageForChannel`;
+      `lib/bot/services/auth.test.ts`, 1 test nuevo contra staging real) — `npm run test`
+      en verde, 108/108
+- [x] pgTAP (`bot_read_functions.sql`) — nuevo assert: 2 `customer` con el mismo
+      `whatsapp_id` → `bot_resolve_customer` devuelve las 2 filas
+- [x] `npm run build` y `npm run lint` sin errores nuevos
+
+**Decisión de diseño (sin estado nuevo):** la desambiguación de "para cuál cliente es
+esto" vive enteramente codificada en el `callbackData` del botón que el propio bot
+genera (`bot:choose_customer:<action>:<customer_id>`) — no hace falta ninguna tabla ni
+columna de "cliente activo". La detección de "¿alguien a mitad de flujo?" reutiliza
+`CREATE_FLOW_STATE_VALUES`/`getConversationState`, que ya existían. El `customer_id` del
+callback siempre se valida contra la lista de candidatos resueltos para ese número antes
+de confiar en él (el payload del webhook es input no confiable).
+
+**Decisión de producto (con el usuario):** la etiqueta para distinguir candidatos es
+`customer.name` tal cual (sin columna nueva) — depende de que el admin le dé un nombre
+reconocible a cada fila. Sin persistencia: se vuelve a preguntar cada vez que se arranca
+una acción nueva desde idle, no solo una vez por conversación.
+
+**Explícitamente fuera de esta tarea (se deja para el final del plan, Tarea 25
+pendiente):** permitir varios pedidos el mismo día para el mismo punto de entrega —
+hoy `bot_create_order` sigue rechazando con `ORDER_ALREADY_EXISTS` un segundo pedido
+para el mismo `customer_id` + plan. Es un cambio aislado (quitar ese chequeo + cambiar
+"ver pedido" de uno a una lista) que no se encarece por posponerlo.
+
+**Dependencies:** Tarea 9 (whitelist), Tarea 15
+
+**Files likely touched:**
+- `supabase/migrations/20261009000000_bot_allow_shared_whatsapp_id.sql` (nuevo)
+- `supabase/tests/database/bot_read_functions.sql`
+- `lib/bot/services/auth.ts`, `lib/bot/services/auth.test.ts`
+- `lib/bot/domain.ts`, `lib/bot/domain.test.ts`
+- `app/api/bot/telegram/route.ts`
+
+**Estimated scope:** M (5 archivos)
+
+---
+
+## Tarea 17: Flujo "modificar pedido" de punta a punta
 
 **Descripción:** Extender "📋 Ver / modificar" para editar cantidades de un pedido
 existente, reutilizando selección de producto/unidad/cantidad de la Tarea 15, llamando a
@@ -683,7 +777,7 @@ existente, reutilizando selección de producto/unidad/cantidad de la Tarea 15, l
 
 ---
 
-## Tarea 17: Flujo "cancelar pedido" de punta a punta
+## Tarea 18: Flujo "cancelar pedido" de punta a punta
 
 **Descripción:** Implementar "❌ Cancelar pedido" de §7: confirmación explícita antes de
 llamar `cancelOrder`.
@@ -715,7 +809,7 @@ llamar `cancelOrder`.
 
 ---
 
-## Tarea 18: Auditoría — `bot_interaction_log` en cada acción de dominio
+## Tarea 19: Auditoría — `bot_interaction_log` en cada acción de dominio
 
 **Descripción:** Instrumentar cada servicio de escritura/búsqueda para insertar una fila en
 `bot_interaction_log` (§10), sin bloquear la respuesta al cliente si el insert de auditoría
@@ -728,7 +822,7 @@ falla.
 **Verification:**
 - [ ] Vitest: confirmar la fila de auditoría tras cada acción, y que un mock de fallo en el insert no propaga — `npm run test` en verde
 
-**Dependencies:** Tarea 8, Tarea 15, Tarea 16, Tarea 17
+**Dependencies:** Tarea 8, Tarea 15, Tarea 17, Tarea 18
 
 **Files likely touched:**
 - `lib/bot/services/orders.ts`
@@ -740,7 +834,7 @@ falla.
 
 ---
 
-## Tarea 19: Alertas de fallos — `notifyOps` en errores no controlados
+## Tarea 20: Alertas de fallos — `notifyOps` en errores no controlados
 
 **Descripción:** Manejo global de excepciones que distingue errores de negocio esperados
 (los 8 códigos de §7) de errores no controlados, y solo estos últimos disparan `notifyOps`.
@@ -764,7 +858,7 @@ falla.
 
 ---
 
-## Tarea 20: Sistema de API keys + rutas HTTP `/api/bot/orders`, `/api/bot/products/*`
+## Tarea 21: Sistema de API keys + rutas HTTP `/api/bot/orders`, `/api/bot/products/*`
 
 **Descripción:** §4.1: generación de API key (script que la muestra una sola vez), middleware que valida `Authorization: Bearer <key>`, y las rutas HTTP equivalentes de §4 como wrappers sobre los servicios de las Tareas 7-8. No usadas por Telegram (que sigue en proceso).
 
@@ -797,7 +891,7 @@ falla.
 
 ---
 
-## Tarea 21: Agrupación canónica de catálogo asistida por LLM (offline)
+## Tarea 22: Agrupación canónica de catálogo asistida por LLM (offline)
 
 **Descripción:** Script puntual (§5.1) que lee `product.name`/`description`/`unit`, le pide
 a un LLM que proponga agrupaciones, exporta la propuesta para revisión humana, y aplica el
@@ -822,7 +916,7 @@ resultado revisado poblando `product_canonical_group`/`product.canonical_group_i
 
 ---
 
-## Tarea 22: Promoción a producción en Vercel
+## Tarea 23: Promoción a producción en Vercel
 
 **Descripción:** Aplicar las migraciones de las Tareas 4-6 contra Neptuno (producción) por
 primera vez — hasta aquí solo existían en el self-hosted de staging. Configurar
@@ -848,7 +942,7 @@ primera vez — hasta aquí solo existían en el self-hosted de staging. Configu
 
 ---
 
-## Tarea 23: Prueba de aceptación manual de punta a punta contra `todo/ChatBot.md`
+## Tarea 24: Prueba de aceptación manual de punta a punta contra `todo/ChatBot.md`
 
 **Descripción:** Recorrer la spec original punto por punto contra producción, con el o los
 clientes de prueba reales.

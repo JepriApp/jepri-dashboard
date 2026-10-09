@@ -1,6 +1,6 @@
 import { parseInbound, sendMessage } from "@/lib/bot/adapters/telegram";
-import { handleInboundMessage } from "@/lib/bot/domain";
-import { resolveCustomer } from "@/lib/bot/services/auth";
+import { handleInboundMessageForChannel } from "@/lib/bot/domain";
+import { resolveCustomerCandidates } from "@/lib/bot/services/auth";
 import { markUpdateProcessed } from "@/lib/bot/services/idempotency";
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -12,8 +12,10 @@ import { NextResponse } from "next/server";
  *   1. X-Telegram-Bot-Api-Secret-Token  -> 401 sin tocar ninguna tabla si no coincide
  *   2. bot_mark_update_processed        -> 200 inmediato si el update_id ya se procesó
  *   3. parseInbound                     -> 200 (se ignora) si el tipo de update no se soporta
- *   4. resolveCustomer (whitelist)      -> 200 (se ignora en silencio) si no hay match
- *   5. handleInboundMessage (§7)        -> dominio channel-agnostic del bot (Tarea 13+)
+ *   4. resolveCustomerCandidates (whitelist) -> 200 (se ignora en silencio) si no hay match
+ *   5. handleInboundMessageForChannel (§7)   -> dominio channel-agnostic del bot (Tarea 13+);
+ *      un mismo whatsapp_id puede resolver a varios customer (Tarea 16) — esa función
+ *      decide para cuál antes de delegar en handleInboundMessage.
  */
 export async function POST(req: Request) {
   const secretHeader = req.headers.get("x-telegram-bot-api-secret-token");
@@ -44,13 +46,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  const customer = await resolveCustomer(supabase, inbound.externalId);
-  if (!customer) {
+  const candidates = await resolveCustomerCandidates(supabase, inbound.externalId);
+  if (candidates.length === 0) {
     // No whitelisteado: se ignora en silencio, sin responder nada (tal como pide la spec).
     return NextResponse.json({ ok: true });
   }
 
-  const reply = await handleInboundMessage(supabase, customer, {
+  const reply = await handleInboundMessageForChannel(supabase, candidates, {
     channel: inbound.channel,
     text: inbound.text,
     callbackData: inbound.callbackData,

@@ -50,7 +50,7 @@ para verificar solo a mano.
   despliegue queda: **Docker en servidor propio (pruebas de los Fases 3-5) → Vercel
   (producción, al final)**.
 - **Staging y producción usan proyectos Supabase distintos, a propósito**: "Neptuno" (cloud)
-  es producción, nunca se toca hasta la Tarea 22. El staging en Docker apunta al Supabase
+  es producción, nunca se toca hasta la Tarea 23. El staging en Docker apunta al Supabase
   self-hosted del propio servidor (`10.85.96.51:8000`, el mismo ya referenciado en
   `next.config.ts` para desarrollo) — datos de prueba, migraciones y pruebas de las Fases
   1-5 viven ahí, aislados de los datos reales de clientes.
@@ -107,9 +107,10 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
 
 ### Fase 4: Flujos de pedido
 - [x] Tarea 14: Estado de conversación (`bot_conversation_state`) en el dominio del bot
-- [ ] Tarea 15: Flujo "crear pedido" de punta a punta
-- [ ] Tarea 16: Flujo "modificar pedido" de punta a punta
-- [ ] Tarea 17: Flujo "cancelar pedido" de punta a punta
+- [x] Tarea 15: Flujo "crear pedido" de punta a punta
+- [x] Tarea 16: Identidad — un número puede representar varios clientes/puntos de entrega
+- [ ] Tarea 17: Flujo "modificar pedido" de punta a punta
+- [ ] Tarea 18: Flujo "cancelar pedido" de punta a punta
 
 ### Checkpoint: Fase 4 — PoC funcionalmente completo
 - [ ] Un pedido creado vía Telegram (en staging) aparece correcto en
@@ -119,9 +120,9 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
 - [ ] Los 3 flujos funcionan de punta a punta contra el bot real en staging
 
 ### Fase 5: Dureza operativa
-- [ ] Tarea 18: Auditoría — `bot_interaction_log` en cada acción de dominio
-- [ ] Tarea 19: Alertas de fallos — `notifyOps` en errores no controlados
-- [ ] Tarea 20: Sistema de API keys + rutas HTTP `/api/bot/orders`, `/api/bot/products/*`
+- [ ] Tarea 19: Auditoría — `bot_interaction_log` en cada acción de dominio
+- [ ] Tarea 20: Alertas de fallos — `notifyOps` en errores no controlados
+- [ ] Tarea 21: Sistema de API keys + rutas HTTP `/api/bot/orders`, `/api/bot/products/*`
 
 ### Checkpoint: Fase 5
 - [ ] Cada acción de dominio deja una fila en `bot_interaction_log`
@@ -129,14 +130,21 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
 - [ ] Las rutas HTTP responden 401 sin API key válida y 200 con una
 
 ### Fase 6: Catálogo — mejora
-- [ ] Tarea 21: Agrupación canónica de catálogo asistida por LLM (offline)
+- [ ] Tarea 22: Agrupación canónica de catálogo asistida por LLM (offline)
 
 ### Fase 7: Producción y aceptación
-- [ ] Tarea 22: Promoción a producción en Vercel
-- [ ] Tarea 23: Prueba de aceptación manual de punta a punta contra `todo/ChatBot.md`
+- [ ] Tarea 23: Promoción a producción en Vercel
+- [ ] Tarea 24: Prueba de aceptación manual de punta a punta contra `todo/ChatBot.md`
+
+### Backlog diferido (surgido en vivo durante la Tarea 15/16, fuera de las 24 tareas originales)
+- [ ] Tarea 25: Varios pedidos el mismo día para el mismo punto de entrega — hoy
+  `bot_create_order` rechaza con `ORDER_ALREADY_EXISTS` un segundo pedido para el mismo
+  `customer_id` + plan. Alcance: quitar ese chequeo, y cambiar `bot_get_current_order`/
+  `getCurrentOrder`/`viewOrderMessage` de "un pedido" a una lista. Explícitamente
+  pospuesto por decisión del usuario — no se encarece por dejarlo para el final.
 
 ### Checkpoint: Completo
-- [ ] Todos los criterios de aceptación de las 23 tareas cumplidos
+- [ ] Todos los criterios de aceptación de las 24 tareas (+ Tarea 25 si se decide incluirla) cumplidos
 - [ ] Suite automatizada (`npm run test` + `pgTAP`) corre en verde
 - [ ] Validado en staging antes de promover a Vercel
 - [ ] Listo para revisión humana antes de considerar el PoC cerrado
@@ -149,8 +157,8 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
 | `output: 'standalone'` en `next.config.ts` (necesario para una imagen Docker liviana) no es necesario en Vercel y no está probado hoy en ese entorno | Bajo | Habilitarlo sin condicional (es inocuo en Vercel, solo genera una carpeta que esa plataforma no usa); verificar con un deploy de prueba a Vercel después de agregarlo (Tarea 3) antes de tocar nada más |
 | La extensión `unaccent` de Postgres puede no estar habilitada en el proyecto Supabase | Bajo | `bot_search_catalog` cae a `lower(name) ilike ...` sin normalizar acentos (ya contemplado en el diseño, §5.1); cubierto por un caso de pgTAP en ambas ramas |
 | El bot depende de que el operador ya haya creado el `distribution_plan` en estado `planned` con la `plan_date` correcta antes de cada día de pedidos | Alto para el PoC en producción | Confirmar con operación el hábito real de creación anticipada de planes antes de activar el bot con clientes reales (ver Open Questions) |
-| La agrupación canónica por LLM (Tarea 21) depende de revisión humana y puede tomar tiempo | Bajo — no bloquea nada | Las RPCs ya degradan a grupos de un solo producto sin la agrupación; es la última fase, no bloqueante |
-| Staging (self-hosted `10.85.96.51:8000`) y producción (Neptuno) son instancias de Supabase distintas por diseño — las migraciones nuevas (Tareas 4-6) hay que aplicarlas dos veces, y si el esquema de staging diverge del de Neptuno (por migraciones viejas no sincronizadas), una prueba en staging podría no predecir el comportamiento real en producción | Medio | Aplicar cada migración a `10.85.96.51:8000` primero (Fase 1) y recién a Neptuno como parte de la Tarea 22, nunca antes; si surge una diferencia de esquema entre ambas, resolverla antes de promover |
+| La agrupación canónica por LLM (Tarea 22) depende de revisión humana y puede tomar tiempo | Bajo — no bloquea nada | Las RPCs ya degradan a grupos de un solo producto sin la agrupación; es la última fase, no bloqueante |
+| Staging (self-hosted `10.85.96.51:8000`) y producción (Neptuno) son instancias de Supabase distintas por diseño — las migraciones nuevas (Tareas 4-6) hay que aplicarlas dos veces, y si el esquema de staging diverge del de Neptuno (por migraciones viejas no sincronizadas), una prueba en staging podría no predecir el comportamiento real en producción | Medio | Aplicar cada migración a `10.85.96.51:8000` primero (Fase 1) y recién a Neptuno como parte de la Tarea 23, nunca antes; si surge una diferencia de esquema entre ambas, resolverla antes de promover |
 
 ## Open Questions
 

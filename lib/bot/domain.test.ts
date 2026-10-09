@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { handleInboundMessage } from "@/lib/bot/domain";
+import { handleInboundMessage, handleInboundMessageForChannel } from "@/lib/bot/domain";
 import { getActivePlanStatus } from "@/lib/bot/services/plan";
 import { getCurrentOrder } from "@/lib/bot/services/orders";
 import { getConversationState, resetConversationState, setConversationState } from "@/lib/bot/services/conversation";
@@ -290,5 +290,121 @@ describe("handleInboundMessage — estado de conversación (§8, Tarea 14)", () 
 
     expect(mockResetConversationState).toHaveBeenNthCalledWith(1, fakeSupabase, "cust-1", "telegram");
     expect(mockResetConversationState).toHaveBeenNthCalledWith(2, fakeSupabase, "cust-2", "telegram");
+  });
+});
+
+describe("handleInboundMessageForChannel — un número puede resolver a varios customer (Tarea 16)", () => {
+  const candidateA = { customer_id: "cust-a", name: "Tienda A" };
+  const candidateB = { customer_id: "cust-b", name: "Tienda B" };
+
+  it("con un solo candidato, delega igual que handleInboundMessage (cero cambio de comportamiento)", async () => {
+    mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockGetConversationState.mockResolvedValue(IDLE_CONVERSATION);
+
+    const result = await handleInboundMessageForChannel(fakeSupabase, [customer], {
+      channel: "telegram",
+      text: "hola",
+    });
+
+    expect(result.text).toContain("Ryuma");
+    expect(mockGetActivePlanStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('varios candidatos, nadie a mitad de flujo, tocan "Crear pedido" -> pregunta para cuál cliente es, un botón por candidato', async () => {
+    mockGetConversationState.mockResolvedValue(IDLE_CONVERSATION);
+
+    const result = await handleInboundMessageForChannel(fakeSupabase, [candidateA, candidateB], {
+      channel: "telegram",
+      text: "",
+      callbackData: "menu:create_order",
+    });
+
+    expect(result.text).toMatch(/más de una cuenta/i);
+    expect(result.buttons).toEqual([
+      { label: "Tienda A", value: "bot:choose_customer:create:cust-a" },
+      { label: "Tienda B", value: "bot:choose_customer:create:cust-b" },
+    ]);
+    expect(mockStartCreateOrderFlow).not.toHaveBeenCalled();
+    expect(mockGetActivePlanStatus).not.toHaveBeenCalled();
+  });
+
+  it("al elegir un candidato desde el menú de desambiguación, se arranca la acción original para ese customer_id", async () => {
+    mockGetConversationState.mockResolvedValue(IDLE_CONVERSATION);
+    mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockStartCreateOrderFlow.mockResolvedValue({
+      reply: { text: "elige un producto" },
+      nextState: "create:choosing_product",
+      nextContext: { groups: [] },
+    });
+
+    const result = await handleInboundMessageForChannel(fakeSupabase, [candidateA, candidateB], {
+      channel: "telegram",
+      text: "",
+      callbackData: "bot:choose_customer:create:cust-b",
+    });
+
+    expect(result.text).toBe("elige un producto");
+    expect(mockStartCreateOrderFlow).toHaveBeenCalledWith(fakeSupabase, "cust-b");
+    expect(mockSetConversationState).toHaveBeenCalledWith(
+      fakeSupabase,
+      "cust-b",
+      "telegram",
+      "create:choosing_product",
+      { groups: [] },
+    );
+  });
+
+  it("un customer_id en el callback que no pertenece a los candidatos resueltos se ignora (no se le atribuye el turno a nadie)", async () => {
+    mockGetConversationState.mockResolvedValue(IDLE_CONVERSATION);
+
+    const result = await handleInboundMessageForChannel(fakeSupabase, [candidateA, candidateB], {
+      channel: "telegram",
+      text: "",
+      callbackData: "bot:choose_customer:create:cust-ajeno",
+    });
+
+    expect(mockStartCreateOrderFlow).not.toHaveBeenCalled();
+    expect(result.text).toMatch(/^¡Hola! /); // menú genérico, cae como si no hubiera callback reconocido
+  });
+
+  it("si alguno de los candidatos está a mitad del flujo de crear pedido, el mensaje se despacha a ese sin pedir desambiguación", async () => {
+    mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockGetConversationState.mockImplementation(async (_client, customerId) =>
+      customerId === "cust-b"
+        ? { state: "create:awaiting_quantity", context: { product_id: "p1", unit: "kg", product_name: "Tomate" } }
+        : IDLE_CONVERSATION,
+    );
+    mockHandleCreateOrderStep.mockResolvedValue({
+      reply: { text: "resumen..." },
+      nextState: "create:reviewing_order",
+      nextContext: { items: [] },
+    });
+
+    const result = await handleInboundMessageForChannel(fakeSupabase, [candidateA, candidateB], {
+      channel: "telegram",
+      text: "3",
+    });
+
+    expect(result.text).toBe("resumen...");
+    expect(mockHandleCreateOrderStep).toHaveBeenCalledWith(
+      fakeSupabase,
+      "cust-b",
+      "create:awaiting_quantity",
+      { product_id: "p1", unit: "kg", product_name: "Tomate" },
+      { channel: "telegram", text: "3" },
+      "2026-10-10",
+    );
+  });
+
+  it('varios candidatos, todos en idle, sin callback reconocido (ej. "hola") -> menú genérico sin nombre', async () => {
+    mockGetConversationState.mockResolvedValue(IDLE_CONVERSATION);
+
+    const result = await handleInboundMessageForChannel(fakeSupabase, [candidateA, candidateB], {
+      channel: "telegram",
+      text: "hola",
+    });
+
+    expect(result.text).toMatch(/^¡Hola! /);
+    expect(mockGetActivePlanStatus).not.toHaveBeenCalled();
   });
 });

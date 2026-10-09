@@ -5,7 +5,7 @@
 
 begin;
 
-select plan(16);
+select plan(17);
 
 -- 1. bot_resolve_customer ---------------------------------------------------
 
@@ -18,6 +18,18 @@ select is(
     (select count(*)::int from bot_resolve_customer('no-existe-este-id')),
     0,
     'bot_resolve_customer sin match devuelve vacío (se ignora en silencio, no es un error)'
+);
+
+-- Tarea 16: un mismo whatsapp_id puede representar a varios customer (varios clientes
+-- o puntos de entrega compartiendo un número) — bot_resolve_customer debe devolver
+-- todas las filas que calcen, no solo una.
+insert into customer (name, identification_type, identification_number, whatsapp_id)
+values ('Cliente de prueba (segundo punto de entrega, Tarea 16)', 'CC', '999999999-test-tarea16', '8703567026');
+
+select is(
+    (select count(*)::int from bot_resolve_customer('8703567026')),
+    2,
+    'bot_resolve_customer devuelve las 2 filas cuando 2 customer comparten whatsapp_id (Tarea 16)'
 );
 
 -- 2. bot_validate_api_key ---------------------------------------------------
