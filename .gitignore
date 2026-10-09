@@ -50,3 +50,7 @@ next-env.d.ts
 supabase/backup_full_*.dump
 supabase/backup_full_*.sql
 supabase/auth_*.sql
+
+# Exports/propuestas puntuales de scripts/*.mjs (ej. agrupación canónica de catálogo,
+# Tarea 22) — datos generados, no código.
+scripts/output/

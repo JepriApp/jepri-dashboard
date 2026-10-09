@@ -131,7 +131,9 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
 - [x] Las rutas HTTP responden 401 sin API key válida y 200 con una
 
 ### Fase 6: Catálogo — mejora
-- [ ] Tarea 22: Agrupación canónica de catálogo asistida por LLM (offline)
+- [ ] Tarea 22: Agrupación canónica de catálogo asistida por LLM (offline) — **en pausa**:
+  scripts listos y propuesta generada, pendiente de revisión del departamento de ventas
+  antes de aplicarla (ver nota en tasks/todo.md)
 
 ### Fase 7: Producción y aceptación
 - [ ] Tarea 23: Promoción a producción en Vercel

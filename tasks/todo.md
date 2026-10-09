@@ -1046,19 +1046,57 @@ a un LLM que proponga agrupaciones, exporta la propuesta para revisión humana, 
 resultado revisado poblando `product_canonical_group`/`product.canonical_group_id`.
 
 **Acceptance criteria:**
-- [ ] El script nunca se ejecuta como parte de una request del bot — es manual, offline
-- [ ] La propuesta se puede revisar/editar antes de aplicarse
-- [ ] Tras aplicar, buscar "tomate" en `bot_search_catalog` agrupa sus variantes bajo un solo `canonical_group_id`
+- [x] El script nunca se ejecuta como parte de una request del bot — es manual, offline
+- [x] La propuesta se puede revisar/editar antes de aplicarse (CSV en Excel)
+- [ ] Tras aplicar, buscar "tomate" en `bot_search_catalog` agrupa sus variantes bajo un
+      solo `canonical_group_id` — **pendiente de aplicar**, ver estado abajo
+
+**⏸️ EN PAUSA (2026-10-10):** la propuesta está generada y entregada, pero el usuario
+pidió dejarla pendiente de revisión del departamento de ventas antes de aplicarla —
+`product.canonical_group_id` sigue en `null` para los 305 productos, confirmado. Los 3
+scripts están listos, probados y comiteados; falta únicamente el paso 4 (aplicar) una
+vez que ventas apruebe o ajuste el CSV. Para continuar cuando estén listos:
+`npm run apply-canonical-groups` (o pasarle una ruta de CSV distinta si ventas lo
+reexportó) y después confirmar el agrupamiento con `bot_search_catalog`.
 
 **Verification:**
-- [ ] `npm run build` pasa (si el script usa TS del repo)
-- [ ] Manual: correr contra el catálogo real (o copia), revisar, aplicar, confirmar el agrupamiento
-- [ ] Manual: confirmar que el panel admin de productos sigue sin cambios
+- [x] `npx tsc --noEmit`, `npm run build`, `npm run test` (170/170) y `npm run lint` sin
+      errores nuevos (los 3 scripts son `.mjs`, fuera del alcance de TS/Next — ver nota
+      de diseño)
+- [ ] Manual: revisar/ajustar la propuesta, aplicar, confirmar el agrupamiento — pendiente
+- [ ] Manual: confirmar que el panel admin de productos sigue sin cambios — pendiente
+      (no debería verse afectado: ya es aditivo por diseño, nada en `app/protected/products`
+      lee `canonical_group_id`)
+
+**Decisión de diseño — "pedirle a un LLM" sin agregar una API key nueva:** en vez de un
+script que llama a una API de LLM externa, el catálogo se exportó a CSV
+(`export_products_for_canonical_grouping.mjs`) y la propuesta la generé yo mismo
+leyendo ese CSV en esta sesión (ya soy el LLM con el que se está trabajando) — cero
+credenciales nuevas que gestionar para un paso que se corre una sola vez. El resultado
+se escribió a otro CSV (`build_canonical_group_proposal.mjs` combina el export con el
+mapeo propuesto) pensado para abrir en Excel, exactamente como ya sugiere el diseño en
+§5.1. Un tercer script (`apply_product_canonical_groups.mjs`) aplica el CSV ya revisado:
+una fila por nombre de grupo distinto en `product_canonical_group` (reutilizando la
+existente si ya se corrió antes — se puede re-correr sin duplicar) y
+`product.canonical_group_id` por cada producto listado, todo en una sola transacción.
+
+**Regla aplicada en la propuesta (305 productos, 102 con grupo propuesto):** solo se
+agruparon filas que son inequívocamente la misma referencia en distinta unidad de
+medida (ej. "Tomate Chonto X Kilo" + "...x libra"). Se dejó TODO lo ambiguo sin agrupar
+a propósito — variedades distintas (Hass vs común), tamaños de bulto/canasta/caja
+(tier mayorista, no una unidad de medida), y el mismo "atado" en tamaños Hogar/Horeca
+(diferenciación real de catálogo que Jepri ya hace, no algo para colapsar). Son
+decisiones conservadoras, pensadas para que ventas las revise y corrija, no la
+propuesta final.
 
 **Dependencies:** Tarea 4; no depende de las Fases 2-5
 
 **Files likely touched:**
-- `scripts/generate_product_canonical_groups.ts`
+- `scripts/export_products_for_canonical_grouping.mjs` (nuevo)
+- `scripts/build_canonical_group_proposal.mjs` (nuevo)
+- `scripts/apply_product_canonical_groups.mjs` (nuevo)
+- `scripts/output/` (nuevo, gitignored — export, mapeo propuesto, y CSV final)
+- `.gitignore`, `package.json` (3 scripts de conveniencia nuevos)
 
 **Estimated scope:** M (1 archivo, revisión humana en el medio)
 
