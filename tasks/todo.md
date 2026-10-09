@@ -200,13 +200,28 @@ la Tarea 22.
 por `coalesce(canonical_group_id, product.id)`.
 
 **Acceptance criteria:**
-- [ ] Las 6 funciones existen, devuelven las columnas exactas especificadas en §5
-- [ ] `bot_search_catalog` usa `unaccent` si está disponible, con fallback a `ilike` simple si no
-- [ ] `bot_get_current_order` está acotado al plan activo (§3.1), no a todo el historial
+- [x] Las 6 funciones existen, devuelven las columnas exactas especificadas en §5
+- [x] `bot_search_catalog` usa `unaccent` si está disponible, con fallback a `ilike` simple si no
+- [x] `bot_get_current_order` está acotado al plan activo (§3.1), no a todo el historial
 
 **Verification:**
-- [ ] pgTAP: un test por función con datos de prueba (incluyendo "no match" para `bot_resolve_customer`/`bot_validate_api_key`) — `supabase test db` en verde
-- [ ] pgTAP: caso explícito para ambas ramas de `bot_search_catalog` (con y sin `unaccent`)
+- [x] Probado manualmente contra los datos de la Tarea 1 antes de escribir la suite — las 6 funciones devuelven lo esperado, incluyendo "no match" para `bot_resolve_customer`/`bot_validate_api_key`
+- [x] pgTAP (`supabase/tests/database/bot_read_functions.sql`, 16 asserts) con caso explícito para ambas ramas de `bot_search_catalog` — `npm run test:db` en verde, 28/28 asserts totales junto con `bot_schema_rls.sql`
+- [x] Confirmado que ningún test dejó datos filtrados en staging tras el `ROLLBACK` (`bot_api_key` vacío, plan de la Tarea 1 intacto, sin `sale_order` del cliente de prueba, `unaccent` sigue instalada)
+
+**Hallazgo corregido durante la tarea:** el primer `bot_search_catalog` usaba un `CASE`
+estático que mencionaba `unaccent(...)` en el texto de la consulta — Postgres necesita
+resolver esa función al **planear** la consulta, incluso en la rama que no se toma, así
+que la función entera habría fallado si `unaccent` no estuviera instalada (justo el
+fallback que el diseño pedía no romper). Se corrigió con SQL dinámico (`EXECUTE
+format(...)`): la rama sin `unaccent` nunca menciona esa función en el texto que se
+parsea. Verificado con `DROP EXTENSION unaccent` dentro de una transacción de prueba
+(revertida al final).
+
+También explícito: las 6 funciones se otorgan (`GRANT EXECUTE`) a `anon` y
+`authenticated` — el bot llama vía el cliente Supabase normal (anon key), sin sesión de
+`auth.uid()`, así que `SECURITY DEFINER` por sí solo no alcanza para que PostgREST las
+exponga como RPC callables sin este grant explícito.
 
 **Dependencies:** Tarea 4
 

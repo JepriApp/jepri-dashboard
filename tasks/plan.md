@@ -76,7 +76,7 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
 
 ### Fase 1: Base de datos
 - [x] Tarea 4: Migración — tablas nuevas del bot + RLS sin policies
-- [ ] Tarea 5: Funciones `SECURITY DEFINER` — lecturas
+- [x] Tarea 5: Funciones `SECURITY DEFINER` — lecturas
 - [ ] Tarea 6: Funciones `SECURITY DEFINER` — escrituras transaccionales
 
 ### Checkpoint: Fase 1
