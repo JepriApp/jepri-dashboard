@@ -105,6 +105,52 @@ describe("sendMessage", () => {
     });
   });
 
+  it("buttonRows agrupa varios botones en la misma fila (ej. [5] para los 5 juntos)", async () => {
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", "fake-token");
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendMessage("8703567026", {
+      text: "¿Cuántos kg quieres?",
+      buttons: [1, 2, 3, 4, 5].map((n) => ({ label: String(n), value: `create:qty:${n}` })),
+      buttonRows: [5],
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.reply_markup).toEqual({
+      inline_keyboard: [
+        [1, 2, 3, 4, 5].map((n) => ({ text: String(n), callback_data: `create:qty:${n}` })),
+      ],
+    });
+  });
+
+  it("buttonRows con varios tamaños reparte los botones fila por fila (ej. [2, 1])", async () => {
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", "fake-token");
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendMessage("8703567026", {
+      text: "Elige",
+      buttons: [
+        { label: "A", value: "a" },
+        { label: "B", value: "b" },
+        { label: "C", value: "c" },
+      ],
+      buttonRows: [2, 1],
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.reply_markup).toEqual({
+      inline_keyboard: [
+        [
+          { text: "A", callback_data: "a" },
+          { text: "B", callback_data: "b" },
+        ],
+        [{ text: "C", callback_data: "c" }],
+      ],
+    });
+  });
+
   it("lanza si la Bot API responde con un error", async () => {
     vi.stubEnv("TELEGRAM_BOT_TOKEN", "fake-token");
     vi.stubGlobal(

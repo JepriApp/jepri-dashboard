@@ -148,6 +148,7 @@ describe("handleCreateOrderStep — CHOOSING_PRODUCT", () => {
       "create:qty:4",
       "create:qty:5",
     ]);
+    expect(result.reply.buttonRows).toEqual([5]); // los 5 juntos en una sola fila
   });
 
   it("elegir un grupo con varias unidades pregunta cuál, con precios formateados", async () => {

@@ -75,6 +75,7 @@ function quantityPromptMessage(unit: string, productName: string, note?: string)
   return {
     text: `¿Cuántos ${unit} de "${productName}" quieres?${noteSuffix} Toca una cantidad o escribe el número si es otra.`,
     buttons: quickQuantityButtons(),
+    buttonRows: [QUICK_QUANTITIES.length],
   };
 }
 

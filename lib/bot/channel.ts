@@ -14,6 +14,14 @@ export interface InboundMessage {
 export interface BotMessage {
   text: string;
   buttons?: { label: string; value: string }[];
+  /**
+   * Cuántos botones de `buttons` va en cada fila sucesiva (ej. `[5]` = los 5 juntos en
+   * una sola fila; `[2, 3]` = 2 en la primera fila, 3 en la segunda). La suma de
+   * `buttonRows` debe calzar con `buttons.length`. Sin especificar, cada botón va en su
+   * propia fila (comportamiento de siempre) — cada adaptador decide cómo traducir esto
+   * a su propio formato de botones.
+   */
+  buttonRows?: number[];
 }
 
 export interface ChannelAdapter {

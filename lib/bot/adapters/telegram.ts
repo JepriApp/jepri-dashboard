@@ -84,9 +84,24 @@ export function parseInbound(rawPayload: unknown): InboundMessage {
   );
 }
 
+/** Agrupa `buttons` en filas según `rowSizes` (ej. `[5]` -> todos juntos en una fila,
+ * `[2, 3]` -> 2 y después 3); sin especificar, un botón por fila. */
+function chunkIntoRows<T>(items: T[], rowSizes?: number[]): T[][] {
+  if (!rowSizes) return items.map((item) => [item]);
+
+  const rows: T[][] = [];
+  let index = 0;
+  for (const size of rowSizes) {
+    rows.push(items.slice(index, index + size));
+    index += size;
+  }
+  return rows;
+}
+
 /**
- * Envía un mensaje vía la Bot API. `message.buttons` se traduce a un teclado inline,
- * un botón por fila (sin botones, es un mensaje de texto plano).
+ * Envía un mensaje vía la Bot API. `message.buttons` se traduce a un teclado inline —
+ * un botón por fila salvo que `message.buttonRows` agrupe varios en la misma fila (sin
+ * botones, es un mensaje de texto plano).
  */
 export async function sendMessage(externalId: string, message: BotMessage): Promise<void> {
   const token = getBotToken();
@@ -102,9 +117,9 @@ export async function sendMessage(externalId: string, message: BotMessage): Prom
 
   if (message.buttons && message.buttons.length > 0) {
     body.reply_markup = {
-      inline_keyboard: message.buttons.map((button) => [
-        { text: button.label, callback_data: button.value },
-      ]),
+      inline_keyboard: chunkIntoRows(message.buttons, message.buttonRows).map((row) =>
+        row.map((button) => ({ text: button.label, callback_data: button.value })),
+      ),
     };
   }
 
