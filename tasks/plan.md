@@ -86,11 +86,11 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
 ### Fase 2: Capa de servicio TypeScript
 - [x] Tarea 7: Servicio de catálogo (`lib/bot/services/products.ts`)
 - [x] Tarea 8: Servicio de pedidos (`lib/bot/services/orders.ts`)
-- [ ] Tarea 9: Servicio de whitelist (`lib/bot/services/auth.ts`)
+- [x] Tarea 9: Servicio de whitelist (`lib/bot/services/auth.ts`)
 
-### Checkpoint: Fase 2
-- [ ] Suite de Vitest cubre las 7 funciones de servicio contra el proyecto de desarrollo y pasa
-- [ ] `npm run build`, `npm run lint` y `npm run test` pasan
+### Checkpoint: Fase 2 — completo
+- [x] Suite de Vitest cubre las 7 funciones de servicio contra staging real y pasa (30/30 tests)
+- [x] `npm run build`, `npm run lint` y `npm run test` pasan
 
 ### Fase 3: Canal Telegram
 - [ ] Tarea 10: Tipos de desacoplamiento de canal (`lib/bot/channel.ts`)

@@ -384,12 +384,19 @@ y `validateApiKey(rawKey)` que hashea y llama a `bot_validate_api_key` (usada re
 Tarea 20, implementada aquí junto al resto de auth).
 
 **Acceptance criteria:**
-- [ ] `resolveCustomer` devuelve `null` (no lanza) cuando no hay match
-- [ ] `validateApiKey` nunca compara el key en texto plano, solo su hash (sha256)
+- [x] `resolveCustomer` devuelve `null` (no lanza) cuando no hay match
+- [x] `validateApiKey` nunca compara el key en texto plano, solo su hash (sha256)
 
 **Verification:**
-- [ ] Vitest: `resolveCustomer` con match y sin match; `validateApiKey` con key válida, inválida y revocada — `npm run test` en verde
-- [ ] `npm run build` y `npm run lint` pasan
+- [x] Vitest (`lib/bot/services/auth.test.ts`, 7 tests): `resolveCustomer` con match/sin match contra el cliente real de la Tarea 1; `hashApiKey` nunca es identidad y es consistente; `validateApiKey` con key inexistente/activa/revocada — `npm run test` en verde, 30/30 tests totales
+- [x] `npm run build` y `npm run lint` pasan (59 problemas preexistentes sin cambios)
+- [x] Confirmado que `bot_api_key` queda vacío en staging después de la suite (cleanup por `afterEach`)
+
+**Nota:** `hashApiKey` queda exportada desde `auth.ts` — la reutiliza tanto
+`validateApiKey` como (Tarea 20) el script que genera una API key nueva, para que el
+hash que se guarda en `bot_api_key.key_hash` sea siempre el mismo que se valida acá.
+Igual que en la Tarea 8, los errores de Postgres se envuelven con `parsePostgresError`
+en vez de dejarlos pasar crudos, por consistencia con el resto de la capa de servicio.
 
 **Dependencies:** Tarea 5
 
