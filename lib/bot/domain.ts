@@ -8,6 +8,7 @@ import {
   startEditOrderFlow,
 } from "@/lib/bot/flows/createOrder";
 import { BotServiceError } from "@/lib/bot/errors";
+import { errorResult, logInteraction } from "@/lib/bot/services/audit";
 import { ResolvedCustomer } from "@/lib/bot/services/auth";
 import {
   ConversationContext,
@@ -97,8 +98,22 @@ async function handleCancelConfirmStep(
   if (inbound.callbackData === CALLBACK_CANCEL_CONFIRM) {
     try {
       await cancelOrder(supabaseClient, orderId, customerId);
+      await logInteraction(supabaseClient, {
+        customer_id: customerId,
+        channel: inbound.channel,
+        action: "cancel_order",
+        payload: { order_id: orderId },
+        result: { order_id: orderId, order_code: orderCode },
+      });
       return idleTurn({ text: `❌ Pedido ${orderCode} cancelado.${CONVERSATION_ENDED_NOTE}` });
     } catch (error) {
+      await logInteraction(supabaseClient, {
+        customer_id: customerId,
+        channel: inbound.channel,
+        action: "cancel_order",
+        payload: { order_id: orderId },
+        result: errorResult(error),
+      });
       return idleTurn({ text: `${cancelErrorMessage(error)}${CONVERSATION_ENDED_NOTE}` });
     }
   }

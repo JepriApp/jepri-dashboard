@@ -9,6 +9,7 @@ import {
   startCreateOrderFlow,
   startEditOrderFlow,
 } from "@/lib/bot/flows/createOrder";
+import { logInteraction } from "@/lib/bot/services/audit";
 import { BotServiceError } from "@/lib/bot/errors";
 
 vi.mock("@/lib/bot/services/plan", () => ({
@@ -17,6 +18,10 @@ vi.mock("@/lib/bot/services/plan", () => ({
 vi.mock("@/lib/bot/services/orders", () => ({
   getCurrentOrder: vi.fn(),
   cancelOrder: vi.fn(),
+}));
+vi.mock("@/lib/bot/services/audit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/bot/services/audit")>()),
+  logInteraction: vi.fn(),
 }));
 vi.mock("@/lib/bot/services/conversation", () => ({
   IDLE_STATE: "idle",
@@ -40,6 +45,7 @@ vi.mock("@/lib/bot/flows/createOrder", () => ({
 const mockGetActivePlanStatus = vi.mocked(getActivePlanStatus);
 const mockGetCurrentOrder = vi.mocked(getCurrentOrder);
 const mockCancelOrder = vi.mocked(cancelOrder);
+const mockLogInteraction = vi.mocked(logInteraction);
 const mockGetConversationState = vi.mocked(getConversationState);
 const mockSetConversationState = vi.mocked(setConversationState);
 const mockResetConversationState = vi.mocked(resetConversationState);
@@ -222,6 +228,13 @@ describe('handleInboundMessage — "Cancelar pedido" (Tarea 18)', () => {
     expect(result.text).toMatch(/cancelado/i);
     expect(result.text).toContain(CONVERSATION_ENDED_NOTE.trim());
     expect(mockResetConversationState).toHaveBeenCalledWith(fakeSupabase, "cust-1", "telegram");
+    expect(mockLogInteraction).toHaveBeenCalledWith(fakeSupabase, {
+      customer_id: "cust-1",
+      channel: "telegram",
+      action: "cancel_order",
+      payload: { order_id: "order-1" },
+      result: { order_id: "order-1", order_code: "1326" },
+    });
   });
 
   it("rechazar la confirmación no cancela nada y reinicia el estado", async () => {
@@ -285,6 +298,13 @@ describe('handleInboundMessage — "Cancelar pedido" (Tarea 18)', () => {
 
     expect(result.text).toMatch(expectedPattern);
     expect(result.text).not.toContain("detalle técnico interno");
+    expect(mockLogInteraction).toHaveBeenCalledWith(fakeSupabase, {
+      customer_id: "cust-1",
+      channel: "telegram",
+      action: "cancel_order",
+      payload: { order_id: "order-1" },
+      result: { error: code },
+    });
   });
 });
 

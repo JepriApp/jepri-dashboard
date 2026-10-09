@@ -1,10 +1,15 @@
 import { Database } from "@/database.types";
 import { BotMessage } from "@/lib/bot/channel";
 import { BotServiceError } from "@/lib/bot/errors";
+import { errorResult, logInteraction } from "@/lib/bot/services/audit";
 import { ConversationContext } from "@/lib/bot/services/conversation";
 import { CurrentOrder, createOrder, updateOrder } from "@/lib/bot/services/orders";
 import { CatalogGroup, getFrequentProducts, ProductVariant, searchCatalog } from "@/lib/bot/services/products";
 import { SupabaseClient } from "@supabase/supabase-js";
+
+/** El canal viaja junto con el mensaje entrante en cada paso solo para poder loguearlo
+ * en bot_interaction_log (Tarea 19, §10) al crear/modificar un pedido o buscar. */
+type InboundWithChannel = { text: string; callbackData?: string; channel: string };
 
 /**
  * Flujo "🛒 Crear nuevo pedido" / "📋 Ver / modificar" (documentacion/chatbot_diseno.md
@@ -215,7 +220,7 @@ async function handleChoosingProduct(
   supabaseClient: SupabaseClient<Database>,
   customerId: string,
   context: ConversationContext,
-  inbound: { text: string; callbackData?: string },
+  inbound: InboundWithChannel,
 ): Promise<StepResult> {
   const items = getItems(context);
   const orderMeta = getOrderMeta(context);
@@ -285,6 +290,13 @@ async function handleChoosingProduct(
   }
 
   const results = await searchCatalog(supabaseClient, query);
+  await logInteraction(supabaseClient, {
+    customer_id: customerId,
+    channel: inbound.channel,
+    action: "search",
+    payload: { query },
+    result: { count: results.length },
+  });
   if (results.length === 0) {
     return {
       reply: { text: `No encontré ningún producto con "${query}". Intenta con otra palabra.` },
@@ -443,7 +455,7 @@ async function handleReviewingOrder(
   supabaseClient: SupabaseClient<Database>,
   customerId: string,
   context: ConversationContext,
-  inbound: { callbackData?: string },
+  inbound: InboundWithChannel,
   planDate: string,
 ): Promise<StepResult> {
   const items = getItems(context);
@@ -526,6 +538,13 @@ async function handleReviewingOrder(
     try {
       if (orderMeta) {
         await updateOrder(supabaseClient, orderMeta.order_id, customerId, itemInputs);
+        await logInteraction(supabaseClient, {
+          customer_id: customerId,
+          channel: inbound.channel,
+          action: "update_order",
+          payload: { order_id: orderMeta.order_id, items: itemInputs },
+          result: { order_id: orderMeta.order_id, order_code: orderMeta.order_code },
+        });
         return {
           reply: {
             text: `✅ Pedido ${orderMeta.order_code} actualizado. Se entrega el ${planDate}.\n\n${formatItemLines(items)}${CONVERSATION_ENDED_NOTE}`,
@@ -536,6 +555,13 @@ async function handleReviewingOrder(
       }
 
       const created = await createOrder(supabaseClient, customerId, itemInputs);
+      await logInteraction(supabaseClient, {
+        customer_id: customerId,
+        channel: inbound.channel,
+        action: "create_order",
+        payload: { items: itemInputs },
+        result: { order_id: created.order_id, order_code: created.order_code },
+      });
       return {
         reply: {
           text: `✅ Pedido ${created.order_code} creado. Se entrega el ${planDate}.\n\n${formatItemLines(items)}${CONVERSATION_ENDED_NOTE}`,
@@ -544,6 +570,13 @@ async function handleReviewingOrder(
         nextContext: {},
       };
     } catch (error) {
+      await logInteraction(supabaseClient, {
+        customer_id: customerId,
+        channel: inbound.channel,
+        action: orderMeta ? "update_order" : "create_order",
+        payload: { order_id: orderMeta?.order_id, items: itemInputs },
+        result: errorResult(error),
+      });
       return {
         reply: { text: `${orderErrorMessage(error, orderMeta !== null)}${CONVERSATION_ENDED_NOTE}` },
         nextState: "idle",
@@ -568,7 +601,7 @@ export async function handleCreateOrderStep(
   customerId: string,
   state: string,
   context: ConversationContext,
-  inbound: { text: string; callbackData?: string },
+  inbound: InboundWithChannel,
   planDate: string,
 ): Promise<StepResult> {
   if (!isCreateFlowState(state)) {

@@ -1799,6 +1799,16 @@ export type Database = {
           variants: Json
         }[]
       }
+      bot_log_interaction: {
+        Args: {
+          p_action: string
+          p_channel: string
+          p_customer_id: string | null
+          p_payload: Json
+          p_result: Json
+        }
+        Returns: undefined
+      }
       bot_mark_update_processed: {
         Args: { p_channel: string; p_update_id: string }
         Returns: boolean

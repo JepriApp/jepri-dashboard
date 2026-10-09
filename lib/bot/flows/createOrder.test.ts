@@ -8,6 +8,7 @@ import {
 } from "@/lib/bot/flows/createOrder";
 import { getFrequentProducts, searchCatalog } from "@/lib/bot/services/products";
 import { createOrder, updateOrder } from "@/lib/bot/services/orders";
+import { logInteraction } from "@/lib/bot/services/audit";
 import { BotServiceError } from "@/lib/bot/errors";
 
 vi.mock("@/lib/bot/services/products", () => ({
@@ -18,11 +19,16 @@ vi.mock("@/lib/bot/services/orders", () => ({
   createOrder: vi.fn(),
   updateOrder: vi.fn(),
 }));
+vi.mock("@/lib/bot/services/audit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/bot/services/audit")>()),
+  logInteraction: vi.fn(),
+}));
 
 const mockGetFrequentProducts = vi.mocked(getFrequentProducts);
 const mockSearchCatalog = vi.mocked(searchCatalog);
 const mockCreateOrder = vi.mocked(createOrder);
 const mockUpdateOrder = vi.mocked(updateOrder);
+const mockLogInteraction = vi.mocked(logInteraction);
 
 const fakeSupabase = {} as Parameters<typeof startCreateOrderFlow>[0];
 const CUSTOMER_ID = "cust-1";
@@ -112,7 +118,7 @@ describe("handleCreateOrderStep — CHOOSING_PRODUCT", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.CHOOSING_PRODUCT,
       context,
-      { text: "", callbackData: "create:search" },
+      { channel: "telegram", text: "", callbackData: "create:search" },
       PLAN_DATE,
     );
 
@@ -128,7 +134,7 @@ describe("handleCreateOrderStep — CHOOSING_PRODUCT", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.CHOOSING_PRODUCT,
       { ...context, items: [existingItem] },
-      { text: "", callbackData: "create:variant:p-onion-kg" },
+      { channel: "telegram", text: "", callbackData: "create:variant:p-onion-kg" },
       PLAN_DATE,
     );
 
@@ -157,7 +163,7 @@ describe("handleCreateOrderStep — CHOOSING_PRODUCT", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.CHOOSING_PRODUCT,
       context,
-      { text: "", callbackData: "create:group:group-tomato" },
+      { channel: "telegram", text: "", callbackData: "create:group:group-tomato" },
       PLAN_DATE,
     );
 
@@ -176,7 +182,7 @@ describe("handleCreateOrderStep — CHOOSING_PRODUCT", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.CHOOSING_PRODUCT,
       context,
-      { text: "", callbackData: "create:variant:no-existe" },
+      { channel: "telegram", text: "", callbackData: "create:variant:no-existe" },
       PLAN_DATE,
     );
 
@@ -192,13 +198,20 @@ describe("handleCreateOrderStep — CHOOSING_PRODUCT", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.CHOOSING_PRODUCT,
       context,
-      { text: "cebolla" },
+      { channel: "telegram", text: "cebolla" },
       PLAN_DATE,
     );
 
     expect(mockSearchCatalog).toHaveBeenCalledWith(fakeSupabase, "cebolla");
     expect(result.nextState).toBe(CREATE_FLOW_STATES.CHOOSING_PRODUCT);
     expect(result.reply.buttons).toEqual([{ label: "Cebolla cabezona", value: "create:variant:p-onion-kg" }]);
+    expect(mockLogInteraction).toHaveBeenCalledWith(fakeSupabase, {
+      customer_id: CUSTOMER_ID,
+      channel: "telegram",
+      action: "search",
+      payload: { query: "cebolla" },
+      result: { count: 1 },
+    });
   });
 
   it("búsqueda sin resultados avisa y mantiene el context anterior", async () => {
@@ -209,7 +222,7 @@ describe("handleCreateOrderStep — CHOOSING_PRODUCT", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.CHOOSING_PRODUCT,
       context,
-      { text: "producto-inexistente" },
+      { channel: "telegram", text: "producto-inexistente" },
       PLAN_DATE,
     );
 
@@ -225,7 +238,7 @@ describe("handleCreateOrderStep — CHOOSING_PRODUCT", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.CHOOSING_PRODUCT,
       context,
-      { text: "   " },
+      { channel: "telegram", text: "   " },
       PLAN_DATE,
     );
 
@@ -243,7 +256,7 @@ describe("handleCreateOrderStep — CHOOSING_UNIT", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.CHOOSING_UNIT,
       context,
-      { text: "", callbackData: "create:variant:p-tomato-caja" },
+      { channel: "telegram", text: "", callbackData: "create:variant:p-tomato-caja" },
       PLAN_DATE,
     );
 
@@ -262,7 +275,7 @@ describe("handleCreateOrderStep — CHOOSING_UNIT", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.CHOOSING_UNIT,
       context,
-      { text: "", callbackData: "create:variant:no-existe" },
+      { channel: "telegram", text: "", callbackData: "create:variant:no-existe" },
       PLAN_DATE,
     );
 
@@ -280,7 +293,7 @@ describe("handleCreateOrderStep — AWAITING_QUANTITY", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.AWAITING_QUANTITY,
       context,
-      { text: "", callbackData: "create:qty:4" },
+      { channel: "telegram", text: "", callbackData: "create:qty:4" },
       PLAN_DATE,
     );
 
@@ -295,7 +308,7 @@ describe("handleCreateOrderStep — AWAITING_QUANTITY", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.AWAITING_QUANTITY,
       context,
-      { text: "3" },
+      { channel: "telegram", text: "3" },
       PLAN_DATE,
     );
 
@@ -320,7 +333,7 @@ describe("handleCreateOrderStep — AWAITING_QUANTITY", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.AWAITING_QUANTITY,
       { ...context, items: [existingItem] },
-      { text: "3" },
+      { channel: "telegram", text: "3" },
       PLAN_DATE,
     );
 
@@ -339,7 +352,7 @@ describe("handleCreateOrderStep — AWAITING_QUANTITY", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.AWAITING_QUANTITY,
       { ...context, items: [existingItem] },
-      { text: "5" },
+      { channel: "telegram", text: "5" },
       PLAN_DATE,
     );
 
@@ -354,7 +367,7 @@ describe("handleCreateOrderStep — AWAITING_QUANTITY", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.AWAITING_QUANTITY,
       context,
-      { text: "2,5" },
+      { channel: "telegram", text: "2,5" },
       PLAN_DATE,
     );
 
@@ -367,7 +380,7 @@ describe("handleCreateOrderStep — AWAITING_QUANTITY", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.AWAITING_QUANTITY,
       context,
-      { text },
+      { channel: "telegram", text },
       PLAN_DATE,
     );
 
@@ -392,7 +405,7 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.REVIEWING_ORDER,
       { items: oneItem },
-      { text: "", callbackData: "create:confirm" },
+      { channel: "telegram", text: "", callbackData: "create:confirm" },
       PLAN_DATE,
     );
 
@@ -404,6 +417,13 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
     expect(result.reply.text).toContain('3 kg de "Tomate chonto"');
     expect(result.reply.text).toContain(CONVERSATION_ENDED_NOTE.trim());
     expect(result.nextState).toBe("idle");
+    expect(mockLogInteraction).toHaveBeenCalledWith(fakeSupabase, {
+      customer_id: CUSTOMER_ID,
+      channel: "telegram",
+      action: "create_order",
+      payload: { items: [{ product_id: "p-tomato-kg", required_quantity: 3 }] },
+      result: { order_id: "order-1", order_code: "1326" },
+    });
   });
 
   it("confirmar con varios items los manda todos juntos a createOrder y los resume en el mensaje final", async () => {
@@ -414,7 +434,7 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.REVIEWING_ORDER,
       { items: twoItems },
-      { text: "", callbackData: "create:confirm" },
+      { channel: "telegram", text: "", callbackData: "create:confirm" },
       PLAN_DATE,
     );
 
@@ -434,7 +454,7 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.REVIEWING_ORDER,
       { items: oneItem },
-      { text: "", callbackData: "create:add_more" },
+      { channel: "telegram", text: "", callbackData: "create:add_more" },
       PLAN_DATE,
     );
 
@@ -451,7 +471,7 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.REVIEWING_ORDER,
       { items: oneItem },
-      { text: "", callbackData: "create:add_more" },
+      { channel: "telegram", text: "", callbackData: "create:add_more" },
       PLAN_DATE,
     );
 
@@ -465,7 +485,7 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.REVIEWING_ORDER,
       { items: twoItems },
-      { text: "", callbackData: "create:change_qty" },
+      { channel: "telegram", text: "", callbackData: "create:change_qty" },
       PLAN_DATE,
     );
 
@@ -480,7 +500,7 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.REVIEWING_ORDER,
       { items: twoItems },
-      { text: "", callbackData: "create:pick_qty:p-tomato-kg" },
+      { channel: "telegram", text: "", callbackData: "create:pick_qty:p-tomato-kg" },
       PLAN_DATE,
     );
 
@@ -495,7 +515,7 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.AWAITING_QUANTITY,
       { product_id: "p-tomato-kg", product_name: "Tomate chonto", unit: "kg", items: twoItems },
-      { text: "7" },
+      { channel: "telegram", text: "7" },
       PLAN_DATE,
     );
 
@@ -511,7 +531,7 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.AWAITING_QUANTITY,
       { product_id: "p-tomato-kg", product_name: "Tomate chonto", unit: "kg", items: [] },
-      { text: "3" },
+      { channel: "telegram", text: "3" },
       PLAN_DATE,
     );
 
@@ -524,7 +544,7 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.REVIEWING_ORDER,
       { items: twoItems },
-      { text: "", callbackData: "create:remove_item" },
+      { channel: "telegram", text: "", callbackData: "create:remove_item" },
       PLAN_DATE,
     );
 
@@ -539,7 +559,7 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.REVIEWING_ORDER,
       { items: twoItems },
-      { text: "", callbackData: "create:pick_remove:p-tomato-kg" },
+      { channel: "telegram", text: "", callbackData: "create:pick_remove:p-tomato-kg" },
       PLAN_DATE,
     );
 
@@ -557,7 +577,7 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.REVIEWING_ORDER,
       { items: twoItems },
-      { text: "", callbackData: "create:back_to_review" },
+      { channel: "telegram", text: "", callbackData: "create:back_to_review" },
       PLAN_DATE,
     );
 
@@ -572,7 +592,7 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.REVIEWING_ORDER,
       { items: oneItem, order_id: "order-1", order_code: "1326" },
-      { text: "", callbackData: "create:confirm" },
+      { channel: "telegram", text: "", callbackData: "create:confirm" },
       PLAN_DATE,
     );
 
@@ -585,6 +605,13 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
     expect(result.reply.text).toContain('3 kg de "Tomate chonto"');
     expect(result.reply.text).toContain(CONVERSATION_ENDED_NOTE.trim());
     expect(result.nextState).toBe("idle");
+    expect(mockLogInteraction).toHaveBeenCalledWith(fakeSupabase, {
+      customer_id: CUSTOMER_ID,
+      channel: "telegram",
+      action: "update_order",
+      payload: { order_id: "order-1", items: [{ product_id: "p-tomato-kg", required_quantity: 3 }] },
+      result: { order_id: "order-1", order_code: "1326" },
+    });
   });
 
   it('"agregar otro producto" en modo editar conserva order_id/order_code para la siguiente vuelta', async () => {
@@ -595,7 +622,7 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.REVIEWING_ORDER,
       { items: oneItem, order_id: "order-1", order_code: "1326" },
-      { text: "", callbackData: "create:add_more" },
+      { channel: "telegram", text: "", callbackData: "create:add_more" },
       PLAN_DATE,
     );
 
@@ -608,7 +635,7 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.REVIEWING_ORDER,
       { items: oneItem, order_id: "order-1", order_code: "1326" },
-      { text: "", callbackData: "create:abort" },
+      { channel: "telegram", text: "", callbackData: "create:abort" },
       PLAN_DATE,
     );
 
@@ -629,7 +656,7 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.REVIEWING_ORDER,
       { items: oneItem, order_id: "order-1", order_code: "1326" },
-      { text: "", callbackData: "create:confirm" },
+      { channel: "telegram", text: "", callbackData: "create:confirm" },
       PLAN_DATE,
     );
 
@@ -650,7 +677,7 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.REVIEWING_ORDER,
       { items: oneItem },
-      { text: "", callbackData: "create:confirm" },
+      { channel: "telegram", text: "", callbackData: "create:confirm" },
       PLAN_DATE,
     );
 
@@ -667,13 +694,20 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.REVIEWING_ORDER,
       { items: oneItem },
-      { text: "", callbackData: "create:confirm" },
+      { channel: "telegram", text: "", callbackData: "create:confirm" },
       PLAN_DATE,
     );
 
     expect(result.reply.text).toMatch(/error inesperado/i);
     expect(result.reply.text).not.toContain("ECONNRESET");
     expect(result.nextState).toBe("idle");
+    expect(mockLogInteraction).toHaveBeenCalledWith(fakeSupabase, {
+      customer_id: CUSTOMER_ID,
+      channel: "telegram",
+      action: "create_order",
+      payload: { order_id: undefined, items: [{ product_id: "p-tomato-kg", required_quantity: 3 }] },
+      result: { error: "UNKNOWN" },
+    });
   });
 
   it("abortar no crea ningún pedido", async () => {
@@ -682,7 +716,7 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.REVIEWING_ORDER,
       { items: oneItem },
-      { text: "", callbackData: "create:abort" },
+      { channel: "telegram", text: "", callbackData: "create:abort" },
       PLAN_DATE,
     );
 
@@ -698,7 +732,7 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
       CUSTOMER_ID,
       CREATE_FLOW_STATES.REVIEWING_ORDER,
       { items: oneItem },
-      { text: "", callbackData: "algo-raro" },
+      { channel: "telegram", text: "", callbackData: "algo-raro" },
       PLAN_DATE,
     );
 
@@ -716,7 +750,7 @@ describe("handleCreateOrderStep — estado desconocido (defensivo)", () => {
       CUSTOMER_ID,
       "algo-que-no-es-create",
       {},
-      { text: "hola" },
+      { channel: "telegram", text: "hola" },
       PLAN_DATE,
     );
 

@@ -887,21 +887,40 @@ curso.
 falla.
 
 **Acceptance criteria:**
-- [ ] Cada `create_order`/`update_order`/`cancel_order`/`search` deja exactamente una fila
-- [ ] Un fallo al escribir la auditoría no impide responder al cliente
+- [x] Cada `create_order`/`update_order`/`cancel_order`/`search` deja exactamente una fila
+- [x] Un fallo al escribir la auditoría no impide responder al cliente
 
 **Verification:**
-- [ ] Vitest: confirmar la fila de auditoría tras cada acción, y que un mock de fallo en el insert no propaga — `npm run test` en verde
+- [x] Vitest: confirmar la fila de auditoría tras cada acción (éxito y error), y que un
+      mock de fallo en el insert no propaga — `npm run test` en verde, 136/136
+- [x] pgTAP (`bot_interaction_log_function.sql`, nuevo) — en verde
+- [x] `npx tsc --noEmit`, `npm run build` y `npm run lint` sin errores nuevos
+
+**Decisión de diseño — dónde vive el `logInteraction`:** en vez de instrumentar
+`lib/bot/services/orders.ts`/`products.ts` directamente (como sugería el plan original),
+la llamada a `logInteraction` vive en la capa de orquestación
+(`lib/bot/flows/createOrder.ts` y `lib/bot/domain.ts`), justo después de cada
+`createOrder`/`updateOrder`/`cancelOrder`/`searchCatalog`. Razón: esos servicios no
+conocen el `channel` (viene del `inbound` que ya tiene domain.ts/createOrder.ts) y
+mezclar logging con el mapeo de errores de negocio de cada servicio los habría
+complicado sin necesidad. `logInteraction` en sí nunca lanza — cualquier fallo al
+escribir la auditoría queda solo en `console.error`, nunca interrumpe la respuesta.
+
+**Hallazgo faltante corregido (mismo patrón de siempre):** `bot_interaction_log` tenía
+RLS sin policies desde la Tarea 4 — hizo falta `bot_log_interaction` (`SECURITY DEFINER`,
+migración + pgTAP nuevos) antes de poder insertarle filas desde el bot.
 
 **Dependencies:** Tarea 8, Tarea 15, Tarea 17, Tarea 18
 
 **Files likely touched:**
-- `lib/bot/services/orders.ts`
-- `lib/bot/services/products.ts`
-- `lib/bot/services/audit.ts`
-- `lib/bot/services/audit.test.ts`
+- `lib/bot/services/audit.ts`, `lib/bot/services/audit.test.ts` (nuevos)
+- `lib/bot/flows/createOrder.ts`, `lib/bot/flows/createOrder.test.ts`
+- `lib/bot/domain.ts`, `lib/bot/domain.test.ts`
+- `supabase/migrations/20261011000000_bot_interaction_log_function.sql` (nuevo)
+- `supabase/tests/database/bot_interaction_log_function.sql` (nuevo)
+- `database.types.ts`
 
-**Estimated scope:** M (4 archivos)
+**Estimated scope:** M (6 archivos)
 
 ---
 
