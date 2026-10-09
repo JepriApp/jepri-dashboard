@@ -470,22 +470,57 @@ idempotencia contra `bot_processed_update` (§9) antes de llamar cualquier servi
 whitelist e ignora en silencio si no hay match. Todavía sin lógica de menú.
 
 **Acceptance criteria:**
-- [ ] Un request sin el header secreto correcto devuelve 401 sin tocar ninguna tabla
-- [ ] Un `update_id` repetido responde 200 sin reprocesar
-- [ ] Un `chat_id` no whitelisteado no genera ninguna respuesta visible
+- [x] Un request sin el header secreto correcto devuelve 401 sin tocar ninguna tabla
+- [x] Un `update_id` repetido responde 200 sin reprocesar
+- [x] Un `chat_id` no whitelisteado no genera ninguna respuesta visible
 
 **Verification:**
-- [ ] Vitest: llamar al handler de la ruta directamente (import del `route.ts`) con distintos payloads/headers simulados, cubriendo los 3 criterios de aceptación — `npm run test` en verde
-- [ ] Manual, en staging (Tarea 3): registrar el webhook con `setWebhook` contra el dominio propio y enviar un mensaje real desde el chat_id de prueba
-- [ ] Manual: reenviar el mismo payload de update dos veces y confirmar una sola fila nueva en `bot_processed_update`
+- [x] Vitest (`app/api/bot/telegram/route.test.ts`, 5 tests) llamando al handler real contra staging, con el fetch de Telegram mockeado selectivamente — `npm run test` en verde, 48/48 totales
+- [x] Manual en staging, real de punta a punta: webhook registrado con `setWebhook` contra `https://staging-tunnel.jepri.co/api/bot/telegram`, mensaje real enviado desde el chat de prueba, respuesta recibida, fila nueva confirmada en `bot_processed_update`
+- [x] Manual: mismo `update_id` reenviado directo al webhook desplegado → `200`, sin fila nueva (2 antes, 2 después)
+- [x] Manual: `chat_id` no whitelisteado contra el webhook desplegado → `200`, sin romper
+
+**Hallazgo faltante corregido:** `bot_processed_update` tiene RLS sin policies como toda
+tabla del bot — la clave anon no podía insertar ahí directo. Se agregó la función
+`bot_mark_update_processed` (`SECURITY DEFINER`), que no estaba en la lista original de
+la Tarea 5/6 (migración + pgTAP nuevos, 51/51 asserts totales).
+
+**Bug real encontrado y corregido en staging:** el middleware de auth (`proxy.ts` /
+`lib/supabase/proxy.ts`) redirigía con 307 cualquier request sin sesión de Supabase que
+no fuera `/`, `/login` o `/auth/*` — Telegram nunca tiene sesión, así que el webhook
+quedaba bloqueado *antes* de llegar al handler. Se excluyó todo el prefijo `/api/bot/*`
+(no solo `/telegram`, ya que los endpoints de las Tareas 18/20 también usan su propio
+mecanismo de auth, nunca sesión de Supabase) — cero impacto en el resto de `/api/*`.
+
+**Infraestructura de staging ajustada:** `jepri-staging.lab.ryumanakano.com` (Tarea 3)
+solo resuelve en DNS interno — confirmado con `nslookup` contra `8.8.8.8` (NXDOMAIN).
+Telegram no puede resolverlo, así que no sirve para el webhook. Se expuso un segundo
+hostname público, `staging-tunnel.jepri.co`, vía Cloudflare Tunnel (túnel administrado
+desde el dashboard de Cloudflare, con una ruta scoped exclusivamente a
+`^/api/bot/telegram$`) — expone solo el webhook a internet, no el resto de la app ni el
+panel admin. El dominio interno (`jepri-staging.lab...`) sigue siendo el que se usa para
+probar manualmente el resto de la app.
+
+**Decisión de testabilidad:** probar el route handler real desde Vitest reveló que
+`cookies()` de `next/headers` (usada por `lib/supabase/server.ts`) lanza "called outside
+a request scope" fuera de un render/handler real de Next.js. Se mockeó `next/headers`
+globalmente en `vitest.setup.ts` (cookies() devuelve un jar vacío) — `createClient()`
+sigue construyendo un cliente real contra staging real, solo sin sesión, que es
+exactamente lo que es un webhook. Y el mock de `fetch` en los tests tuvo que volverse
+selectivo (solo intercepta `api.telegram.org`, todo lo demás —incluidas las llamadas
+REST de supabase-js— sigue al fetch real), porque supabase-js usa el mismo `fetch`
+global que el adaptador de Telegram.
 
 **Dependencies:** Tarea 9, Tarea 11, Tarea 4 (tabla `bot_processed_update`), Tarea 3 (staging)
 
 **Files likely touched:**
 - `app/api/bot/telegram/route.ts`
 - `app/api/bot/telegram/route.test.ts`
+- `lib/bot/services/idempotency.ts` (nuevo, `markUpdateProcessed`)
+- `lib/supabase/proxy.ts` (fix del middleware)
+- `supabase/migrations/20261008030000_bot_idempotency_function.sql` (nuevo, faltaba de la Tarea 5/6)
 
-**Estimated scope:** M (2 archivos, pero con varias validaciones secuenciales críticas)
+**Estimated scope:** M (2 archivos, pero con varias validaciones secuenciales críticas) — terminó siendo L por los 3 hallazgos (función faltante, bug de middleware, DNS interno no resuelve) encontrados durante la verificación en staging
 
 ---
 
