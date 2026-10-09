@@ -57,9 +57,25 @@ const GROUP_PREFIX = "create:group:";
 const VARIANT_PREFIX = "create:variant:";
 const PICK_QTY_PREFIX = "create:pick_qty:";
 const PICK_REMOVE_PREFIX = "create:pick_remove:";
+const QUICK_QUANTITY_PREFIX = "create:qty:";
+const QUICK_QUANTITIES = [1, 2, 3, 4, 5];
 
 function formatPrice(price: number | null): string {
   return price === null ? "precio no disponible" : `$${price.toLocaleString("es-CO")}`;
+}
+
+function quickQuantityButtons(): { label: string; value: string }[] {
+  return QUICK_QUANTITIES.map((n) => ({ label: String(n), value: `${QUICK_QUANTITY_PREFIX}${n}` }));
+}
+
+/** Pregunta de cantidad (§7) — un botón por cada cantidad de 1 a 5 para el caso común,
+ * más la opción de siempre de escribir el número para cualquier otra cantidad. */
+function quantityPromptMessage(unit: string, productName: string, note?: string): BotMessage {
+  const noteSuffix = note ? ` (${note})` : "";
+  return {
+    text: `¿Cuántos ${unit} de "${productName}" quieres?${noteSuffix} Toca una cantidad o escribe el número si es otra.`,
+    buttons: quickQuantityButtons(),
+  };
 }
 
 function groupButtons(groups: CatalogGroup[]) {
@@ -224,9 +240,7 @@ async function handleChoosingProduct(
       );
     }
     return {
-      reply: {
-        text: `¿Cuántos ${found.variant.unit} de "${found.groupName}" quieres? Escribe solo el número.`,
-      },
+      reply: quantityPromptMessage(found.variant.unit, found.groupName),
       nextState: CREATE_FLOW_STATES.AWAITING_QUANTITY,
       nextContext: {
         product_id: found.variant.product_id,
@@ -297,9 +311,7 @@ function handleChoosingUnit(context: ConversationContext, inbound: { callbackDat
     const found = findVariantAmongGroups(context, productId);
     if (found) {
       return {
-        reply: {
-          text: `¿Cuántos ${found.variant.unit} de "${found.groupName}" quieres? Escribe solo el número.`,
-        },
+        reply: quantityPromptMessage(found.variant.unit, found.groupName),
         nextState: CREATE_FLOW_STATES.AWAITING_QUANTITY,
         nextContext: {
           product_id: found.variant.product_id,
@@ -368,10 +380,14 @@ function itemPickerMessage(items: PendingItem[], prefix: string, question: strin
   };
 }
 
-function handleAwaitingQuantity(context: ConversationContext, inbound: { text: string }): StepResult {
-  const normalized = inbound.text.trim().replace(",", ".");
-  const quantity = Number(normalized);
+function handleAwaitingQuantity(
+  context: ConversationContext,
+  inbound: { text: string; callbackData?: string },
+): StepResult {
   const orderMeta = getOrderMeta(context);
+  const quantity = inbound.callbackData?.startsWith(QUICK_QUANTITY_PREFIX)
+    ? Number(inbound.callbackData.slice(QUICK_QUANTITY_PREFIX.length))
+    : Number(inbound.text.trim().replace(",", "."));
 
   if (!Number.isFinite(quantity) || quantity <= 0) {
     return {
@@ -474,9 +490,7 @@ async function handleReviewingOrder(
     const found = items.find((item) => item.product_id === productId);
     if (found) {
       return {
-        reply: {
-          text: `¿Cuántos ${found.unit} de "${found.product_name}" quieres? (tenías ${found.quantity}). Escribe solo el número.`,
-        },
+        reply: quantityPromptMessage(found.unit, found.product_name, `tenías ${found.quantity}`),
         nextState: CREATE_FLOW_STATES.AWAITING_QUANTITY,
         nextContext: {
           product_id: found.product_id,

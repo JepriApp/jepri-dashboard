@@ -141,6 +141,13 @@ describe("handleCreateOrderStep — CHOOSING_PRODUCT", () => {
     });
     expect(result.reply.text).toContain("Cebolla cabezona");
     expect(result.reply.text).toContain("kg");
+    expect(result.reply.buttons?.map((b) => b.value)).toEqual([
+      "create:qty:1",
+      "create:qty:2",
+      "create:qty:3",
+      "create:qty:4",
+      "create:qty:5",
+    ]);
   });
 
   it("elegir un grupo con varias unidades pregunta cuál, con precios formateados", async () => {
@@ -265,6 +272,21 @@ describe("handleCreateOrderStep — CHOOSING_UNIT", () => {
 
 describe("handleCreateOrderStep — AWAITING_QUANTITY", () => {
   const context = { product_id: "p-tomato-kg", product_name: "Tomate chonto", unit: "kg", items: [] };
+
+  it("tocar un botón de cantidad rápida (1-5) agrega el item sin necesitar texto", async () => {
+    const result = await handleCreateOrderStep(
+      fakeSupabase,
+      CUSTOMER_ID,
+      CREATE_FLOW_STATES.AWAITING_QUANTITY,
+      context,
+      { text: "", callbackData: "create:qty:4" },
+      PLAN_DATE,
+    );
+
+    expect((result.nextContext as Record<string, unknown>).items).toEqual([
+      { product_id: "p-tomato-kg", product_name: "Tomate chonto", unit: "kg", quantity: 4 },
+    ]);
+  });
 
   it("un número entero válido agrega el item y pasa a revisión con el resumen correcto", async () => {
     const result = await handleCreateOrderStep(
