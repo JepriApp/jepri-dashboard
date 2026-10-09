@@ -895,6 +895,9 @@ falla.
       mock de fallo en el insert no propaga — `npm run test` en verde, 136/136
 - [x] pgTAP (`bot_interaction_log_function.sql`, nuevo) — en verde
 - [x] `npx tsc --noEmit`, `npm run build` y `npm run lint` sin errores nuevos
+- [x] Manual, en staging: pedido `1514` creado desde el bot (2 búsquedas + el create_order
+      final) — las 3 quedaron en `bot_interaction_log` con `channel`/`payload`/`result`
+      correctos
 
 **Decisión de diseño — dónde vive el `logInteraction`:** en vez de instrumentar
 `lib/bot/services/orders.ts`/`products.ts` directamente (como sugería el plan original),
