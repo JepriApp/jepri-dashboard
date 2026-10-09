@@ -1,7 +1,14 @@
 import { Database } from "@/database.types";
 import { BotMessage } from "@/lib/bot/channel";
+import { CREATE_FLOW_STATES, handleCreateOrderStep, startCreateOrderFlow } from "@/lib/bot/flows/createOrder";
 import { ResolvedCustomer } from "@/lib/bot/services/auth";
-import { resetConversationState } from "@/lib/bot/services/conversation";
+import {
+  ConversationContext,
+  getConversationState,
+  IDLE_STATE,
+  resetConversationState,
+  setConversationState,
+} from "@/lib/bot/services/conversation";
 import { getActivePlanStatus } from "@/lib/bot/services/plan";
 import { getCurrentOrder } from "@/lib/bot/services/orders";
 import { SupabaseClient } from "@supabase/supabase-js";
@@ -19,6 +26,8 @@ const NOT_IMPLEMENTED_YET_MESSAGE: BotMessage = {
 const CALLBACK_CREATE_ORDER = "menu:create_order";
 const CALLBACK_VIEW_ORDER = "menu:view_order";
 const CALLBACK_CANCEL_ORDER = "menu:cancel_order";
+
+const CREATE_FLOW_STATE_VALUES: string[] = Object.values(CREATE_FLOW_STATES);
 
 function mainMenu(customerName: string | null): BotMessage {
   const greeting = customerName ? `¡Hola ${customerName}!` : "¡Hola!";
@@ -52,26 +61,53 @@ async function viewOrderMessage(
   };
 }
 
-async function computeReply(
+type Turn = { reply: BotMessage; nextState: string; nextContext: ConversationContext };
+
+function idleTurn(reply: BotMessage): Turn {
+  return { reply, nextState: IDLE_STATE, nextContext: {} };
+}
+
+async function computeTurn(
   supabaseClient: SupabaseClient<Database>,
   customer: ResolvedCustomer,
   inbound: InboundForDomain,
-): Promise<BotMessage> {
+): Promise<Turn> {
   const planStatus = await getActivePlanStatus(supabaseClient);
 
   if (!planStatus || !planStatus.is_within_cutoff) {
-    return NO_ACTIVE_WINDOW_MESSAGE;
+    return idleTurn(NO_ACTIVE_WINDOW_MESSAGE);
   }
 
+  // Los botones del Menú Principal siempre tienen prioridad — abandonan cualquier
+  // flujo en curso, incluso a mitad de camino (§8: "reinicio a idle al abandonar un
+  // flujo").
   if (inbound.callbackData === CALLBACK_VIEW_ORDER) {
-    return viewOrderMessage(supabaseClient, customer.customer_id);
+    return idleTurn(await viewOrderMessage(supabaseClient, customer.customer_id));
+  }
+  if (inbound.callbackData === CALLBACK_CANCEL_ORDER) {
+    return idleTurn(NOT_IMPLEMENTED_YET_MESSAGE);
+  }
+  if (inbound.callbackData === CALLBACK_CREATE_ORDER) {
+    const step = await startCreateOrderFlow(supabaseClient, customer.customer_id);
+    return { reply: step.reply, nextState: step.nextState, nextContext: step.nextContext };
   }
 
-  if (inbound.callbackData === CALLBACK_CREATE_ORDER || inbound.callbackData === CALLBACK_CANCEL_ORDER) {
-    return NOT_IMPLEMENTED_YET_MESSAGE;
+  // Ni un botón del menú — ¿estamos a mitad del flujo de "crear pedido"?
+  const conversation = await getConversationState(supabaseClient, customer.customer_id, inbound.channel);
+  if (CREATE_FLOW_STATE_VALUES.includes(conversation.state)) {
+    const step = await handleCreateOrderStep(
+      supabaseClient,
+      customer.customer_id,
+      conversation.state,
+      conversation.context,
+      inbound,
+      planStatus.plan_date,
+    );
+    return { reply: step.reply, nextState: step.nextState, nextContext: step.nextContext };
   }
 
-  return mainMenu(customer.name);
+  // idle (o expiró), sin callback reconocido -> Menú Principal.
+  return idleTurn(mainMenu(customer.name));
 }
 
 /**
@@ -79,24 +115,25 @@ async function computeReply(
  * vino de Telegram o WhatsApp. El webhook de cada canal ya resolvió la whitelist antes
  * de llamar esto (recibe el customer ya resuelto, nunca null).
  *
- * Todavía solo lectura: 📋 Ver pedido es la única opción conectada de verdad (Tarea
- * 13). 🛒 Crear y ❌ Cancelar devuelven un placeholder hasta las Tareas 15 y 17.
+ * Flujos conectados de verdad: 📋 Ver pedido (Tarea 13) y 🛒 Crear pedido (Tarea 15,
+ * `lib/bot/flows/createOrder.ts`). ❌ Cancelar devuelve un placeholder hasta la Tarea 17.
  *
- * Estado de conversación (§8, Tarea 14): todavía no hay ningún flujo de varios pasos
- * (eso empieza en la Tarea 15 con "crear pedido"), así que cada turno termina
- * reiniciando a 'idle' incondicionalmente — "reinicio a idle al terminar o abandonar
- * un flujo". Cuando la Tarea 15 agregue estados como awaiting_quantity, esas ramas de
- * computeReply van a llamar a setConversationState con un estado real en vez de pasar
- * por este reset; el resto sigue reiniciando a idle igual que ahora.
+ * Estado de conversación (§8): cada turno persiste el `nextState`/`nextContext` que
+ * decide `computeTurn` — `idle` reinicia (vía `resetConversationState`), cualquier otra
+ * cosa (los estados `create:*`) se guarda para el próximo mensaje.
  */
 export async function handleInboundMessage(
   supabaseClient: SupabaseClient<Database>,
   customer: ResolvedCustomer,
   inbound: InboundForDomain,
 ): Promise<BotMessage> {
-  const reply = await computeReply(supabaseClient, customer, inbound);
+  const { reply, nextState, nextContext } = await computeTurn(supabaseClient, customer, inbound);
 
-  await resetConversationState(supabaseClient, customer.customer_id, inbound.channel);
+  if (nextState === IDLE_STATE) {
+    await resetConversationState(supabaseClient, customer.customer_id, inbound.channel);
+  } else {
+    await setConversationState(supabaseClient, customer.customer_id, inbound.channel, nextState, nextContext);
+  }
 
   return reply;
 }

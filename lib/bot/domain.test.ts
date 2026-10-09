@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handleInboundMessage } from "@/lib/bot/domain";
 import { getActivePlanStatus } from "@/lib/bot/services/plan";
 import { getCurrentOrder } from "@/lib/bot/services/orders";
-import { resetConversationState } from "@/lib/bot/services/conversation";
+import { getConversationState, resetConversationState, setConversationState } from "@/lib/bot/services/conversation";
+import { handleCreateOrderStep, startCreateOrderFlow } from "@/lib/bot/flows/createOrder";
 
 vi.mock("@/lib/bot/services/plan", () => ({
   getActivePlanStatus: vi.fn(),
@@ -11,18 +12,40 @@ vi.mock("@/lib/bot/services/orders", () => ({
   getCurrentOrder: vi.fn(),
 }));
 vi.mock("@/lib/bot/services/conversation", () => ({
+  IDLE_STATE: "idle",
+  getConversationState: vi.fn(),
+  setConversationState: vi.fn(),
   resetConversationState: vi.fn(),
+}));
+vi.mock("@/lib/bot/flows/createOrder", () => ({
+  CREATE_FLOW_STATES: {
+    CHOOSING_PRODUCT: "create:choosing_product",
+    CHOOSING_UNIT: "create:choosing_unit",
+    AWAITING_QUANTITY: "create:awaiting_quantity",
+    AWAITING_CONFIRMATION: "create:awaiting_confirmation",
+  },
+  startCreateOrderFlow: vi.fn(),
+  handleCreateOrderStep: vi.fn(),
 }));
 
 const mockGetActivePlanStatus = vi.mocked(getActivePlanStatus);
 const mockGetCurrentOrder = vi.mocked(getCurrentOrder);
+const mockGetConversationState = vi.mocked(getConversationState);
+const mockSetConversationState = vi.mocked(setConversationState);
 const mockResetConversationState = vi.mocked(resetConversationState);
+const mockStartCreateOrderFlow = vi.mocked(startCreateOrderFlow);
+const mockHandleCreateOrderStep = vi.mocked(handleCreateOrderStep);
 
 // El cliente Supabase nunca se usa de verdad acá — todos los servicios que lo usan
 // están mockeados — así que un objeto vacío alcanza para satisfacer el tipo.
 const fakeSupabase = {} as Parameters<typeof handleInboundMessage>[0];
 const customer = { customer_id: "cust-1", name: "Ryuma" };
 const ACTIVE_WINDOW = { plan_id: "plan-1", plan_date: "2026-10-10", is_within_cutoff: true };
+const IDLE_CONVERSATION = { state: "idle", context: {} };
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("handleInboundMessage", () => {
   it("sin plan activo responde que no hay ventana de pedidos, sin importar el mensaje", async () => {
@@ -49,8 +72,9 @@ describe("handleInboundMessage", () => {
     expect(result.text).toMatch(/no hay ventana de pedidos activa/i);
   });
 
-  it("dentro de la ventana, sin callback, muestra el Menú Principal con las 3 opciones", async () => {
+  it("dentro de la ventana, en idle, sin callback, muestra el Menú Principal con las 3 opciones", async () => {
     mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockGetConversationState.mockResolvedValue(IDLE_CONVERSATION);
 
     const result = await handleInboundMessage(fakeSupabase, customer, {
       channel: "telegram",
@@ -68,6 +92,7 @@ describe("handleInboundMessage", () => {
 
   it("el saludo del menú no revienta si el cliente no tiene name", async () => {
     mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockGetConversationState.mockResolvedValue(IDLE_CONVERSATION);
 
     const result = await handleInboundMessage(
       fakeSupabase,
@@ -133,18 +158,6 @@ describe("handleInboundMessage", () => {
     expect(result.text).not.toContain("1 productos");
   });
 
-  it('"Crear pedido" todavía responde que no está disponible (Tarea 15)', async () => {
-    mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
-
-    const result = await handleInboundMessage(fakeSupabase, customer, {
-      channel: "telegram",
-      text: "",
-      callbackData: "menu:create_order",
-    });
-
-    expect(result.text).toMatch(/todavía no está disponible/i);
-  });
-
   it('"Cancelar pedido" todavía responde que no está disponible (Tarea 17)', async () => {
     mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
 
@@ -158,15 +171,107 @@ describe("handleInboundMessage", () => {
   });
 });
 
-describe("handleInboundMessage — estado de conversación (§8, Tarea 14)", () => {
-  it("reinicia la conversación a idle para el customer_id y channel correctos, al final de cada turno", async () => {
+describe('handleInboundMessage — "Crear pedido" (Tarea 15, dispatch hacia lib/bot/flows/createOrder)', () => {
+  it('"🛒 Crear nuevo pedido" arranca el flujo y persiste el estado que devuelve', async () => {
     mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockStartCreateOrderFlow.mockResolvedValue({
+      reply: { text: "elige un producto" },
+      nextState: "create:choosing_product",
+      nextContext: { groups: [] },
+    });
 
-    await handleInboundMessage(fakeSupabase, customer, { channel: "telegram", text: "hola" });
+    const result = await handleInboundMessage(fakeSupabase, customer, {
+      channel: "telegram",
+      text: "",
+      callbackData: "menu:create_order",
+    });
 
-    expect(mockResetConversationState).toHaveBeenCalledWith(fakeSupabase, "cust-1", "telegram");
+    expect(result.text).toBe("elige un producto");
+    expect(mockStartCreateOrderFlow).toHaveBeenCalledWith(fakeSupabase, "cust-1");
+    expect(mockSetConversationState).toHaveBeenCalledWith(
+      fakeSupabase,
+      "cust-1",
+      "telegram",
+      "create:choosing_product",
+      { groups: [] },
+    );
+    expect(mockResetConversationState).not.toHaveBeenCalled();
   });
 
+  it("un mensaje a mitad del flujo se despacha a handleCreateOrderStep con el estado/contexto guardados", async () => {
+    mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockGetConversationState.mockResolvedValue({
+      state: "create:awaiting_quantity",
+      context: { product_id: "p1", product_name: "Tomate", unit: "kg" },
+    });
+    mockHandleCreateOrderStep.mockResolvedValue({
+      reply: { text: "resumen..." },
+      nextState: "create:awaiting_confirmation",
+      nextContext: { product_id: "p1", quantity: 3 },
+    });
+
+    const result = await handleInboundMessage(fakeSupabase, customer, {
+      channel: "telegram",
+      text: "3",
+    });
+
+    expect(result.text).toBe("resumen...");
+    expect(mockHandleCreateOrderStep).toHaveBeenCalledWith(
+      fakeSupabase,
+      "cust-1",
+      "create:awaiting_quantity",
+      { product_id: "p1", product_name: "Tomate", unit: "kg" },
+      { channel: "telegram", text: "3" },
+      "2026-10-10",
+    );
+    expect(mockSetConversationState).toHaveBeenCalledWith(
+      fakeSupabase,
+      "cust-1",
+      "telegram",
+      "create:awaiting_confirmation",
+      { product_id: "p1", quantity: 3 },
+    );
+  });
+
+  it("cuando el paso del flujo termina (nextState idle), se reinicia en vez de guardar un estado", async () => {
+    mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockGetConversationState.mockResolvedValue({
+      state: "create:awaiting_confirmation",
+      context: { product_id: "p1", quantity: 3 },
+    });
+    mockHandleCreateOrderStep.mockResolvedValue({
+      reply: { text: "✅ Pedido 1326 creado." },
+      nextState: "idle",
+      nextContext: {},
+    });
+
+    const result = await handleInboundMessage(fakeSupabase, customer, {
+      channel: "telegram",
+      text: "",
+      callbackData: "create:confirm",
+    });
+
+    expect(result.text).toBe("✅ Pedido 1326 creado.");
+    expect(mockResetConversationState).toHaveBeenCalledWith(fakeSupabase, "cust-1", "telegram");
+    expect(mockSetConversationState).not.toHaveBeenCalled();
+  });
+
+  it('tocar "Ver pedido" a mitad del flujo de crear lo abandona (no llama a handleCreateOrderStep)', async () => {
+    mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockGetCurrentOrder.mockResolvedValue(null);
+
+    await handleInboundMessage(fakeSupabase, customer, {
+      channel: "telegram",
+      text: "",
+      callbackData: "menu:view_order",
+    });
+
+    expect(mockHandleCreateOrderStep).not.toHaveBeenCalled();
+    expect(mockResetConversationState).toHaveBeenCalledWith(fakeSupabase, "cust-1", "telegram");
+  });
+});
+
+describe("handleInboundMessage — estado de conversación (§8, Tarea 14)", () => {
   it("también reinicia cuando no hay ventana activa (abandonar un flujo cuenta igual)", async () => {
     mockGetActivePlanStatus.mockResolvedValue(null);
 
@@ -177,6 +282,7 @@ describe("handleInboundMessage — estado de conversación (§8, Tarea 14)", () 
 
   it("no hay fugas de estado entre distintos clientes — cada uno reinicia solo el suyo", async () => {
     mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockGetConversationState.mockResolvedValue(IDLE_CONVERSATION);
     const otherCustomer = { customer_id: "cust-2", name: "Otro" };
 
     await handleInboundMessage(fakeSupabase, customer, { channel: "telegram", text: "hola" });
