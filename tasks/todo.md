@@ -422,11 +422,11 @@ en vez de dejarlos pasar crudos, por consistencia con el resto de la capa de ser
 §6 del diseño. Solo el contrato, sin implementación.
 
 **Acceptance criteria:**
-- [ ] Los 3 tipos existen con los campos exactos de §6
-- [ ] No hay ninguna referencia a Telegram en este archivo
+- [x] Los 3 tipos existen con los campos exactos de §6
+- [x] No hay ninguna referencia a Telegram en este archivo
 
 **Verification:**
-- [ ] `npm run build` pasa
+- [x] `npm run build` y `npm run lint` pasan
 
 **Dependencies:** None (puede hacerse en paralelo con Fase 1/2)
 

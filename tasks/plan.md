@@ -93,7 +93,7 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
 - [x] `npm run build`, `npm run lint` y `npm run test` pasan
 
 ### Fase 3: Canal Telegram
-- [ ] Tarea 10: Tipos de desacoplamiento de canal (`lib/bot/channel.ts`)
+- [x] Tarea 10: Tipos de desacoplamiento de canal (`lib/bot/channel.ts`)
 - [ ] Tarea 11: Adaptador de Telegram (`lib/bot/adapters/telegram.ts`)
 - [ ] Tarea 12: Webhook `/api/bot/telegram` — secreto, idempotencia, whitelist
 - [ ] Tarea 13: Flujo "ver pedido" de punta a punta (vertical slice mínimo)
