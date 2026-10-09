@@ -1765,6 +1765,14 @@ export type Database = {
           plan_id: string
         }[]
       }
+      bot_get_active_plan_status: {
+        Args: never
+        Returns: {
+          is_within_cutoff: boolean
+          plan_date: string
+          plan_id: string
+        }[]
+      }
       bot_get_current_order: {
         Args: { p_customer_id: string }
         Returns: {
