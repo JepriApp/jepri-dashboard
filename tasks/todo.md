@@ -18,7 +18,7 @@ instancia está al día con Neptuno antes de seguir.
 **Acceptance criteria:**
 - [x] `TELEGRAM_BOT_TOKEN` obtenido y guardado en `.env.local` (no commiteado) — bot `@Jepridevbot`
 - [x] Un `customer` de prueba existe en `10.85.96.51:8000` con `whatsapp_id` = chat_id numérico de una cuenta de Telegram de prueba — `id=28679e91-8caa-45f4-b5f5-3ed04f9decf9`, `whatsapp_id=8703567026`
-- [x] Existe un `distribution_plan` en `10.85.96.51:8000` con `status='planned'` y `plan_date` mayor a hoy — `id=b309a891-cfab-48e7-b2a1-f0c44e59971f`, `plan_date=2026-10-09`
+- [x] Existe un `distribution_plan` en `10.85.96.51:8000` con `status='planned'` y `plan_date` mayor a hoy — `id=15dd9d04-d2f8-4cd1-b70a-8f4049ac56bc`, `plan_date=2026-10-09` (recreado en la Tarea 8 — el original `b309a891...` se perdió en un incidente de fixtures de test, ver nota en la Tarea 8)
 - [x] El esquema de `10.85.96.51:8000` (tablas/vistas de `sale_order`, `distribution_plan`, `customer`) está al día con Neptuno — confirmado tras restauración, `customer.whatsapp_id` presente
 
 **Verification:**
@@ -340,12 +340,29 @@ que llaman a las RPCs de la Tarea 6, parseando el código estable antes de `:` e
 mensaje SQL crudo.
 
 **Acceptance criteria:**
-- [ ] Las 4 funciones existen con las firmas de §4
-- [ ] Cualquier error de Postgres se traduce a `BotServiceError` con uno de los 8 códigos conocidos, nunca se re-lanza el texto SQL crudo
+- [x] Las 4 funciones existen con las firmas de §4
+- [x] Cualquier error de Postgres se traduce a `BotServiceError` con uno de los 8 códigos conocidos, nunca se re-lanza el texto SQL crudo (confirmado también el fallback `UNKNOWN` para mensajes sin ninguno de los 8)
 
 **Verification:**
-- [ ] Vitest: un caso por cada uno de los 8 códigos de error, confirmando que `BotServiceError.code` los captura — `npm run test` en verde
-- [ ] `npm run build` y `npm run lint` pasan
+- [x] Vitest unitario (`lib/bot/errors.test.ts`, 12 tests): los 8 códigos vía `it.each`, más `UNKNOWN`, más que el objeto es `instanceof Error` — sin DB, puro parseo de texto
+- [x] Vitest de integración (`lib/bot/services/orders.test.ts`, 7 tests) contra staging real: camino feliz completo (crear→ver→modificar→cancelar) y 5 casos representativos de error de punta a punta (`NO_ACTIVE_PLAN`, `ORDER_ALREADY_EXISTS`, `ORDER_NOT_FOUND` x2, `ORDER_NOT_CANCELLABLE`) — confirma que el error real de Postgres efectivamente llega envuelto como `BotServiceError` con el `.code` correcto, no solo el parseo en aislado
+- [x] `npm run build` y `npm run lint` pasan — 23/23 tests en verde, 59 problemas de lint preexistentes sin cambios
+
+**Decisión de alcance:** no se repitió la matriz exhaustiva de las 8 reglas de negocio
+aquí — eso ya lo cubre `bot_write_functions.sql` (pgTAP, Tarea 6) a nivel SQL. Esta tarea
+prueba la pieza nueva: que el *mapeo* Postgres → `BotServiceError` funciona de punta a
+punta, no que cada regla de negocio sea correcta (eso ya está probado).
+
+**Incidente durante la tarea (y su fix):** las primeras corridas de
+`orders.test.ts` fallaban porque el fixture de staging (`withSingleActivePlan`,
+`lib/bot/test-fixtures.ts`) intentaba borrar el `distribution_plan` temporal antes de
+borrar los `sale_order` que todavía lo referenciaban (`bot_cancel_order` nunca hace
+`DELETE`, así que la fila cancelada seguía ahí) — fallaba por FK, y como la excepción
+interrumpía el `finally` *antes* de reinsertar el plan original guardado, se perdió el
+`distribution_plan` de prueba real de la Tarea 1. Se corrigió el orden (borrar
+`sale_order` del plan temporal antes de restaurar) y se recreó el plan de prueba
+(nuevo id, mismo `plan_date`) — ver nota actualizada en la Tarea 1. Nada de esto tocó las
+124 filas de `distribution_plan` reales restauradas del backup, todas intactas.
 
 **Dependencies:** Tarea 6
 
@@ -353,6 +370,8 @@ mensaje SQL crudo.
 - `lib/bot/services/orders.ts`
 - `lib/bot/services/orders.test.ts`
 - `lib/bot/errors.ts`
+- `lib/bot/errors.test.ts`
+- `lib/bot/test-fixtures.ts` (nuevo, reutilizable — fixtures privilegiados vía `pg` para las Tareas 9+)
 
 **Estimated scope:** M (3 archivos, mapeo de errores no trivial)
 

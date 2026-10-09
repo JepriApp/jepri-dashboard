@@ -85,7 +85,7 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
 
 ### Fase 2: Capa de servicio TypeScript
 - [x] Tarea 7: Servicio de catálogo (`lib/bot/services/products.ts`)
-- [ ] Tarea 8: Servicio de pedidos (`lib/bot/services/orders.ts`)
+- [x] Tarea 8: Servicio de pedidos (`lib/bot/services/orders.ts`)
 - [ ] Tarea 9: Servicio de whitelist (`lib/bot/services/auth.ts`)
 
 ### Checkpoint: Fase 2
