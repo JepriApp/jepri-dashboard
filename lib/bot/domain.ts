@@ -1,4 +1,5 @@
 import { Database } from "@/database.types";
+import { notifyOps } from "@/lib/bot/adapters/telegram";
 import { BotMessage } from "@/lib/bot/channel";
 import {
   CONVERSATION_ENDED_NOTE,
@@ -7,7 +8,7 @@ import {
   startCreateOrderFlow,
   startEditOrderFlow,
 } from "@/lib/bot/flows/createOrder";
-import { BotServiceError } from "@/lib/bot/errors";
+import { BotServiceError, isUnexpectedError } from "@/lib/bot/errors";
 import { errorResult, logInteraction } from "@/lib/bot/services/audit";
 import { ResolvedCustomer } from "@/lib/bot/services/auth";
 import {
@@ -114,6 +115,12 @@ async function handleCancelConfirmStep(
         payload: { order_id: orderId },
         result: errorResult(error),
       });
+      if (isUnexpectedError(error)) {
+        const message = error instanceof Error ? error.message : String(error);
+        await notifyOps(`⚠️ Error no controlado en cancel_order (customer ${customerId}): ${message}`).catch(
+          () => {},
+        );
+      }
       return idleTurn({ text: `${cancelErrorMessage(error)}${CONVERSATION_ENDED_NOTE}` });
     }
   }

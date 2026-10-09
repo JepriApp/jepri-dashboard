@@ -9,6 +9,7 @@ import {
 import { getFrequentProducts, searchCatalog } from "@/lib/bot/services/products";
 import { createOrder, updateOrder } from "@/lib/bot/services/orders";
 import { logInteraction } from "@/lib/bot/services/audit";
+import { notifyOps } from "@/lib/bot/adapters/telegram";
 import { BotServiceError } from "@/lib/bot/errors";
 
 vi.mock("@/lib/bot/services/products", () => ({
@@ -23,12 +24,16 @@ vi.mock("@/lib/bot/services/audit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/bot/services/audit")>()),
   logInteraction: vi.fn(),
 }));
+vi.mock("@/lib/bot/adapters/telegram", () => ({
+  notifyOps: vi.fn().mockResolvedValue(undefined),
+}));
 
 const mockGetFrequentProducts = vi.mocked(getFrequentProducts);
 const mockSearchCatalog = vi.mocked(searchCatalog);
 const mockCreateOrder = vi.mocked(createOrder);
 const mockUpdateOrder = vi.mocked(updateOrder);
 const mockLogInteraction = vi.mocked(logInteraction);
+const mockNotifyOps = vi.mocked(notifyOps);
 
 const fakeSupabase = {} as Parameters<typeof startCreateOrderFlow>[0];
 const CUSTOMER_ID = "cust-1";
@@ -663,6 +668,7 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
     expect(result.reply.text).toMatch(expectedPattern);
     expect(result.reply.text).not.toContain("detalle técnico interno");
     expect(result.nextState).toBe("idle");
+    expect(mockNotifyOps).not.toHaveBeenCalled(); // código de negocio esperado — no es una alerta de ops (Tarea 20)
   });
 
   it.each([
@@ -684,9 +690,10 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
     expect(result.reply.text).toMatch(expectedPattern);
     expect(result.reply.text).not.toContain("detalle técnico interno");
     expect(result.nextState).toBe("idle");
+    expect(mockNotifyOps).not.toHaveBeenCalled(); // código de negocio esperado — no es una alerta de ops (Tarea 20)
   });
 
-  it("un error inesperado (no BotServiceError) responde un mensaje genérico, nunca el crudo", async () => {
+  it("un error inesperado (no BotServiceError) responde un mensaje genérico, nunca el crudo, y dispara notifyOps (Tarea 20)", async () => {
     mockCreateOrder.mockRejectedValue(new Error("ECONNRESET algo de red"));
 
     const result = await handleCreateOrderStep(
@@ -708,6 +715,24 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
       payload: { order_id: undefined, items: [{ product_id: "p-tomato-kg", required_quantity: 3 }] },
       result: { error: "UNKNOWN" },
     });
+    expect(mockNotifyOps).toHaveBeenCalledWith(expect.stringMatching(/error no controlado.*create_order/i));
+    expect(mockNotifyOps.mock.calls[0][0]).toContain("ECONNRESET");
+  });
+
+  it('un BotServiceError con code "UNKNOWN" también cuenta como no controlado y dispara notifyOps', async () => {
+    mockUpdateOrder.mockRejectedValue(new BotServiceError("UNKNOWN", "algo raro: sin código reconocido"));
+
+    const result = await handleCreateOrderStep(
+      fakeSupabase,
+      CUSTOMER_ID,
+      CREATE_FLOW_STATES.REVIEWING_ORDER,
+      { items: oneItem, order_id: "order-1", order_code: "1326" },
+      { channel: "telegram", text: "", callbackData: "create:confirm" },
+      PLAN_DATE,
+    );
+
+    expect(result.reply.text).toMatch(/error inesperado/i);
+    expect(mockNotifyOps).toHaveBeenCalledWith(expect.stringMatching(/error no controlado.*update_order/i));
   });
 
   it("abortar no crea ningún pedido", async () => {

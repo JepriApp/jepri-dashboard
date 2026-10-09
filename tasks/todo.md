@@ -933,19 +933,48 @@ migración + pgTAP nuevos) antes de poder insertarle filas desde el bot.
 (los 8 códigos de §7) de errores no controlados, y solo estos últimos disparan `notifyOps`.
 
 **Acceptance criteria:**
-- [ ] Un error no controlado dispara un mensaje en el chat de ops
-- [ ] Ninguno de los 8 códigos de error de negocio dispara esa alerta
-- [ ] El cliente igual recibe una respuesta amigable aunque haya ocurrido un error no controlado
+- [x] Un error no controlado dispara un mensaje en el chat de ops
+- [x] Ninguno de los 8 códigos de error de negocio dispara esa alerta
+- [x] El cliente igual recibe una respuesta amigable aunque haya ocurrido un error no controlado
 
 **Verification:**
-- [ ] Vitest: mock de un error no controlado confirma la llamada a `notifyOps`; mock de cada código de negocio confirma que NO se llama — `npm run test` en verde
+- [x] Vitest: mock de un error no controlado confirma la llamada a `notifyOps`; mock de
+      cada uno de los 8 códigos de negocio confirma que NO se llama — `npm run test` en
+      verde, 140/140
+- [x] `npx tsc --noEmit`, `npm run build` y `npm run lint` sin errores nuevos
 - [ ] Manual, en staging: forzar un error real y confirmar el mensaje en el chat de ops
+
+**Decisión de diseño — dos capas de red de seguridad:**
+1. **Capa interna** (`createOrder.ts`/`domain.ts`): los catches que ya existían alrededor
+   de `createOrder`/`updateOrder`/`cancelOrder` (Tareas 15/17/18) ahora también llaman
+   `notifyOps` cuando `isUnexpectedError(error)` (nuevo helper en `lib/bot/errors.ts`:
+   true si no es un `BotServiceError`, o si lo es pero con `code === "UNKNOWN"`) — el
+   cliente sigue recibiendo el mismo mensaje amigable de siempre, solo se agrega la
+   alerta cuando corresponde.
+2. **Capa externa** (`app/api/bot/telegram/route.ts`): un `try/catch` nuevo alrededor de
+   todo el cuerpo del webhook (después del chequeo de secreto) atrapa cualquier cosa que
+   se escape de la capa interna (ej. `getActivePlanStatus`/`getConversationState`/
+   `resolveCustomerCandidates` fallando) — dispara `notifyOps` y le manda al cliente un
+   mensaje genérico ("Ocurrió un error inesperado...") en vez de dejarlo sin ninguna
+   respuesta. Siempre responde 200 (ya veníamos haciendo esto para no gatillar reintentos
+   de Telegram).
+
+**Decisión de diseño — `notifyOps` importado directo en domain.ts/createOrder.ts:** rompe
+en principio el desacople de canal (§6), pero es la excepción explícita que ya documenta
+§10: las alertas de ops **siempre** van a Telegram sin importar el canal del cliente (a
+diferencia de las respuestas al cliente, que sí son 100% channel-agnostic vía
+`BotMessage`). No se justificaba una abstracción nueva para un solo destino fijo.
 
 **Dependencies:** Tarea 11, Tarea 12
 
 **Files likely touched:**
-- `app/api/bot/telegram/route.ts`
-- `lib/bot/domain.ts`
+- `app/api/bot/telegram/route.ts`, `app/api/bot/telegram/route.errors.test.ts` (nuevo —
+  `route.test.ts` se mantiene 100% integración real a propósito, así que la red de
+  seguridad externa se probó en un archivo separado que sí mockea servicios)
+- `lib/bot/domain.ts`, `lib/bot/domain.test.ts`
+- `lib/bot/flows/createOrder.ts`, `lib/bot/flows/createOrder.test.ts`
+- `lib/bot/errors.ts` (nuevo: `isUnexpectedError`)
+- `lib/bot/adapters/telegram.ts` (comentario desactualizado corregido)
 
 **Estimated scope:** S
 

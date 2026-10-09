@@ -1,6 +1,7 @@
 import { Database } from "@/database.types";
+import { notifyOps } from "@/lib/bot/adapters/telegram";
 import { BotMessage } from "@/lib/bot/channel";
-import { BotServiceError } from "@/lib/bot/errors";
+import { BotServiceError, isUnexpectedError } from "@/lib/bot/errors";
 import { errorResult, logInteraction } from "@/lib/bot/services/audit";
 import { ConversationContext } from "@/lib/bot/services/conversation";
 import { CurrentOrder, createOrder, updateOrder } from "@/lib/bot/services/orders";
@@ -577,6 +578,11 @@ async function handleReviewingOrder(
         payload: { order_id: orderMeta?.order_id, items: itemInputs },
         result: errorResult(error),
       });
+      if (isUnexpectedError(error)) {
+        const action = orderMeta ? "update_order" : "create_order";
+        const message = error instanceof Error ? error.message : String(error);
+        await notifyOps(`⚠️ Error no controlado en ${action} (customer ${customerId}): ${message}`).catch(() => {});
+      }
       return {
         reply: { text: `${orderErrorMessage(error, orderMeta !== null)}${CONVERSATION_ENDED_NOTE}` },
         nextState: "idle",

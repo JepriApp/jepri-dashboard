@@ -57,3 +57,13 @@ export function parsePostgresError(error: { message: string }): BotServiceError 
 
   return new BotServiceError("UNKNOWN", error.message);
 }
+
+/**
+ * Distingue un error de negocio esperado (uno de los 8 códigos, ej. PAST_CUTOFF) de uno
+ * no controlado (Tarea 20, §10) — "UNKNOWN" cuenta como no controlado: es la etiqueta de
+ * `parsePostgresError` para un error real de infraestructura que no trae ninguno de los
+ * 8 códigos. Solo los no controlados deben disparar `notifyOps`.
+ */
+export function isUnexpectedError(error: unknown): boolean {
+  return !(error instanceof BotServiceError) || error.code === "UNKNOWN";
+}

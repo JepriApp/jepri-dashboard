@@ -10,6 +10,7 @@ import {
   startEditOrderFlow,
 } from "@/lib/bot/flows/createOrder";
 import { logInteraction } from "@/lib/bot/services/audit";
+import { notifyOps } from "@/lib/bot/adapters/telegram";
 import { BotServiceError } from "@/lib/bot/errors";
 
 vi.mock("@/lib/bot/services/plan", () => ({
@@ -22,6 +23,9 @@ vi.mock("@/lib/bot/services/orders", () => ({
 vi.mock("@/lib/bot/services/audit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/bot/services/audit")>()),
   logInteraction: vi.fn(),
+}));
+vi.mock("@/lib/bot/adapters/telegram", () => ({
+  notifyOps: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/lib/bot/services/conversation", () => ({
   IDLE_STATE: "idle",
@@ -46,6 +50,7 @@ const mockGetActivePlanStatus = vi.mocked(getActivePlanStatus);
 const mockGetCurrentOrder = vi.mocked(getCurrentOrder);
 const mockCancelOrder = vi.mocked(cancelOrder);
 const mockLogInteraction = vi.mocked(logInteraction);
+const mockNotifyOps = vi.mocked(notifyOps);
 const mockGetConversationState = vi.mocked(getConversationState);
 const mockSetConversationState = vi.mocked(setConversationState);
 const mockResetConversationState = vi.mocked(resetConversationState);
@@ -305,6 +310,27 @@ describe('handleInboundMessage — "Cancelar pedido" (Tarea 18)', () => {
       payload: { order_id: "order-1" },
       result: { error: code },
     });
+    expect(mockNotifyOps).not.toHaveBeenCalled(); // código de negocio esperado — no es una alerta de ops (Tarea 20)
+  });
+
+  it("un error no controlado al cancelar también responde amigable, pero sí dispara notifyOps (Tarea 20)", async () => {
+    mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockGetConversationState.mockResolvedValue({
+      state: "cancel:confirming",
+      context: { order_id: "order-1", order_code: "1326" },
+    });
+    mockCancelOrder.mockRejectedValue(new Error("ECONNRESET algo de red"));
+
+    const result = await handleInboundMessage(fakeSupabase, customer, {
+      channel: "telegram",
+      text: "",
+      callbackData: "cancel:confirm",
+    });
+
+    expect(result.text).toMatch(/error inesperado/i);
+    expect(result.text).not.toContain("ECONNRESET");
+    expect(mockNotifyOps).toHaveBeenCalledWith(expect.stringMatching(/error no controlado.*cancel_order/i));
+    expect(mockNotifyOps.mock.calls[0][0]).toContain("ECONNRESET");
   });
 });
 

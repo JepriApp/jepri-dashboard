@@ -122,7 +122,7 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
 
 ### Fase 5: Dureza operativa
 - [x] Tarea 19: Auditoría — `bot_interaction_log` en cada acción de dominio
-- [ ] Tarea 20: Alertas de fallos — `notifyOps` en errores no controlados
+- [x] Tarea 20: Alertas de fallos — `notifyOps` en errores no controlados
 - [ ] Tarea 21: Sistema de API keys + rutas HTTP `/api/bot/orders`, `/api/bot/products/*`
 
 ### Checkpoint: Fase 5
