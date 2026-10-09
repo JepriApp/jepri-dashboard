@@ -244,10 +244,13 @@ function handleChoosingUnit(context: ConversationContext, inbound: { callbackDat
   };
 }
 
+function formatItemLines(items: PendingItem[]): string {
+  return items.map((item) => `• ${item.quantity} ${item.unit} de "${item.product_name}"`).join("\n");
+}
+
 function reviewMessage(items: PendingItem[]): BotMessage {
-  const lines = items.map((item) => `• ${item.quantity} ${item.unit} de "${item.product_name}"`);
   return {
-    text: `Tu pedido hasta ahora:\n${lines.join("\n")}\n\n¿Agregas otro producto o confirmas el pedido?`,
+    text: `Tu pedido hasta ahora:\n${formatItemLines(items)}\n\n¿Agregas otro producto o confirmas el pedido?`,
     buttons: [
       { label: "➕ Agregar otro producto", value: CALLBACK_ADD_MORE },
       { label: "✅ Confirmar pedido", value: CALLBACK_CONFIRM },
@@ -326,7 +329,9 @@ async function handleReviewingOrder(
         items.map((item) => ({ product_id: item.product_id, required_quantity: item.quantity })),
       );
       return {
-        reply: { text: `✅ Pedido ${created.order_code} creado. Se entrega el ${planDate}.` },
+        reply: {
+          text: `✅ Pedido ${created.order_code} creado. Se entrega el ${planDate}.\n\n${formatItemLines(items)}`,
+        },
         nextState: "idle",
         nextContext: {},
       };

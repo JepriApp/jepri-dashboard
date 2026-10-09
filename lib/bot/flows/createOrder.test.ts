@@ -330,13 +330,14 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
     ]);
     expect(result.reply.text).toContain("1326");
     expect(result.reply.text).toContain(PLAN_DATE);
+    expect(result.reply.text).toContain('3 kg de "Tomate chonto"');
     expect(result.nextState).toBe("idle");
   });
 
-  it("confirmar con varios items los manda todos juntos a createOrder", async () => {
+  it("confirmar con varios items los manda todos juntos a createOrder y los resume en el mensaje final", async () => {
     mockCreateOrder.mockResolvedValue({ order_id: "order-2", order_code: "1327" });
 
-    await handleCreateOrderStep(
+    const result = await handleCreateOrderStep(
       fakeSupabase,
       CUSTOMER_ID,
       CREATE_FLOW_STATES.REVIEWING_ORDER,
@@ -349,6 +350,8 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
       { product_id: "p-tomato-kg", required_quantity: 3 },
       { product_id: "p-onion-kg", required_quantity: 2 },
     ]);
+    expect(result.reply.text).toContain('3 kg de "Tomate chonto"');
+    expect(result.reply.text).toContain('2 kg de "Cebolla cabezona"');
   });
 
   it('"agregar otro producto" vuelve a elegir producto conservando los items acumulados', async () => {
