@@ -4,6 +4,7 @@ import { POST } from "./route";
 
 // Cliente de prueba de la Tarea 1 (customer.whatsapp_id=8703567026), en staging.
 const WHITELISTED_CHAT_ID = 8703567026;
+const WHITELISTED_CUSTOMER_ID = "28679e91-8caa-45f4-b5f5-3ed04f9decf9";
 const NOT_WHITELISTED_CHAT_ID = 1;
 const WEBHOOK_SECRET = "test-webhook-secret-tarea-12";
 
@@ -64,9 +65,16 @@ async function cleanupUpdateIds(ids: number[]) {
 }
 
 describe("POST /api/bot/telegram", () => {
-  afterEach(() => {
+  afterEach(async () => {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
+    // handleInboundMessage (Tarea 14) reinicia bot_conversation_state a 'idle' en
+    // cada turno — deja una fila real para el cliente whitelisteado.
+    await withPrivilegedClient(async (client) => {
+      await client.query("delete from bot_conversation_state where customer_id = $1", [
+        WHITELISTED_CUSTOMER_ID,
+      ]);
+    });
   });
 
   it("sin el secreto correcto devuelve 401 y no toca bot_processed_update", async () => {

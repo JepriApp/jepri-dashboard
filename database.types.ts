@@ -1773,6 +1773,14 @@ export type Database = {
           plan_id: string
         }[]
       }
+      bot_get_conversation_state: {
+        Args: { p_channel: string; p_customer_id: string }
+        Returns: {
+          context: Json
+          state: string
+          updated_at: string
+        }[]
+      }
       bot_get_current_order: {
         Args: { p_customer_id: string }
         Returns: {
@@ -1809,6 +1817,10 @@ export type Database = {
           canonical_name: string
           variants: Json
         }[]
+      }
+      bot_set_conversation_state: {
+        Args: { p_channel: string; p_context: Json; p_customer_id: string; p_state: string }
+        Returns: undefined
       }
       bot_update_order: {
         Args: { p_customer_id: string; p_items: Json; p_order_id: string }

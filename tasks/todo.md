@@ -588,19 +588,47 @@ entre pasos (§8): transición de estados, expiración por inactividad (15 min),
 `idle` al terminar o abandonar un flujo.
 
 **Acceptance criteria:**
-- [ ] Cada transición de estado persiste con el `context` correcto
-- [ ] Una conversación con `updated_at` de más de 15 minutos vuelve al Menú Principal
-- [ ] No hay fugas de estado entre distintos `customer_id`
+- [x] Cada transición de estado persiste con el `context` correcto
+- [x] Una conversación con `updated_at` de más de 15 minutos vuelve al Menú Principal
+- [x] No hay fugas de estado entre distintos `customer_id`
 
 **Verification:**
-- [ ] Vitest: transiciones de estado y expiración, con tiempo simulado (`vi.useFakeTimers`) — `npm run test` en verde
+- [x] Vitest (`lib/bot/services/conversation.test.ts`, 7 tests) con tiempo simulado (`vi.useFakeTimers({ toFake: ["Date"] })`, solo `Date` — deja `setTimeout`/red reales para no colgar el round-trip a staging dentro del mismo test): transiciones, sobreescritura sin duplicar fila, canales independientes, expira a los 16 min, NO expira a los 14 min (control) — `npm run test` en verde, 70/70 totales
+- [x] `lib/bot/domain.test.ts` (3 tests nuevos) confirma que `handleInboundMessage` reinicia a `idle` con el `customer_id`/`channel` correctos en cada turno, incluyendo dos clientes distintos en la misma corrida sin mezclarse (criterio de "no fugas")
+
+**Hallazgo faltante corregido:** mismo patrón de siempre — `bot_conversation_state` tiene
+RLS sin policies, así que hicieron falta `bot_get_conversation_state` y
+`bot_set_conversation_state` (`SECURITY DEFINER`, migración + pgTAP nuevos, 60/60
+asserts totales) antes de poder tocarla desde TypeScript.
+
+**Decisión de diseño:** la expiración de 15 minutos se calcula en TypeScript
+(`Date.now() - updatedAtMs`), no en la función SQL — así se puede probar con
+`vi.useFakeTimers` sin tener que manipular `now()` dentro de Postgres. La función SQL
+solo devuelve el estado crudo tal cual está guardado.
+
+**Alcance real de la integración en `domain.ts`:** todavía no existe ningún flujo de
+varios pasos (eso empieza en la Tarea 15), así que no hay nada que "continuar" leyendo
+el estado — por ahora `handleInboundMessage` solo llama a `resetConversationState`
+incondicionalmente al final de cada turno (extraído a un único punto de salida vía
+`computeReply` + reset). Cuando la Tarea 15 agregue estados reales
+(`awaiting_quantity`, etc.), esas ramas van a llamar a `setConversationState` en vez de
+pasar por este reset — la lectura (`getConversationState`) ya está lista y probada para
+que la usen directo.
+
+**Bug de tipos atrapado solo por el build completo:** `Record<string, unknown>` no es
+asignable al tipo `Json` generado — Vitest no chequea tipos (usa esbuild, transpile-only),
+así que esto solo lo encontró `npm run build`. Se corrigió con un alias
+`ConversationContext = Record<string, Json>`. Recordatorio para las próximas tareas:
+`npm run test` en verde no garantiza que `npm run build` también lo esté.
 
 **Dependencies:** Tarea 13, Tarea 4 (tabla)
 
 **Files likely touched:**
 - `lib/bot/domain.ts`
+- `lib/bot/domain.test.ts`
 - `lib/bot/services/conversation.ts`
 - `lib/bot/services/conversation.test.ts`
+- `supabase/migrations/20261008050000_bot_conversation_state_functions.sql` (nuevo, faltaba de la Tarea 6)
 
 **Estimated scope:** M (3 archivos)
 

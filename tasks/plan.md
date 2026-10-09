@@ -106,7 +106,7 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
 - [x] Vitest cubre `parseInbound`/`sendMessage`/validación de secreto sin depender de Telegram real
 
 ### Fase 4: Flujos de pedido
-- [ ] Tarea 14: Estado de conversación (`bot_conversation_state`) en el dominio del bot
+- [x] Tarea 14: Estado de conversación (`bot_conversation_state`) en el dominio del bot
 - [ ] Tarea 15: Flujo "crear pedido" de punta a punta
 - [ ] Tarea 16: Flujo "modificar pedido" de punta a punta
 - [ ] Tarea 17: Flujo "cancelar pedido" de punta a punta

@@ -51,6 +51,7 @@ export async function POST(req: Request) {
   }
 
   const reply = await handleInboundMessage(supabase, customer, {
+    channel: inbound.channel,
     text: inbound.text,
     callbackData: inbound.callbackData,
   });
