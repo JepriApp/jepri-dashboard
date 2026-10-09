@@ -96,12 +96,12 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
 - [x] Tarea 10: Tipos de desacoplamiento de canal (`lib/bot/channel.ts`)
 - [x] Tarea 11: Adaptador de Telegram (`lib/bot/adapters/telegram.ts`)
 - [x] Tarea 12: Webhook `/api/bot/telegram` — secreto, idempotencia, whitelist
-- [ ] Tarea 13: Flujo "ver pedido" de punta a punta (vertical slice mínimo)
+- [x] Tarea 13: Flujo "ver pedido" de punta a punta (vertical slice mínimo)
 
-### Checkpoint: Fase 3
+### Checkpoint: Fase 3 — completo
 - [x] Desplegado en staging, un mensaje real de Telegram de un chat_id whitelisteado
-  recibe respuesta correcta (confirmado vía `staging-tunnel.jepri.co`); uno no
-  whitelisteado es ignorado — falta el Menú Principal real (Tarea 13)
+  recibe el Menú Principal real (confirmado vía `staging-tunnel.jepri.co`); uno no
+  whitelisteado es ignorado
 - [x] Reenviar el mismo `update_id` no duplica ningún efecto (confirmado contra el webhook real desplegado)
 - [x] Vitest cubre `parseInbound`/`sendMessage`/validación de secreto sin depender de Telegram real
 

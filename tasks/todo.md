@@ -531,12 +531,32 @@ activa, y conectar "📋 Ver / modificar mi pedido de hoy" solo para lectura
 (`getCurrentOrder`) — primera prueba de que toda la plumbing funciona de punta a punta.
 
 **Acceptance criteria:**
-- [ ] El Menú Principal se muestra tal cual el guion de §7
-- [ ] "Ver mi pedido" muestra el pedido actual si existe, o invita a crear uno si no
+- [x] El Menú Principal se muestra tal cual el guion de §7
+- [x] "Ver mi pedido" muestra el pedido actual si existe, o invita a crear uno si no
 
 **Verification:**
-- [ ] Vitest: lógica de menú en `lib/bot/domain.ts` probada con mocks de los servicios — `npm run test` en verde
-- [ ] Manual, en staging: desde el chat de prueba, navegar el menú y confirmar ambos casos
+- [x] Vitest (`lib/bot/domain.test.ts`, 9 tests) con `getActivePlanStatus`/`getCurrentOrder` mockeados — cubre sin ventana, fuera de cutoff, menú con/sin nombre, ver con/sin pedido, singular/plural, placeholders de crear/cancelar — `npm run test` en verde, 60/60 totales
+- [x] Manual, real en staging: mensaje real → Menú Principal con los 3 botones confirmado; "Ver pedido" sin pedido activo → invita a crear uno (confirmado); pedido de prueba insertado directo en staging → "Ver pedido" → "tu pedido 1392 está pendiente" (confirmado), luego limpiado
+
+**Hallazgo faltante corregido:** la verificación inicial de §7 necesita saber si *ahora
+mismo* se está dentro del horario de corte, pero `bot_is_within_cutoff` (Tarea 6) no
+tiene `GRANT` a `anon` a propósito (solo lo llaman otras funciones `bot_*` del mismo
+dueño). Se agregó `bot_get_active_plan_status` (migración + pgTAP, 54/54 asserts
+totales) que combina `bot_get_active_plan` + `bot_is_within_cutoff` en un solo booleano
+ya calculado — el dominio en TypeScript nunca reimplementa esa fórmula.
+
+**Bug de concurrencia real encontrado y corregido:** Vitest corre los archivos de test
+en paralelo por default, y varias suites comparten la misma fila "activa" de
+`distribution_plan` en staging vía `lib/bot/test-fixtures.ts` — un archivo le pisaba el
+fixture a otro, causando fallos intermitentes (`NO_ACTIVE_PLAN` o un `plan_id`
+inesperado). No es una carrera de CPU que valga la pena optimizar: es estado externo
+compartido y mutable. Se seteó `fileParallelism: false` en `vitest.config.mts` —
+confirmado estable en 4 corridas seguidas tras el fix.
+
+**Nota operativa:** se le puso `cutoff_at = now() + 48h` al plan de prueba de la Tarea 1
+en staging (antes tenía `cutoff_at = null`, y hoy no es lunes/miércoles/viernes, así que
+el fallback de horario bloqueaba todo) — queda así a propósito para las pruebas
+manuales de las Tareas 14-17, que también van a necesitar la ventana abierta.
 
 **Dependencies:** Tarea 8, Tarea 12
 
@@ -544,8 +564,11 @@ activa, y conectar "📋 Ver / modificar mi pedido de hoy" solo para lectura
 - `lib/bot/domain.ts`
 - `lib/bot/domain.test.ts`
 - `app/api/bot/telegram/route.ts`
+- `lib/bot/services/plan.ts`, `lib/bot/services/plan.test.ts` (nuevo)
+- `supabase/migrations/20261008040000_bot_active_plan_status_function.sql` (nuevo, faltaba de la Tarea 6)
+- `vitest.config.mts` (fix de concurrencia)
 
-**Estimated scope:** M (3 archivos)
+**Estimated scope:** M (3 archivos) — terminó siendo L por los 2 hallazgos (función faltante, race condition de tests)
 
 ---
 
