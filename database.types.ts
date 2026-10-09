@@ -1783,6 +1783,10 @@ export type Database = {
           variants: Json
         }[]
       }
+      bot_mark_update_processed: {
+        Args: { p_channel: string; p_update_id: string }
+        Returns: boolean
+      }
       bot_resolve_customer: {
         Args: { p_external_id: string }
         Returns: {
