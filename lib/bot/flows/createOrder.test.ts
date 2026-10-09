@@ -371,6 +371,22 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
     expect(mockCreateOrder).not.toHaveBeenCalled();
   });
 
+  it('"agregar otro producto" sin frecuentes no repite "todavía no tienes productos frecuentes" (eso es del inicio de la charla, no de cada vuelta)', async () => {
+    mockGetFrequentProducts.mockResolvedValue([]);
+
+    const result = await handleCreateOrderStep(
+      fakeSupabase,
+      CUSTOMER_ID,
+      CREATE_FLOW_STATES.REVIEWING_ORDER,
+      { items: oneItem },
+      { text: "", callbackData: "create:add_more" },
+      PLAN_DATE,
+    );
+
+    expect(result.reply.text).not.toMatch(/productos frecuentes/i);
+    expect(result.reply.text).toMatch(/escribe el nombre del producto/i);
+  });
+
   it.each([
     ["NO_ACTIVE_PLAN", /ya no hay una ventana/i],
     ["PAST_CUTOFF", /pasó la hora límite/i],

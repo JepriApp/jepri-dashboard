@@ -102,9 +102,13 @@ async function showProductChoices(
   const frequent = await getFrequentProducts(supabaseClient, customerId);
 
   if (frequent.length === 0) {
+    // "Todavía no tienes productos frecuentes" describe el historial del cliente, no
+    // el pedido en curso — solo aplica al arrancar la charla (items vacío). En el loop
+    // de "agregar otro producto" repetirla en cada vuelta es ruido.
+    const explanation = items.length === 0 ? "Todavía no tienes productos frecuentes. " : "";
     return {
       reply: {
-        text: `${intro}\n\nTodavía no tienes productos frecuentes. Escribe el nombre del producto que buscas.`,
+        text: `${intro}\n\n${explanation}Escribe el nombre del producto que buscas.`,
       },
       nextState: CREATE_FLOW_STATES.CHOOSING_PRODUCT,
       nextContext: withGroups([], items),
