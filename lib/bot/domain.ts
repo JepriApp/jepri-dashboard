@@ -6,6 +6,7 @@ import {
   startCreateOrderFlow,
   startEditOrderFlow,
 } from "@/lib/bot/flows/createOrder";
+import { BotServiceError } from "@/lib/bot/errors";
 import { ResolvedCustomer } from "@/lib/bot/services/auth";
 import {
   ConversationContext,
@@ -15,7 +16,7 @@ import {
   setConversationState,
 } from "@/lib/bot/services/conversation";
 import { getActivePlanStatus } from "@/lib/bot/services/plan";
-import { getCurrentOrder } from "@/lib/bot/services/orders";
+import { cancelOrder, getCurrentOrder } from "@/lib/bot/services/orders";
 import { SupabaseClient } from "@supabase/supabase-js";
 
 type InboundForDomain = { channel: string; text: string; callbackData?: string };
@@ -24,15 +25,18 @@ const NO_ACTIVE_WINDOW_MESSAGE: BotMessage = {
   text: "⏰ Hoy no hay ventana de pedidos activa. Los pedidos se reciben lunes, miércoles y viernes hasta las 9:00 PM.",
 };
 
-const NOT_IMPLEMENTED_YET_MESSAGE: BotMessage = {
-  text: "Esta opción todavía no está disponible — vuelve pronto.",
-};
-
 const CALLBACK_CREATE_ORDER = "menu:create_order";
 const CALLBACK_VIEW_ORDER = "menu:view_order";
 const CALLBACK_CANCEL_ORDER = "menu:cancel_order";
+const CALLBACK_CANCEL_CONFIRM = "cancel:confirm";
+const CALLBACK_CANCEL_DENY = "cancel:deny";
+
+/** Único estado del flujo de cancelar (Tarea 18) — no hace falta un archivo propio
+ * como createOrder.ts, es solo "¿seguro?" -> sí/no. */
+const CANCEL_CONFIRM_STATE = "cancel:confirming";
 
 const CREATE_FLOW_STATE_VALUES: string[] = Object.values(CREATE_FLOW_STATES);
+const MID_FLOW_STATE_VALUES: string[] = [...CREATE_FLOW_STATE_VALUES, CANCEL_CONFIRM_STATE];
 
 function mainMenu(customerName: string | null): BotMessage {
   const greeting = customerName ? `¡Hola ${customerName}!` : "¡Hola!";
@@ -50,10 +54,60 @@ const NO_ORDER_YET_MESSAGE: BotMessage = {
   text: 'No tienes ningún pedido activo todavía. Usa "🛒 Crear nuevo pedido" en el menú para empezar uno.',
 };
 
+function cancelConfirmMessage(orderCode: string): BotMessage {
+  return {
+    text: `¿Seguro que quieres cancelar el pedido ${orderCode}? Esto no se puede deshacer.`,
+    buttons: [
+      { label: "✅ Sí, cancelar", value: CALLBACK_CANCEL_CONFIRM },
+      { label: "❌ No, mantener pedido", value: CALLBACK_CANCEL_DENY },
+    ],
+  };
+}
+
+function cancelErrorMessage(error: unknown): string {
+  if (error instanceof BotServiceError) {
+    switch (error.code) {
+      case "ORDER_NOT_FOUND":
+        return "No encontré ese pedido — puede que ya haya sido cancelado.";
+      case "ORDER_NOT_CANCELLABLE":
+        return "Ese pedido ya no se puede cancelar (ya fue cancelado o ya salió a reparto).";
+      case "PLAN_NOT_CANCELLABLE":
+        return "El plan de entrega de este pedido ya no acepta cancelaciones.";
+    }
+  }
+  return "Ocurrió un error inesperado cancelando tu pedido. Por favor intenta de nuevo.";
+}
+
 type Turn = { reply: BotMessage; nextState: string; nextContext: ConversationContext };
 
 function idleTurn(reply: BotMessage): Turn {
   return { reply, nextState: IDLE_STATE, nextContext: {} };
+}
+
+async function handleCancelConfirmStep(
+  supabaseClient: SupabaseClient<Database>,
+  customerId: string,
+  context: ConversationContext,
+  inbound: InboundForDomain,
+): Promise<Turn> {
+  const orderId = context.order_id as string;
+  const orderCode = context.order_code as string;
+
+  if (inbound.callbackData === CALLBACK_CANCEL_CONFIRM) {
+    try {
+      await cancelOrder(supabaseClient, orderId, customerId);
+      return idleTurn({ text: `❌ Pedido ${orderCode} cancelado.` });
+    } catch (error) {
+      return idleTurn({ text: cancelErrorMessage(error) });
+    }
+  }
+
+  if (inbound.callbackData === CALLBACK_CANCEL_DENY) {
+    return idleTurn({ text: "Ok, no se canceló nada." });
+  }
+
+  // Ni confirmar ni rechazar (ej. escribió texto suelto): vuelve a preguntar.
+  return { reply: cancelConfirmMessage(orderCode), nextState: CANCEL_CONFIRM_STATE, nextContext: context };
 }
 
 async function computeTurn(
@@ -79,14 +133,23 @@ async function computeTurn(
     return { reply: step.reply, nextState: step.nextState, nextContext: step.nextContext };
   }
   if (inbound.callbackData === CALLBACK_CANCEL_ORDER) {
-    return idleTurn(NOT_IMPLEMENTED_YET_MESSAGE);
+    const order = await getCurrentOrder(supabaseClient, customer.customer_id);
+    if (!order) {
+      return idleTurn(NO_ORDER_YET_MESSAGE);
+    }
+    return {
+      reply: cancelConfirmMessage(order.order_code),
+      nextState: CANCEL_CONFIRM_STATE,
+      nextContext: { order_id: order.order_id, order_code: order.order_code } as unknown as ConversationContext,
+    };
   }
   if (inbound.callbackData === CALLBACK_CREATE_ORDER) {
     const step = await startCreateOrderFlow(supabaseClient, customer.customer_id);
     return { reply: step.reply, nextState: step.nextState, nextContext: step.nextContext };
   }
 
-  // Ni un botón del menú — ¿estamos a mitad del flujo de "crear pedido"?
+  // Ni un botón del menú — ¿estamos a mitad de un flujo de varios pasos ("crear/editar
+  // pedido" o "confirmar cancelación")?
   const conversation = await getConversationState(supabaseClient, customer.customer_id, inbound.channel);
   if (CREATE_FLOW_STATE_VALUES.includes(conversation.state)) {
     const step = await handleCreateOrderStep(
@@ -98,6 +161,9 @@ async function computeTurn(
       planStatus.plan_date,
     );
     return { reply: step.reply, nextState: step.nextState, nextContext: step.nextContext };
+  }
+  if (conversation.state === CANCEL_CONFIRM_STATE) {
+    return handleCancelConfirmStep(supabaseClient, customer.customer_id, conversation.context, inbound);
   }
 
   // idle (o expiró), sin callback reconocido -> Menú Principal.
@@ -111,12 +177,12 @@ async function computeTurn(
  *
  * Flujos conectados de verdad: 🛒 Crear pedido y 📋 Ver/modificar pedido (Tareas 15 y 17,
  * ambos en `lib/bot/flows/createOrder.ts` — "modificar" reutiliza el mismo loop,
- * terminando en `updateOrder` en vez de `createOrder`). ❌ Cancelar devuelve un
- * placeholder hasta la Tarea 18.
+ * terminando en `updateOrder` en vez de `createOrder`), y ❌ Cancelar pedido (Tarea 18,
+ * `cancel:confirming` acá mismo — solo pide "¿seguro?" antes de llamar `cancelOrder`).
  *
  * Estado de conversación (§8): cada turno persiste el `nextState`/`nextContext` que
  * decide `computeTurn` — `idle` reinicia (vía `resetConversationState`), cualquier otra
- * cosa (los estados `create:*`) se guarda para el próximo mensaje.
+ * cosa (los estados `create:*` y `cancel:confirming`) se guarda para el próximo mensaje.
  */
 export async function handleInboundMessage(
   supabaseClient: SupabaseClient<Database>,
@@ -167,10 +233,11 @@ function disambiguationMessage(candidates: ResolvedCustomer[], action: PendingAc
  * real que debe usar el webhook de cada canal; decide primero *para cuál* `customer_id`
  * es el turno antes de delegar en `handleInboundMessage`.
  *
- * Sin estado nuevo: si alguno de los candidatos está a mitad del flujo de crear pedido,
- * el mensaje es para ese (tiene prioridad, igual que hoy un botón del Menú Principal
- * abandona un flujo en curso). Si nadie está a mitad de flujo y tocan una acción del
- * Menú Principal, primero se pregunta para cuál cliente es — la respuesta llega
+ * Sin estado nuevo: si alguno de los candidatos está a mitad de un flujo de varios pasos
+ * (crear/editar pedido, o confirmando una cancelación), el mensaje es para ese (tiene
+ * prioridad, igual que hoy un botón del Menú Principal abandona un flujo en curso). Si
+ * nadie está a mitad de flujo y tocan una acción del Menú Principal, primero se pregunta
+ * para cuál cliente es — la respuesta llega
  * codificada en el propio callbackData del botón que generamos, así que no hace falta
  * persistir nada. Terminado o cancelado el pedido, todos vuelven a quedar en idle y la
  * próxima acción se vuelve a preguntar.
@@ -187,7 +254,7 @@ export async function handleInboundMessageForChannel(
   const states = await Promise.all(
     candidates.map((c) => getConversationState(supabaseClient, c.customer_id, inbound.channel)),
   );
-  const activeIndex = states.findIndex((s) => CREATE_FLOW_STATE_VALUES.includes(s.state));
+  const activeIndex = states.findIndex((s) => MID_FLOW_STATE_VALUES.includes(s.state));
   if (activeIndex !== -1) {
     return handleInboundMessage(supabaseClient, candidates[activeIndex], inbound);
   }

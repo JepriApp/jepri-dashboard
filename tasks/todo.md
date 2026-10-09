@@ -826,18 +826,29 @@ aditivo sobre la función de la Tarea 5).
 llamar `cancelOrder`.
 
 **Acceptance criteria:**
-- [ ] Requiere confirmación explícita antes de cancelar
-- [ ] El pedido cancelado queda con `status='cancelled'`, nunca se borra la fila
-- [ ] `PLAN_NOT_CANCELLABLE` se traduce correctamente
+- [x] Requiere confirmación explícita antes de cancelar
+- [x] El pedido cancelado queda con `status='cancelled'`, nunca se borra la fila
+- [x] `PLAN_NOT_CANCELLABLE` se traduce correctamente
 
 **Verification:**
-- [ ] Vitest: flujo de confirmación y el código de error — `npm run test` en verde
+- [x] Vitest: flujo de confirmación (sí/no/repreguntar) y los 3 códigos de error — `npm run test` en verde, 128/128
+- [x] pgTAP (ya cubierto desde la Tarea 6, sin cambios de esquema en esta tarea) — en verde
+- [x] `npm run build` y `npm run lint` sin errores nuevos
 - [ ] Manual, en staging: cancelar un pedido real y confirmar en el panel admin que la fila sigue existiendo con `status='cancelled'`, correctamente excluida de `InvoicingReviewTable`
+
+**Decisión de diseño:** a diferencia de crear/editar, cancelar es un solo paso
+("¿seguro?" → sí/no), así que no justificaba un archivo propio como
+`lib/bot/flows/createOrder.ts` — vive directo en `domain.ts` con su propio estado
+(`cancel:confirming`) y guarda `order_id`/`order_code` en el context mientras espera la
+respuesta. Se agregó `MID_FLOW_STATE_VALUES` (antes solo `CREATE_FLOW_STATE_VALUES`) para
+que la desambiguación de identidad de la Tarea 16 también reconozca "a mitad de
+confirmar una cancelación" como con prioridad, igual que un flujo de crear/editar en
+curso.
 
 **Dependencies:** Tarea 8, Tarea 13
 
 **Files likely touched:**
-- `lib/bot/domain.ts`
+- `lib/bot/domain.ts`, `lib/bot/domain.test.ts`
 
 **Estimated scope:** S
 

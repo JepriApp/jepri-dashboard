@@ -1,15 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handleInboundMessage, handleInboundMessageForChannel } from "@/lib/bot/domain";
 import { getActivePlanStatus } from "@/lib/bot/services/plan";
-import { getCurrentOrder } from "@/lib/bot/services/orders";
+import { cancelOrder, getCurrentOrder } from "@/lib/bot/services/orders";
 import { getConversationState, resetConversationState, setConversationState } from "@/lib/bot/services/conversation";
 import { handleCreateOrderStep, startCreateOrderFlow, startEditOrderFlow } from "@/lib/bot/flows/createOrder";
+import { BotServiceError } from "@/lib/bot/errors";
 
 vi.mock("@/lib/bot/services/plan", () => ({
   getActivePlanStatus: vi.fn(),
 }));
 vi.mock("@/lib/bot/services/orders", () => ({
   getCurrentOrder: vi.fn(),
+  cancelOrder: vi.fn(),
 }));
 vi.mock("@/lib/bot/services/conversation", () => ({
   IDLE_STATE: "idle",
@@ -31,6 +33,7 @@ vi.mock("@/lib/bot/flows/createOrder", () => ({
 
 const mockGetActivePlanStatus = vi.mocked(getActivePlanStatus);
 const mockGetCurrentOrder = vi.mocked(getCurrentOrder);
+const mockCancelOrder = vi.mocked(cancelOrder);
 const mockGetConversationState = vi.mocked(getConversationState);
 const mockSetConversationState = vi.mocked(setConversationState);
 const mockResetConversationState = vi.mocked(resetConversationState);
@@ -150,8 +153,12 @@ describe("handleInboundMessage", () => {
     );
   });
 
-  it('"Cancelar pedido" todavía responde que no está disponible (Tarea 18)', async () => {
+});
+
+describe('handleInboundMessage — "Cancelar pedido" (Tarea 18)', () => {
+  it('sin pedido activo invita a crear uno, en vez de preguntar confirmación', async () => {
     mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockGetCurrentOrder.mockResolvedValue(null);
 
     const result = await handleInboundMessage(fakeSupabase, customer, {
       channel: "telegram",
@@ -159,7 +166,118 @@ describe("handleInboundMessage", () => {
       callbackData: "menu:cancel_order",
     });
 
-    expect(result.text).toMatch(/todavía no está disponible/i);
+    expect(result.text).toMatch(/no tienes ningún pedido activo/i);
+    expect(mockCancelOrder).not.toHaveBeenCalled();
+  });
+
+  it("con un pedido activo pregunta confirmación explícita y guarda el order_id/order_code", async () => {
+    mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockGetCurrentOrder.mockResolvedValue({
+      order_id: "order-1",
+      order_code: "1326",
+      status: "pending",
+      items: [],
+    });
+
+    const result = await handleInboundMessage(fakeSupabase, customer, {
+      channel: "telegram",
+      text: "",
+      callbackData: "menu:cancel_order",
+    });
+
+    expect(result.text).toContain("1326");
+    expect(result.text).toMatch(/seguro/i);
+    expect(result.buttons).toHaveLength(2);
+    expect(mockSetConversationState).toHaveBeenCalledWith(
+      fakeSupabase,
+      "cust-1",
+      "telegram",
+      "cancel:confirming",
+      { order_id: "order-1", order_code: "1326" },
+    );
+    expect(mockCancelOrder).not.toHaveBeenCalled();
+  });
+
+  it("confirmar cancela el pedido y responde, reiniciando el estado", async () => {
+    mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockGetConversationState.mockResolvedValue({
+      state: "cancel:confirming",
+      context: { order_id: "order-1", order_code: "1326" },
+    });
+
+    const result = await handleInboundMessage(fakeSupabase, customer, {
+      channel: "telegram",
+      text: "",
+      callbackData: "cancel:confirm",
+    });
+
+    expect(mockCancelOrder).toHaveBeenCalledWith(fakeSupabase, "order-1", "cust-1");
+    expect(result.text).toContain("1326");
+    expect(result.text).toMatch(/cancelado/i);
+    expect(mockResetConversationState).toHaveBeenCalledWith(fakeSupabase, "cust-1", "telegram");
+  });
+
+  it("rechazar la confirmación no cancela nada y reinicia el estado", async () => {
+    mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockGetConversationState.mockResolvedValue({
+      state: "cancel:confirming",
+      context: { order_id: "order-1", order_code: "1326" },
+    });
+
+    const result = await handleInboundMessage(fakeSupabase, customer, {
+      channel: "telegram",
+      text: "",
+      callbackData: "cancel:deny",
+    });
+
+    expect(mockCancelOrder).not.toHaveBeenCalled();
+    expect(result.text).toMatch(/no se canceló nada/i);
+    expect(mockResetConversationState).toHaveBeenCalledWith(fakeSupabase, "cust-1", "telegram");
+  });
+
+  it("un mensaje sin confirmar ni rechazar vuelve a preguntar, sin tocar el pedido", async () => {
+    mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockGetConversationState.mockResolvedValue({
+      state: "cancel:confirming",
+      context: { order_id: "order-1", order_code: "1326" },
+    });
+
+    const result = await handleInboundMessage(fakeSupabase, customer, {
+      channel: "telegram",
+      text: "tal vez",
+    });
+
+    expect(mockCancelOrder).not.toHaveBeenCalled();
+    expect(result.text).toMatch(/seguro/i);
+    expect(mockSetConversationState).toHaveBeenCalledWith(
+      fakeSupabase,
+      "cust-1",
+      "telegram",
+      "cancel:confirming",
+      { order_id: "order-1", order_code: "1326" },
+    );
+  });
+
+  it.each([
+    ["ORDER_NOT_FOUND", /no encontré ese pedido/i],
+    ["ORDER_NOT_CANCELLABLE", /ya no se puede cancelar/i],
+    ["PLAN_NOT_CANCELLABLE", /ya no acepta cancelaciones/i],
+  ] as const)("confirmar con error %s responde el mensaje amigable correspondiente, nunca el crudo", async (code, expectedPattern) => {
+    mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockGetConversationState.mockResolvedValue({
+      state: "cancel:confirming",
+      context: { order_id: "order-1", order_code: "1326" },
+    });
+    mockCancelOrder.mockRejectedValue(new BotServiceError(code, `${code}: detalle técnico interno`));
+
+    const result = await handleInboundMessage(fakeSupabase, customer, {
+      channel: "telegram",
+      text: "",
+      callbackData: "cancel:confirm",
+    });
+
+    expect(result.text).toMatch(expectedPattern);
+    expect(result.text).not.toContain("detalle técnico interno");
   });
 });
 

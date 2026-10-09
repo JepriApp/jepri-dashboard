@@ -110,7 +110,7 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
 - [x] Tarea 15: Flujo "crear pedido" de punta a punta
 - [x] Tarea 16: Identidad — un número puede representar varios clientes/puntos de entrega
 - [x] Tarea 17: Flujo "modificar pedido" de punta a punta
-- [ ] Tarea 18: Flujo "cancelar pedido" de punta a punta
+- [x] Tarea 18: Flujo "cancelar pedido" de punta a punta
 
 ### Checkpoint: Fase 4 — PoC funcionalmente completo
 - [ ] Un pedido creado vía Telegram (en staging) aparece correcto en
