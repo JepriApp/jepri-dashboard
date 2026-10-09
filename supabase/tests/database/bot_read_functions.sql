@@ -5,7 +5,7 @@
 
 begin;
 
-select plan(17);
+select plan(18);
 
 -- 1. bot_resolve_customer ---------------------------------------------------
 
@@ -103,6 +103,11 @@ select is(
     (select jsonb_array_length(items) from bot_get_current_order('28679e91-8caa-45f4-b5f5-3ed04f9decf9')),
     1,
     'bot_get_current_order devuelve los items del pedido'
+);
+select ok(
+    (select items->0->>'product_name' from bot_get_current_order('28679e91-8caa-45f4-b5f5-3ed04f9decf9')) ilike '%tomate%'
+    and (select items->0->>'unit' from bot_get_current_order('28679e91-8caa-45f4-b5f5-3ed04f9decf9')) is not null,
+    'bot_get_current_order incluye product_name/unit por item (Tarea 17, para reusar en el flujo de editar)'
 );
 select is(
     (select times_ordered from bot_get_frequent_products('28679e91-8caa-45f4-b5f5-3ed04f9decf9') limit 1),

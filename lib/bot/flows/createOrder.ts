@@ -2,15 +2,17 @@ import { Database } from "@/database.types";
 import { BotMessage } from "@/lib/bot/channel";
 import { BotServiceError } from "@/lib/bot/errors";
 import { ConversationContext } from "@/lib/bot/services/conversation";
-import { createOrder } from "@/lib/bot/services/orders";
+import { CurrentOrder, createOrder, updateOrder } from "@/lib/bot/services/orders";
 import { CatalogGroup, getFrequentProducts, ProductVariant, searchCatalog } from "@/lib/bot/services/products";
 import { SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * Flujo "🛒 Crear nuevo pedido" (documentacion/chatbot_diseno.md §7), aislado de
- * domain.ts por tamaño. Acumula uno o más productos (elegir → [unidad] → cantidad →
- * "¿agregar otro o confirmar?") antes de llamar a createOrder una sola vez con la
- * lista completa.
+ * Flujo "🛒 Crear nuevo pedido" / "📋 Ver / modificar" (documentacion/chatbot_diseno.md
+ * §7), aislado de domain.ts por tamaño. Acumula uno o más productos (elegir → [unidad] →
+ * cantidad → "¿agregar otro o confirmar?") antes de llamar a createOrder/updateOrder una
+ * sola vez con la lista completa — "modificar" (Tarea 17) reutiliza exactamente el mismo
+ * loop, precargado con los items del pedido existente y terminando en `updateOrder` en
+ * vez de `createOrder` (se distingue por si el context carga `order_id`/`order_code`).
  */
 
 export const CREATE_FLOW_STATES = {
@@ -64,8 +66,33 @@ function getItems(context: ConversationContext): PendingItem[] {
   return (context.items as unknown as PendingItem[]) ?? [];
 }
 
-/** Serializa solo lo necesario para resolver el próximo paso sin otro round-trip a la base. */
-function withGroups(groups: CatalogGroup[], items: PendingItem[]): ConversationContext {
+/** Reemplaza el item si ya hay uno con el mismo product_id (permite "editar cantidad"
+ * re-eligiendo el mismo producto); lo agrega al final si no. */
+function upsertItem(items: PendingItem[], newItem: PendingItem): PendingItem[] {
+  const index = items.findIndex((item) => item.product_id === newItem.product_id);
+  if (index === -1) return [...items, newItem];
+  const copy = [...items];
+  copy[index] = newItem;
+  return copy;
+}
+
+type OrderMeta = { order_id: string; order_code: string } | null;
+
+/** Presente solo en el flujo de "modificar" (Tarea 17) — su ausencia es lo que distingue
+ * crear de editar en cada paso que lo necesita. */
+function getOrderMeta(context: ConversationContext): OrderMeta {
+  const orderId = context.order_id as string | undefined;
+  const orderCode = context.order_code as string | undefined;
+  return orderId && orderCode ? { order_id: orderId, order_code: orderCode } : null;
+}
+
+/** Serializa solo lo necesario para resolver el próximo paso sin otro round-trip a la
+ * base — carga `orderMeta` tal cual si viene de un flujo de editar en curso. */
+function withGroups(
+  groups: CatalogGroup[],
+  items: PendingItem[],
+  orderMeta: OrderMeta = null,
+): ConversationContext {
   return {
     groups: groups.map((g) => ({
       canonical_group_id: g.canonical_group_id,
@@ -73,6 +100,7 @@ function withGroups(groups: CatalogGroup[], items: PendingItem[]): ConversationC
       variants: g.variants,
     })),
     items,
+    ...(orderMeta ?? {}),
   } as unknown as ConversationContext;
 }
 
@@ -98,6 +126,7 @@ async function showProductChoices(
   customerId: string,
   items: PendingItem[],
   intro: string,
+  orderMeta: OrderMeta = null,
 ): Promise<StepResult> {
   const frequent = await getFrequentProducts(supabaseClient, customerId);
 
@@ -111,7 +140,7 @@ async function showProductChoices(
         text: `${intro}\n\n${explanation}Escribe el nombre del producto que buscas.`,
       },
       nextState: CREATE_FLOW_STATES.CHOOSING_PRODUCT,
-      nextContext: withGroups([], items),
+      nextContext: withGroups([], items, orderMeta),
     };
   }
 
@@ -121,7 +150,7 @@ async function showProductChoices(
       buttons: [...groupButtons(frequent), { label: "🔍 Buscar otro producto", value: CALLBACK_SEARCH }],
     },
     nextState: CREATE_FLOW_STATES.CHOOSING_PRODUCT,
-    nextContext: withGroups(frequent, items),
+    nextContext: withGroups(frequent, items, orderMeta),
   };
 }
 
@@ -132,6 +161,29 @@ export async function startCreateOrderFlow(
   return showProductChoices(supabaseClient, customerId, [], "🛒 Vamos a crear tu pedido.");
 }
 
+/**
+ * Flujo "📋 Ver / modificar" cuando ya hay un pedido (Tarea 17) — reutiliza el mismo
+ * loop de crear, precargado con los items existentes y saltando directo a la revisión
+ * (no hace falta volver a elegir producto por producto solo para verlos). El
+ * `order_id`/`order_code` viajan en el context durante todo el flujo; su presencia es lo
+ * que hace que `handleReviewingOrder` llame `updateOrder` en vez de `createOrder`.
+ */
+export function startEditOrderFlow(order: CurrentOrder): StepResult {
+  const items: PendingItem[] = order.items.map((item) => ({
+    product_id: item.product_id,
+    product_name: item.product_name,
+    unit: item.unit,
+    quantity: item.required_quantity,
+  }));
+  const orderMeta: OrderMeta = { order_id: order.order_id, order_code: order.order_code };
+
+  return {
+    reply: reviewMessage(items, order.order_code),
+    nextState: CREATE_FLOW_STATES.REVIEWING_ORDER,
+    nextContext: withGroups([], items, orderMeta),
+  };
+}
+
 async function handleChoosingProduct(
   supabaseClient: SupabaseClient<Database>,
   customerId: string,
@@ -139,6 +191,7 @@ async function handleChoosingProduct(
   inbound: { text: string; callbackData?: string },
 ): Promise<StepResult> {
   const items = getItems(context);
+  const orderMeta = getOrderMeta(context);
 
   if (inbound.callbackData === CALLBACK_SEARCH) {
     return {
@@ -152,7 +205,13 @@ async function handleChoosingProduct(
     const productId = inbound.callbackData.slice(VARIANT_PREFIX.length);
     const found = findVariantAmongGroups(context, productId);
     if (!found) {
-      return showProductChoices(supabaseClient, customerId, items, "No reconocí esa opción, probemos de nuevo.");
+      return showProductChoices(
+        supabaseClient,
+        customerId,
+        items,
+        "No reconocí esa opción, probemos de nuevo.",
+        orderMeta,
+      );
     }
     return {
       reply: {
@@ -164,6 +223,7 @@ async function handleChoosingProduct(
         product_name: found.groupName,
         unit: found.variant.unit,
         items,
+        ...(orderMeta ?? {}),
       } as unknown as ConversationContext,
     };
   }
@@ -172,7 +232,13 @@ async function handleChoosingProduct(
     const groupId = inbound.callbackData.slice(GROUP_PREFIX.length);
     const group = findGroup(context, groupId);
     if (!group) {
-      return showProductChoices(supabaseClient, customerId, items, "No reconocí esa opción, probemos de nuevo.");
+      return showProductChoices(
+        supabaseClient,
+        customerId,
+        items,
+        "No reconocí esa opción, probemos de nuevo.",
+        orderMeta,
+      );
     }
     return {
       reply: {
@@ -183,14 +249,14 @@ async function handleChoosingProduct(
         })),
       },
       nextState: CREATE_FLOW_STATES.CHOOSING_UNIT,
-      nextContext: withGroups([group], items),
+      nextContext: withGroups([group], items, orderMeta),
     };
   }
 
   // Ni un botón reconocido ni vacío: texto libre, se trata como búsqueda.
   const query = inbound.text.trim();
   if (!query) {
-    return showProductChoices(supabaseClient, customerId, items, "No entendí eso, probemos de nuevo.");
+    return showProductChoices(supabaseClient, customerId, items, "No entendí eso, probemos de nuevo.", orderMeta);
   }
 
   const results = await searchCatalog(supabaseClient, query);
@@ -208,12 +274,13 @@ async function handleChoosingProduct(
       buttons: groupButtons(results),
     },
     nextState: CREATE_FLOW_STATES.CHOOSING_PRODUCT,
-    nextContext: withGroups(results, items),
+    nextContext: withGroups(results, items, orderMeta),
   };
 }
 
 function handleChoosingUnit(context: ConversationContext, inbound: { callbackData?: string }): StepResult {
   const items = getItems(context);
+  const orderMeta = getOrderMeta(context);
 
   if (inbound.callbackData?.startsWith(VARIANT_PREFIX)) {
     const productId = inbound.callbackData.slice(VARIANT_PREFIX.length);
@@ -229,6 +296,7 @@ function handleChoosingUnit(context: ConversationContext, inbound: { callbackDat
           product_name: found.groupName,
           unit: found.variant.unit,
           items,
+          ...(orderMeta ?? {}),
         } as unknown as ConversationContext,
       };
     }
@@ -252,12 +320,16 @@ function formatItemLines(items: PendingItem[]): string {
   return items.map((item) => `• ${item.quantity} ${item.unit} de "${item.product_name}"`).join("\n");
 }
 
-function reviewMessage(items: PendingItem[]): BotMessage {
+function reviewMessage(items: PendingItem[], orderCode: string | null = null): BotMessage {
+  const intro = orderCode ? `Tu pedido ${orderCode} hasta ahora:` : "Tu pedido hasta ahora:";
+  const question = orderCode
+    ? "¿Agregas otro producto o confirmas los cambios?"
+    : "¿Agregas otro producto o confirmas el pedido?";
   return {
-    text: `Tu pedido hasta ahora:\n${formatItemLines(items)}\n\n¿Agregas otro producto o confirmas el pedido?`,
+    text: `${intro}\n${formatItemLines(items)}\n\n${question}`,
     buttons: [
       { label: "➕ Agregar otro producto", value: CALLBACK_ADD_MORE },
-      { label: "✅ Confirmar pedido", value: CALLBACK_CONFIRM },
+      { label: orderCode ? "✅ Confirmar cambios" : "✅ Confirmar pedido", value: CALLBACK_CONFIRM },
       { label: "❌ Cancelar", value: CALLBACK_ABORT },
     ],
   };
@@ -266,6 +338,7 @@ function reviewMessage(items: PendingItem[]): BotMessage {
 function handleAwaitingQuantity(context: ConversationContext, inbound: { text: string }): StepResult {
   const normalized = inbound.text.trim().replace(",", ".");
   const quantity = Number(normalized);
+  const orderMeta = getOrderMeta(context);
 
   if (!Number.isFinite(quantity) || quantity <= 0) {
     return {
@@ -281,27 +354,39 @@ function handleAwaitingQuantity(context: ConversationContext, inbound: { text: s
     unit: context.unit as string,
     quantity,
   };
-  const items = [...getItems(context), newItem];
+  // Re-elegir un producto que ya estaba en la lista reemplaza su cantidad en vez de
+  // agregar una línea duplicada — así es como se "edita" una cantidad con este mismo loop.
+  const items = upsertItem(getItems(context), newItem);
 
   return {
-    reply: reviewMessage(items),
+    reply: reviewMessage(items, orderMeta?.order_code ?? null),
     nextState: CREATE_FLOW_STATES.REVIEWING_ORDER,
-    nextContext: { items } as unknown as ConversationContext,
+    nextContext: { items, ...(orderMeta ?? {}) } as unknown as ConversationContext,
   };
 }
 
-function createOrderErrorMessage(error: unknown): string {
+function orderErrorMessage(error: unknown, isEdit: boolean): string {
   if (error instanceof BotServiceError) {
     switch (error.code) {
       case "NO_ACTIVE_PLAN":
         return "⏰ Ya no hay una ventana de pedidos activa. Intenta de nuevo más tarde.";
       case "PAST_CUTOFF":
-        return "⏰ Ya pasó la hora límite de hoy para hacer pedidos.";
+        return isEdit
+          ? "⏰ Ya pasó la hora límite de hoy para modificar pedidos."
+          : "⏰ Ya pasó la hora límite de hoy para hacer pedidos.";
       case "ORDER_ALREADY_EXISTS":
         return 'Ya tienes un pedido para el próximo plan de entrega. Usa "📋 Ver / modificar mi pedido de hoy" para editarlo.';
+      case "ORDER_NOT_FOUND":
+        return "No encontré ese pedido — puede que ya haya sido cancelado. Revisa el menú principal.";
+      case "ORDER_NOT_EDITABLE":
+        return "Ese pedido ya no se puede modificar (está cancelado o ya salió a reparto).";
+      case "PLAN_NOT_EDITABLE":
+        return "El plan de entrega de este pedido ya no acepta cambios.";
     }
   }
-  return "Ocurrió un error inesperado creando tu pedido. Por favor intenta de nuevo.";
+  return isEdit
+    ? "Ocurrió un error inesperado modificando tu pedido. Por favor intenta de nuevo."
+    : "Ocurrió un error inesperado creando tu pedido. Por favor intenta de nuevo.";
 }
 
 async function handleReviewingOrder(
@@ -312,26 +397,35 @@ async function handleReviewingOrder(
   planDate: string,
 ): Promise<StepResult> {
   const items = getItems(context);
+  const orderMeta = getOrderMeta(context);
 
   if (inbound.callbackData === CALLBACK_ABORT) {
     return {
-      reply: { text: "Pedido cancelado, no se guardó nada." },
+      reply: { text: orderMeta ? "No se guardó ningún cambio." : "Pedido cancelado, no se guardó nada." },
       nextState: "idle",
       nextContext: {},
     };
   }
 
   if (inbound.callbackData === CALLBACK_ADD_MORE) {
-    return showProductChoices(supabaseClient, customerId, items, "Elige otro producto:");
+    return showProductChoices(supabaseClient, customerId, items, "Elige otro producto:", orderMeta);
   }
 
   if (inbound.callbackData === CALLBACK_CONFIRM) {
+    const itemInputs = items.map((item) => ({ product_id: item.product_id, required_quantity: item.quantity }));
     try {
-      const created = await createOrder(
-        supabaseClient,
-        customerId,
-        items.map((item) => ({ product_id: item.product_id, required_quantity: item.quantity })),
-      );
+      if (orderMeta) {
+        await updateOrder(supabaseClient, orderMeta.order_id, customerId, itemInputs);
+        return {
+          reply: {
+            text: `✅ Pedido ${orderMeta.order_code} actualizado. Se entrega el ${planDate}.\n\n${formatItemLines(items)}`,
+          },
+          nextState: "idle",
+          nextContext: {},
+        };
+      }
+
+      const created = await createOrder(supabaseClient, customerId, itemInputs);
       return {
         reply: {
           text: `✅ Pedido ${created.order_code} creado. Se entrega el ${planDate}.\n\n${formatItemLines(items)}`,
@@ -341,7 +435,7 @@ async function handleReviewingOrder(
       };
     } catch (error) {
       return {
-        reply: { text: createOrderErrorMessage(error) },
+        reply: { text: orderErrorMessage(error, orderMeta !== null) },
         nextState: "idle",
         nextContext: {},
       };
@@ -349,7 +443,7 @@ async function handleReviewingOrder(
   }
 
   return {
-    reply: reviewMessage(items),
+    reply: reviewMessage(items, orderMeta?.order_code ?? null),
     nextState: CREATE_FLOW_STATES.REVIEWING_ORDER,
     nextContext: context,
   };

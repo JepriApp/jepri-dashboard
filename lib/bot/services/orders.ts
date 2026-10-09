@@ -9,6 +9,8 @@ export type OrderItemInput = {
 
 export type OrderItem = {
   product_id: string;
+  product_name: string;
+  unit: string;
   required_quantity: number;
 };
 

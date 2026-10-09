@@ -1,6 +1,11 @@
 import { Database } from "@/database.types";
 import { BotMessage } from "@/lib/bot/channel";
-import { CREATE_FLOW_STATES, handleCreateOrderStep, startCreateOrderFlow } from "@/lib/bot/flows/createOrder";
+import {
+  CREATE_FLOW_STATES,
+  handleCreateOrderStep,
+  startCreateOrderFlow,
+  startEditOrderFlow,
+} from "@/lib/bot/flows/createOrder";
 import { ResolvedCustomer } from "@/lib/bot/services/auth";
 import {
   ConversationContext,
@@ -41,25 +46,9 @@ function mainMenu(customerName: string | null): BotMessage {
   };
 }
 
-async function viewOrderMessage(
-  supabaseClient: SupabaseClient<Database>,
-  customerId: string,
-): Promise<BotMessage> {
-  const order = await getCurrentOrder(supabaseClient, customerId);
-
-  if (!order) {
-    return {
-      text: 'No tienes ningún pedido activo todavía. Usa "🛒 Crear nuevo pedido" en el menú para empezar uno.',
-    };
-  }
-
-  const statusLabel = order.status === "pending" ? "pendiente" : order.status;
-  const itemWord = order.items.length === 1 ? "producto" : "productos";
-
-  return {
-    text: `📋 Tu pedido ${order.order_code} está ${statusLabel}, con ${order.items.length} ${itemWord}.`,
-  };
-}
+const NO_ORDER_YET_MESSAGE: BotMessage = {
+  text: 'No tienes ningún pedido activo todavía. Usa "🛒 Crear nuevo pedido" en el menú para empezar uno.',
+};
 
 type Turn = { reply: BotMessage; nextState: string; nextContext: ConversationContext };
 
@@ -82,7 +71,12 @@ async function computeTurn(
   // flujo en curso, incluso a mitad de camino (§8: "reinicio a idle al abandonar un
   // flujo").
   if (inbound.callbackData === CALLBACK_VIEW_ORDER) {
-    return idleTurn(await viewOrderMessage(supabaseClient, customer.customer_id));
+    const order = await getCurrentOrder(supabaseClient, customer.customer_id);
+    if (!order) {
+      return idleTurn(NO_ORDER_YET_MESSAGE);
+    }
+    const step = startEditOrderFlow(order);
+    return { reply: step.reply, nextState: step.nextState, nextContext: step.nextContext };
   }
   if (inbound.callbackData === CALLBACK_CANCEL_ORDER) {
     return idleTurn(NOT_IMPLEMENTED_YET_MESSAGE);
@@ -115,8 +109,10 @@ async function computeTurn(
  * vino de Telegram o WhatsApp. El webhook de cada canal ya resolvió la whitelist antes
  * de llamar esto (recibe el customer ya resuelto, nunca null).
  *
- * Flujos conectados de verdad: 📋 Ver pedido (Tarea 13) y 🛒 Crear pedido (Tarea 15,
- * `lib/bot/flows/createOrder.ts`). ❌ Cancelar devuelve un placeholder hasta la Tarea 17.
+ * Flujos conectados de verdad: 🛒 Crear pedido y 📋 Ver/modificar pedido (Tareas 15 y 17,
+ * ambos en `lib/bot/flows/createOrder.ts` — "modificar" reutiliza el mismo loop,
+ * terminando en `updateOrder` en vez de `createOrder`). ❌ Cancelar devuelve un
+ * placeholder hasta la Tarea 18.
  *
  * Estado de conversación (§8): cada turno persiste el `nextState`/`nextContext` que
  * decide `computeTurn` — `idle` reinicia (vía `resetConversationState`), cualquier otra

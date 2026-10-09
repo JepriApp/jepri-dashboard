@@ -3,9 +3,10 @@ import {
   CREATE_FLOW_STATES,
   handleCreateOrderStep,
   startCreateOrderFlow,
+  startEditOrderFlow,
 } from "@/lib/bot/flows/createOrder";
 import { getFrequentProducts, searchCatalog } from "@/lib/bot/services/products";
-import { createOrder } from "@/lib/bot/services/orders";
+import { createOrder, updateOrder } from "@/lib/bot/services/orders";
 import { BotServiceError } from "@/lib/bot/errors";
 
 vi.mock("@/lib/bot/services/products", () => ({
@@ -14,11 +15,13 @@ vi.mock("@/lib/bot/services/products", () => ({
 }));
 vi.mock("@/lib/bot/services/orders", () => ({
   createOrder: vi.fn(),
+  updateOrder: vi.fn(),
 }));
 
 const mockGetFrequentProducts = vi.mocked(getFrequentProducts);
 const mockSearchCatalog = vi.mocked(searchCatalog);
 const mockCreateOrder = vi.mocked(createOrder);
+const mockUpdateOrder = vi.mocked(updateOrder);
 
 const fakeSupabase = {} as Parameters<typeof startCreateOrderFlow>[0];
 const CUSTOMER_ID = "cust-1";
@@ -69,6 +72,28 @@ describe("startCreateOrderFlow", () => {
     expect(result.reply.buttons).toBeUndefined();
     expect(result.reply.text).toMatch(/escribe el nombre del producto/i);
     expect(result.nextState).toBe(CREATE_FLOW_STATES.CHOOSING_PRODUCT);
+  });
+});
+
+describe("startEditOrderFlow (Tarea 17)", () => {
+  it("salta directo a revisión con los items del pedido existente, cargando order_id/order_code en el context", () => {
+    const result = startEditOrderFlow({
+      order_id: "order-1",
+      order_code: "1326",
+      status: "pending",
+      items: [{ product_id: "p-tomato-kg", product_name: "Tomate chonto", unit: "kg", required_quantity: 3 }],
+    });
+
+    expect(result.nextState).toBe(CREATE_FLOW_STATES.REVIEWING_ORDER);
+    expect(result.nextContext).toMatchObject({
+      items: [{ product_id: "p-tomato-kg", product_name: "Tomate chonto", unit: "kg", quantity: 3 }],
+      order_id: "order-1",
+      order_code: "1326",
+    });
+    expect(result.reply.text).toContain("1326");
+    expect(result.reply.text).toContain('3 kg de "Tomate chonto"');
+    expect(result.reply.buttons?.map((b) => b.value)).toEqual(["create:add_more", "create:confirm", "create:abort"]);
+    expect(result.reply.buttons?.[1].label).toBe("✅ Confirmar cambios");
   });
 });
 
@@ -277,6 +302,22 @@ describe("handleCreateOrderStep — AWAITING_QUANTITY", () => {
     expect(result.reply.text).toContain("Tomate chonto");
   });
 
+  it("re-elegir un producto que ya estaba en la lista reemplaza su cantidad en vez de duplicar la línea (así se edita una cantidad)", async () => {
+    const existingItem = { product_id: "p-tomato-kg", product_name: "Tomate chonto", unit: "kg", quantity: 3 };
+    const result = await handleCreateOrderStep(
+      fakeSupabase,
+      CUSTOMER_ID,
+      CREATE_FLOW_STATES.AWAITING_QUANTITY,
+      { ...context, items: [existingItem] },
+      { text: "5" },
+      PLAN_DATE,
+    );
+
+    expect((result.nextContext as Record<string, unknown>).items).toEqual([
+      { product_id: "p-tomato-kg", product_name: "Tomate chonto", unit: "kg", quantity: 5 },
+    ]);
+  });
+
   it("acepta coma decimal (2,5 -> 2.5)", async () => {
     const result = await handleCreateOrderStep(
       fakeSupabase,
@@ -385,6 +426,77 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
 
     expect(result.reply.text).not.toMatch(/productos frecuentes/i);
     expect(result.reply.text).toMatch(/escribe el nombre del producto/i);
+  });
+
+  it("confirmar en modo editar (order_id en el context) llama a updateOrder, no a createOrder, y responde con el pedido actualizado", async () => {
+    const result = await handleCreateOrderStep(
+      fakeSupabase,
+      CUSTOMER_ID,
+      CREATE_FLOW_STATES.REVIEWING_ORDER,
+      { items: oneItem, order_id: "order-1", order_code: "1326" },
+      { text: "", callbackData: "create:confirm" },
+      PLAN_DATE,
+    );
+
+    expect(mockUpdateOrder).toHaveBeenCalledWith(fakeSupabase, "order-1", CUSTOMER_ID, [
+      { product_id: "p-tomato-kg", required_quantity: 3 },
+    ]);
+    expect(mockCreateOrder).not.toHaveBeenCalled();
+    expect(result.reply.text).toContain("1326");
+    expect(result.reply.text).toContain("actualizado");
+    expect(result.reply.text).toContain('3 kg de "Tomate chonto"');
+    expect(result.nextState).toBe("idle");
+  });
+
+  it('"agregar otro producto" en modo editar conserva order_id/order_code para la siguiente vuelta', async () => {
+    mockGetFrequentProducts.mockResolvedValue([]);
+
+    const result = await handleCreateOrderStep(
+      fakeSupabase,
+      CUSTOMER_ID,
+      CREATE_FLOW_STATES.REVIEWING_ORDER,
+      { items: oneItem, order_id: "order-1", order_code: "1326" },
+      { text: "", callbackData: "create:add_more" },
+      PLAN_DATE,
+    );
+
+    expect(result.nextContext).toMatchObject({ order_id: "order-1", order_code: "1326" });
+  });
+
+  it("abortar en modo editar no llama a updateOrder y avisa que no se guardó ningún cambio", async () => {
+    const result = await handleCreateOrderStep(
+      fakeSupabase,
+      CUSTOMER_ID,
+      CREATE_FLOW_STATES.REVIEWING_ORDER,
+      { items: oneItem, order_id: "order-1", order_code: "1326" },
+      { text: "", callbackData: "create:abort" },
+      PLAN_DATE,
+    );
+
+    expect(mockUpdateOrder).not.toHaveBeenCalled();
+    expect(result.reply.text).toMatch(/no se guardó ningún cambio/i);
+  });
+
+  it.each([
+    ["ORDER_NOT_FOUND", /no encontré ese pedido/i],
+    ["ORDER_NOT_EDITABLE", /ya no se puede modificar/i],
+    ["PLAN_NOT_EDITABLE", /ya no acepta cambios/i],
+    ["PAST_CUTOFF", /modificar pedidos/i],
+  ] as const)("confirmar en modo editar con error %s responde el mensaje amigable correspondiente, nunca el crudo", async (code, expectedPattern) => {
+    mockUpdateOrder.mockRejectedValue(new BotServiceError(code, `${code}: detalle técnico interno`));
+
+    const result = await handleCreateOrderStep(
+      fakeSupabase,
+      CUSTOMER_ID,
+      CREATE_FLOW_STATES.REVIEWING_ORDER,
+      { items: oneItem, order_id: "order-1", order_code: "1326" },
+      { text: "", callbackData: "create:confirm" },
+      PLAN_DATE,
+    );
+
+    expect(result.reply.text).toMatch(expectedPattern);
+    expect(result.reply.text).not.toContain("detalle técnico interno");
+    expect(result.nextState).toBe("idle");
   });
 
   it.each([

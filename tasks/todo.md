@@ -764,18 +764,46 @@ existente, reutilizando selección de producto/unidad/cantidad de la Tarea 15, l
 `updateOrder`.
 
 **Acceptance criteria:**
-- [ ] Editar actualiza exactamente los items confirmados
-- [ ] `PLAN_NOT_EDITABLE` y `PAST_CUTOFF` se traducen a mensajes distintos y correctos
-- [ ] Nunca permite editar un pedido con `created_by_admin_id` no nulo
+- [x] Editar actualiza exactamente los items confirmados
+- [x] `PLAN_NOT_EDITABLE` y `PAST_CUTOFF` se traducen a mensajes distintos y correctos
+- [x] Nunca permite editar un pedido con `created_by_admin_id` no nulo
 
 **Verification:**
-- [ ] Vitest: casos de edición exitosa y de los 2 códigos de error — `npm run test` en verde
+- [x] Vitest: casos de edición exitosa y de los 2 códigos de error — `npm run test` en verde, 116/116
+- [x] pgTAP: `bot_get_current_order` ahora incluye `product_name`/`unit` por item — en verde
+- [x] `npm run build` y `npm run lint` sin errores nuevos
 - [ ] Manual, en staging: editar un pedido real y confirmar en el panel admin; forzar `PLAN_NOT_EDITABLE` moviendo el plan a `preparing` a mano
+
+**Decisión de diseño — reutilizar el loop de crear en vez de un flujo nuevo:** en vez de
+construir un flujo de edición aparte, "📋 Ver / modificar" (cuando hay un pedido) salta
+directo a `REVIEWING_ORDER` con los items existentes precargados (`startEditOrderFlow`),
+usando el mismo loop "agregar otro producto / confirmar / cancelar" de la Tarea 15. La
+presencia de `order_id`/`order_code` en el context (en vez de su ausencia) es lo único
+que distingue "editar" de "crear" en cada paso — así que "editar cantidades" se logra
+re-eligiendo el mismo producto con una cantidad nueva.
+
+**Bug latente corregido de paso (afecta también a crear, no solo a editar):**
+`handleAwaitingQuantity` siempre agregaba el nuevo item al final de la lista, aunque ya
+hubiera uno con el mismo `product_id` — re-elegir "Tomate" dos veces habría dejado dos
+líneas de tomate en vez de actualizar la cantidad. Se agregó `upsertItem` (reemplaza por
+`product_id` en vez de siempre `push`), necesario para que "editar cantidad" tenga
+sentido con este mismo loop.
+
+**Hallazgo faltante corregido (mismo patrón de siempre):** `bot_get_current_order`
+devolvía cada item como `{product_id, required_quantity}` nada más — sin
+`product_name`/`unit` no se puede reconstruir un `PendingItem` para precargar el flujo de
+editar. Se extendió con un join a `product` (migración nueva,
+`20261010000000_bot_current_order_items_with_product_info.sql`, `CREATE OR REPLACE`
+aditivo sobre la función de la Tarea 5).
 
 **Dependencies:** Tarea 8, Tarea 15
 
 **Files likely touched:**
 - `lib/bot/domain.ts`
+- `lib/bot/flows/createOrder.ts`, `lib/bot/flows/createOrder.test.ts`
+- `lib/bot/services/orders.ts`, `lib/bot/services/orders.test.ts`
+- `supabase/migrations/20261010000000_bot_current_order_items_with_product_info.sql` (nuevo)
+- `supabase/tests/database/bot_read_functions.sql`
 
 **Estimated scope:** M (reutiliza lo de la Tarea 15)
 

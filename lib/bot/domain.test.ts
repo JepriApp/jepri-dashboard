@@ -3,7 +3,7 @@ import { handleInboundMessage, handleInboundMessageForChannel } from "@/lib/bot/
 import { getActivePlanStatus } from "@/lib/bot/services/plan";
 import { getCurrentOrder } from "@/lib/bot/services/orders";
 import { getConversationState, resetConversationState, setConversationState } from "@/lib/bot/services/conversation";
-import { handleCreateOrderStep, startCreateOrderFlow } from "@/lib/bot/flows/createOrder";
+import { handleCreateOrderStep, startCreateOrderFlow, startEditOrderFlow } from "@/lib/bot/flows/createOrder";
 
 vi.mock("@/lib/bot/services/plan", () => ({
   getActivePlanStatus: vi.fn(),
@@ -25,6 +25,7 @@ vi.mock("@/lib/bot/flows/createOrder", () => ({
     REVIEWING_ORDER: "create:reviewing_order",
   },
   startCreateOrderFlow: vi.fn(),
+  startEditOrderFlow: vi.fn(),
   handleCreateOrderStep: vi.fn(),
 }));
 
@@ -34,6 +35,7 @@ const mockGetConversationState = vi.mocked(getConversationState);
 const mockSetConversationState = vi.mocked(setConversationState);
 const mockResetConversationState = vi.mocked(resetConversationState);
 const mockStartCreateOrderFlow = vi.mocked(startCreateOrderFlow);
+const mockStartEditOrderFlow = vi.mocked(startEditOrderFlow);
 const mockHandleCreateOrderStep = vi.mocked(handleCreateOrderStep);
 
 // El cliente Supabase nunca se usa de verdad acá — todos los servicios que lo usan
@@ -116,16 +118,19 @@ describe("handleInboundMessage", () => {
     expect(result.text).toMatch(/no tienes ningún pedido activo/i);
   });
 
-  it('"Ver pedido" con un pedido activo muestra su código, estado y cantidad de productos', async () => {
+  it('"Ver pedido" con un pedido activo arranca el flujo de editar con ese pedido (Tarea 17)', async () => {
     mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
-    mockGetCurrentOrder.mockResolvedValue({
+    const order = {
       order_id: "order-1",
       order_code: "1326",
       status: "pending",
-      items: [
-        { product_id: "p1", required_quantity: 3 },
-        { product_id: "p2", required_quantity: 1 },
-      ],
+      items: [{ product_id: "p1", product_name: "Tomate chonto", unit: "kg", required_quantity: 3 }],
+    };
+    mockGetCurrentOrder.mockResolvedValue(order);
+    mockStartEditOrderFlow.mockReturnValue({
+      reply: { text: "Tu pedido 1326 hasta ahora:\n• 3 kg de \"Tomate chonto\"" },
+      nextState: "create:reviewing_order",
+      nextContext: { items: order.items, order_id: "order-1", order_code: "1326" },
     });
 
     const result = await handleInboundMessage(fakeSupabase, customer, {
@@ -134,31 +139,18 @@ describe("handleInboundMessage", () => {
       callbackData: "menu:view_order",
     });
 
+    expect(mockStartEditOrderFlow).toHaveBeenCalledWith(order);
     expect(result.text).toContain("1326");
-    expect(result.text).toContain("pendiente");
-    expect(result.text).toContain("2 productos");
+    expect(mockSetConversationState).toHaveBeenCalledWith(
+      fakeSupabase,
+      "cust-1",
+      "telegram",
+      "create:reviewing_order",
+      { items: order.items, order_id: "order-1", order_code: "1326" },
+    );
   });
 
-  it('"Ver pedido" con un solo producto usa el singular', async () => {
-    mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
-    mockGetCurrentOrder.mockResolvedValue({
-      order_id: "order-1",
-      order_code: "1327",
-      status: "pending",
-      items: [{ product_id: "p1", required_quantity: 3 }],
-    });
-
-    const result = await handleInboundMessage(fakeSupabase, customer, {
-      channel: "telegram",
-      text: "",
-      callbackData: "menu:view_order",
-    });
-
-    expect(result.text).toContain("1 producto");
-    expect(result.text).not.toContain("1 productos");
-  });
-
-  it('"Cancelar pedido" todavía responde que no está disponible (Tarea 17)', async () => {
+  it('"Cancelar pedido" todavía responde que no está disponible (Tarea 18)', async () => {
     mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
 
     const result = await handleInboundMessage(fakeSupabase, customer, {
