@@ -872,7 +872,11 @@ curso.
 - [x] Los 3 flujos funcionan de punta a punta contra el bot real en staging
 - [x] Verificado en el panel admin que ninguno rompe o altera el comportamiento existente
 - [x] Suite completa de Vitest + pgTAP en verde
-- [ ] Revisión con el humano antes de pasar a dureza operativa
+- [x] Revisión con el humano antes de pasar a dureza operativa — confirmado: los 3
+      flujos funcionan, los pedidos se ven bien en el panel admin, la identidad
+      multi-cliente (Tarea 16) es un caso real de negocio (clientes compartiendo número,
+      y vendedores a destajo atendiendo muchas empresas), y la Tarea 25 (varios pedidos
+      por día) es vital — ver nota ampliada en la Tarea 25 más abajo
 
 ---
 

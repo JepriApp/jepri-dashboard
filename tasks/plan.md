@@ -138,11 +138,20 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
 - [ ] Tarea 24: Prueba de aceptación manual de punta a punta contra `todo/ChatBot.md`
 
 ### Backlog diferido (surgido en vivo durante la Tarea 15/16, fuera de las 24 tareas originales)
-- [ ] Tarea 25: Varios pedidos el mismo día para el mismo punto de entrega — hoy
-  `bot_create_order` rechaza con `ORDER_ALREADY_EXISTS` un segundo pedido para el mismo
-  `customer_id` + plan. Alcance: quitar ese chequeo, y cambiar `bot_get_current_order`/
-  `getCurrentOrder`/`viewOrderMessage` de "un pedido" a una lista. Explícitamente
-  pospuesto por decisión del usuario — no se encarece por dejarlo para el final.
+- [ ] Tarea 25: Varios pedidos el mismo día para el mismo punto de entrega — confirmado
+  con el usuario que es **vital**, no opcional (revisión de la Fase 4, 2026-10-10).
+  Alcance:
+  - Quitar el chequeo `ORDER_ALREADY_EXISTS` de `bot_create_order` (hoy rechaza un
+    segundo pedido para el mismo `customer_id` + plan).
+  - Cambiar `bot_get_current_order`/`getCurrentOrder` de "un pedido" a una lista de
+    pedidos del día.
+  - **Nuevo, explícito del usuario:** "📋 Ver/modificar" y "❌ Cancelar" necesitan un paso
+    de selección — cuando hay más de un pedido activo, preguntar primero *cuál* antes de
+    entrar al flujo de editar o a la confirmación de cancelar (mismo patrón que la
+    desambiguación de cliente de la Tarea 16: un botón por pedido, ej. con su
+    `order_code` + resumen de items). Con un solo pedido, se entra directo como hoy.
+  Explícitamente pospuesto por decisión del usuario — no se encarece por dejarlo para
+  el final.
 
 ### Checkpoint: Completo
 - [ ] Todos los criterios de aceptación de las 24 tareas (+ Tarea 25 si se decide incluirla) cumplidos
