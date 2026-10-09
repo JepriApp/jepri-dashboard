@@ -73,11 +73,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await notifyOps(`⚠️ Error no controlado en el webhook de Telegram: ${message}`).catch(() => {});
+    console.error("bot: error no controlado en el webhook de Telegram:", error);
+
+    await notifyOps(`⚠️ Error no controlado en el webhook de Telegram: ${message}`).catch((notifyError) => {
+      console.error("bot: además falló notifyOps:", notifyError);
+    });
 
     const externalId = payload?.message?.chat?.id ?? payload?.callback_query?.message?.chat?.id;
     if (externalId !== undefined) {
-      await sendMessage(String(externalId), GENERIC_ERROR_MESSAGE).catch(() => {});
+      await sendMessage(String(externalId), GENERIC_ERROR_MESSAGE).catch((sendError) => {
+        console.error("bot: además falló el sendMessage genérico al cliente:", sendError);
+      });
     }
 
     return NextResponse.json({ ok: true });
