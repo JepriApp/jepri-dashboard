@@ -443,13 +443,14 @@ en vez de dejarlos pasar crudos, por consistencia con el resto de la capa de ser
 (traduce `BotMessage.buttons` a teclado inline), y `notifyOps` (usado desde la Tarea 19).
 
 **Acceptance criteria:**
-- [ ] `parseInbound` maneja mensajes de texto y `callback_query`
-- [ ] `sendMessage` genera el JSON correcto de `reply_markup.inline_keyboard` cuando hay botones
-- [ ] `notifyOps(message)` llama a `sendMessage` con el `TELEGRAM_OPS_CHAT_ID`
+- [x] `parseInbound` maneja mensajes de texto y `callback_query`
+- [x] `sendMessage` genera el JSON correcto de `reply_markup.inline_keyboard` cuando hay botones
+- [x] `notifyOps(message)` llama a `sendMessage` con el `TELEGRAM_OPS_CHAT_ID`
 
 **Verification:**
-- [ ] Vitest: `parseInbound` con fixtures de updates reales de Telegram (texto y callback_query); `sendMessage` mockeando `fetch` y verificando el payload — `npm run test` en verde
-- [ ] Manual, una sola vez: con `curl` directo a la Bot API desde una consola Node, confirmar que un mensaje de prueba llega al chat_id de prueba
+- [x] Vitest (`lib/bot/adapters/telegram.test.ts`, 10 tests): `parseInbound` con fixtures reales (texto, callback_query, y 2 casos de update no soportado que deben lanzar); `sendMessage` con `fetch` mockeado (texto plano, botones → `inline_keyboard` un botón por fila, error de la API, token faltante); `notifyOps` (destino correcto, chat id faltante) — `npm run test` en verde, 40/40 tests totales
+- [x] Manual, real (no mockeado): corrido vía `tsx` contra la Bot API real, mensaje con 2 botones enviado a `@Jepridevbot` → confirmado recibido en el chat de prueba
+- [x] `npm run build` y `npm run lint` pasan (59 problemas preexistentes sin cambios)
 
 **Dependencies:** Tarea 10, Tarea 1 (token)
 
