@@ -71,6 +71,121 @@ export type Database = {
           },
         ]
       }
+      bot_api_key: {
+        Row: {
+          created_at: string
+          id: string
+          key_hash: string
+          name: string
+          revoked_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          key_hash: string
+          name: string
+          revoked_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          key_hash?: string
+          name?: string
+          revoked_at?: string | null
+        }
+        Relationships: []
+      }
+      bot_conversation_state: {
+        Row: {
+          channel: string
+          context: Json
+          customer_id: string
+          id: string
+          state: string
+          updated_at: string
+        }
+        Insert: {
+          channel: string
+          context?: Json
+          customer_id: string
+          id?: string
+          state: string
+          updated_at?: string
+        }
+        Update: {
+          channel?: string
+          context?: Json
+          customer_id?: string
+          id?: string
+          state?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bot_conversation_state_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customer"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bot_interaction_log: {
+        Row: {
+          action: string
+          channel: string
+          created_at: string
+          customer_id: string | null
+          id: string
+          payload: Json | null
+          result: Json | null
+        }
+        Insert: {
+          action: string
+          channel: string
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          payload?: Json | null
+          result?: Json | null
+        }
+        Update: {
+          action?: string
+          channel?: string
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          payload?: Json | null
+          result?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bot_interaction_log_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customer"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bot_processed_update: {
+        Row: {
+          channel: string
+          created_at: string
+          update_id: string
+        }
+        Insert: {
+          channel: string
+          created_at?: string
+          update_id: string
+        }
+        Update: {
+          channel?: string
+          created_at?: string
+          update_id?: string
+        }
+        Relationships: []
+      }
       customer: {
         Row: {
           contact: string | null
@@ -505,6 +620,7 @@ export type Database = {
       }
       product: {
         Row: {
+          canonical_group_id: string | null
           created_at: string | null
           description: string | null
           id: string
@@ -515,6 +631,7 @@ export type Database = {
           unit: Database["public"]["Enums"]["unit_type"]
         }
         Insert: {
+          canonical_group_id?: string | null
           created_at?: string | null
           description?: string | null
           id?: string
@@ -525,6 +642,7 @@ export type Database = {
           unit: Database["public"]["Enums"]["unit_type"]
         }
         Update: {
+          canonical_group_id?: string | null
           created_at?: string | null
           description?: string | null
           id?: string
@@ -533,6 +651,32 @@ export type Database = {
           reference_price?: number | null
           siigo_id?: string | null
           unit?: Database["public"]["Enums"]["unit_type"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_canonical_group_id_fkey"
+            columns: ["canonical_group_id"]
+            isOneToOne: false
+            referencedRelation: "product_canonical_group"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      product_canonical_group: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
         }
         Relationships: []
       }
@@ -1602,6 +1746,66 @@ export type Database = {
       }
     }
     Functions: {
+      bot_cancel_order: {
+        Args: { p_customer_id: string; p_order_id: string }
+        Returns: undefined
+      }
+      bot_create_order: {
+        Args: { p_customer_id: string; p_items: Json }
+        Returns: {
+          order_code: string
+          order_id: string
+        }[]
+      }
+      bot_get_active_plan: {
+        Args: never
+        Returns: {
+          cutoff_at: string
+          plan_date: string
+          plan_id: string
+        }[]
+      }
+      bot_get_current_order: {
+        Args: { p_customer_id: string }
+        Returns: {
+          items: Json
+          order_code: string
+          order_id: string
+          status: string
+        }[]
+      }
+      bot_get_frequent_products: {
+        Args: { p_customer_id: string; p_limit?: number }
+        Returns: {
+          canonical_group_id: string
+          canonical_name: string
+          times_ordered: number
+          variants: Json
+        }[]
+      }
+      bot_resolve_customer: {
+        Args: { p_external_id: string }
+        Returns: {
+          customer_id: string
+          name: string
+        }[]
+      }
+      bot_search_catalog: {
+        Args: { p_limit?: number; p_query: string }
+        Returns: {
+          canonical_group_id: string
+          canonical_name: string
+          variants: Json
+        }[]
+      }
+      bot_update_order: {
+        Args: { p_customer_id: string; p_items: Json; p_order_id: string }
+        Returns: undefined
+      }
+      bot_validate_api_key: {
+        Args: { p_key_hash: string }
+        Returns: boolean
+      }
       get_in_progress_operations: {
         Args: never
         Returns: {

@@ -287,18 +287,46 @@ cliente Supabase de servidor (`lib/supabase/server.ts`), tipadas con `Database` 
 `database.types.ts`.
 
 **Acceptance criteria:**
-- [ ] Ambas funciones devuelven tipos TS explícitos (no `any`)
-- [ ] Manejan el caso de 0 resultados sin lanzar
+- [x] Ambas funciones devuelven tipos TS explícitos (no `any`)
+- [x] Manejan el caso de 0 resultados sin lanzar
 
 **Verification:**
-- [ ] Vitest: ambas funciones probadas contra el proyecto Supabase de desarrollo (o un mock del cliente) — `npm run test` en verde
-- [ ] `npm run build` y `npm run lint` pasan
+- [x] Vitest (4 tests, `lib/bot/services/products.test.ts`) contra staging real (anon key, mismo camino que usará el bot en producción) — `npm run test` en verde
+- [x] `npm run build` y `npm run lint` pasan (los 59 problemas preexistentes no relacionados siguen igual, ninguno nuevo)
+
+**Decisión de diseño:** se usa el patrón ya establecido en el repo (`listDistributionPlans.tsx`
+y similares) de recibir el `SupabaseClient` ya creado como primer parámetro, en vez de
+llamar a `createClient()` de `lib/supabase/server.ts` internamente — ese `createClient`
+depende de `cookies()` de `next/headers`, que solo existe dentro de un server
+component/route handler, no en un test de Vitest. Esto además hace el servicio
+channel-agnostic de verdad: el webhook de Telegram (Tarea 12+) crea el cliente una vez y
+lo pasa a cada función de servicio.
+
+`database.types.ts` no tenía las funciones/tablas nuevas del bot (se genera desde Neptuno,
+que no las tiene hasta la Tarea 22) — intenté regenerarlo apuntando a staging
+(`supabase gen types --db-url`), pero también necesita Docker (no disponible aquí). Se
+extendió el archivo a mano, siguiendo exactamente el formato que genera el CLI (mismo
+orden alfabético de columnas/funciones que ya tiene el resto del archivo): las 5 tablas,
+la columna nueva de `product`, y las 9 funciones `bot_*`. Cuando la Tarea 22 corra el
+`update-supabase-types` real contra Neptuno (ya migrada), el regenerado automático
+coincidirá con esto.
+
+También: `vitest.setup.ts` nuevo (cargado vía `vitest.config.mts` → `test.setupFiles`) usa
+`process.loadEnvFile(".env.local")` (Node 24) porque Vitest no carga `.env.local`
+automáticamente como sí hace Next.js — sin esto, cualquier test que necesite credenciales
+reales vería `process.env` vacío. Y `lib/bot/test-helpers.ts` (`createTestSupabaseClient`)
+crea un cliente Supabase plano apuntando a `NEXT_PUBLIC_SUPABASE_URL` (self-hosted de
+staging) con la misma anon key que usará el bot — reutilizable en las próximas tareas de
+la Fase 2.
 
 **Dependencies:** Tarea 5
 
 **Files likely touched:**
 - `lib/bot/services/products.ts`
 - `lib/bot/services/products.test.ts`
+- `lib/bot/test-helpers.ts` (nuevo, reutilizable)
+- `vitest.setup.ts`, `vitest.config.mts` (carga de `.env.local` en tests)
+- `database.types.ts` (extendido a mano con el esquema del bot)
 
 **Estimated scope:** S (2 archivos)
 

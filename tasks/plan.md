@@ -84,7 +84,7 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
 - [x] `npm run build` sigue pasando sin tocar código TS todavía
 
 ### Fase 2: Capa de servicio TypeScript
-- [ ] Tarea 7: Servicio de catálogo (`lib/bot/services/products.ts`)
+- [x] Tarea 7: Servicio de catálogo (`lib/bot/services/products.ts`)
 - [ ] Tarea 8: Servicio de pedidos (`lib/bot/services/orders.ts`)
 - [ ] Tarea 9: Servicio de whitelist (`lib/bot/services/auth.ts`)
 

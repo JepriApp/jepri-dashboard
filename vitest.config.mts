@@ -10,5 +10,6 @@ export default defineConfig({
     environment: "node",
     include: ["**/*.test.ts", "**/*.test.tsx"],
     exclude: ["node_modules", ".next", "supabase/.temp"],
+    setupFiles: ["./vitest.setup.ts"],
   },
 });
