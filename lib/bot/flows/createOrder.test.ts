@@ -92,8 +92,13 @@ describe("startEditOrderFlow (Tarea 17)", () => {
     });
     expect(result.reply.text).toContain("1326");
     expect(result.reply.text).toContain('3 kg de "Tomate chonto"');
-    expect(result.reply.buttons?.map((b) => b.value)).toEqual(["create:add_more", "create:confirm", "create:abort"]);
-    expect(result.reply.buttons?.[1].label).toBe("✅ Confirmar cambios");
+    expect(result.reply.buttons?.map((b) => b.value)).toEqual([
+      "create:add_more",
+      "create:change_qty",
+      "create:confirm",
+      "create:abort",
+    ]);
+    expect(result.reply.buttons?.[2].label).toBe("✅ Confirmar cambios");
   });
 });
 
@@ -278,6 +283,7 @@ describe("handleCreateOrderStep — AWAITING_QUANTITY", () => {
     expect(result.reply.text).toContain("Tomate chonto");
     expect(result.reply.buttons?.map((b) => b.value)).toEqual([
       "create:add_more",
+      "create:change_qty",
       "create:confirm",
       "create:abort",
     ]);
@@ -426,6 +432,113 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
 
     expect(result.reply.text).not.toMatch(/productos frecuentes/i);
     expect(result.reply.text).toMatch(/escribe el nombre del producto/i);
+  });
+
+  it('"cambiar cantidad" muestra un botón por item, y elegir uno pide la cantidad nueva mencionando la actual', async () => {
+    const picker = await handleCreateOrderStep(
+      fakeSupabase,
+      CUSTOMER_ID,
+      CREATE_FLOW_STATES.REVIEWING_ORDER,
+      { items: twoItems },
+      { text: "", callbackData: "create:change_qty" },
+      PLAN_DATE,
+    );
+
+    expect(picker.reply.buttons?.map((b) => b.value)).toEqual([
+      "create:pick_qty:p-tomato-kg",
+      "create:pick_qty:p-onion-kg",
+      "create:back_to_review",
+    ]);
+
+    const result = await handleCreateOrderStep(
+      fakeSupabase,
+      CUSTOMER_ID,
+      CREATE_FLOW_STATES.REVIEWING_ORDER,
+      { items: twoItems },
+      { text: "", callbackData: "create:pick_qty:p-tomato-kg" },
+      PLAN_DATE,
+    );
+
+    expect(result.nextState).toBe(CREATE_FLOW_STATES.AWAITING_QUANTITY);
+    expect(result.nextContext).toMatchObject({ product_id: "p-tomato-kg", product_name: "Tomate chonto", unit: "kg" });
+    expect(result.reply.text).toContain("tenías 3");
+  });
+
+  it('escribir la cantidad nueva tras "cambiar cantidad" reemplaza la línea, no la duplica', async () => {
+    const result = await handleCreateOrderStep(
+      fakeSupabase,
+      CUSTOMER_ID,
+      CREATE_FLOW_STATES.AWAITING_QUANTITY,
+      { product_id: "p-tomato-kg", product_name: "Tomate chonto", unit: "kg", items: twoItems },
+      { text: "7" },
+      PLAN_DATE,
+    );
+
+    expect((result.nextContext as Record<string, unknown>).items).toEqual([
+      { product_id: "p-tomato-kg", product_name: "Tomate chonto", unit: "kg", quantity: 7 },
+      { product_id: "p-onion-kg", product_name: "Cebolla cabezona", unit: "kg", quantity: 2 },
+    ]);
+  });
+
+  it('"quitar producto" con un solo item no se ofrece — el botón no aparece en la revisión', async () => {
+    const result = await handleCreateOrderStep(
+      fakeSupabase,
+      CUSTOMER_ID,
+      CREATE_FLOW_STATES.AWAITING_QUANTITY,
+      { product_id: "p-tomato-kg", product_name: "Tomate chonto", unit: "kg", items: [] },
+      { text: "3" },
+      PLAN_DATE,
+    );
+
+    expect(result.reply.buttons?.map((b) => b.value)).not.toContain("create:remove_item");
+  });
+
+  it('"quitar producto" muestra un botón por item, y elegir uno lo saca de la lista', async () => {
+    const picker = await handleCreateOrderStep(
+      fakeSupabase,
+      CUSTOMER_ID,
+      CREATE_FLOW_STATES.REVIEWING_ORDER,
+      { items: twoItems },
+      { text: "", callbackData: "create:remove_item" },
+      PLAN_DATE,
+    );
+
+    expect(picker.reply.buttons?.map((b) => b.value)).toEqual([
+      "create:pick_remove:p-tomato-kg",
+      "create:pick_remove:p-onion-kg",
+      "create:back_to_review",
+    ]);
+
+    const result = await handleCreateOrderStep(
+      fakeSupabase,
+      CUSTOMER_ID,
+      CREATE_FLOW_STATES.REVIEWING_ORDER,
+      { items: twoItems },
+      { text: "", callbackData: "create:pick_remove:p-tomato-kg" },
+      PLAN_DATE,
+    );
+
+    expect(result.nextState).toBe(CREATE_FLOW_STATES.REVIEWING_ORDER);
+    expect((result.nextContext as Record<string, unknown>).items).toEqual([
+      { product_id: "p-onion-kg", product_name: "Cebolla cabezona", unit: "kg", quantity: 2 },
+    ]);
+    expect(result.reply.text).not.toContain("Tomate chonto");
+    expect(mockCreateOrder).not.toHaveBeenCalled();
+  });
+
+  it('"volver" desde cualquiera de los pickers vuelve a la pantalla de revisión sin tocar los items', async () => {
+    const result = await handleCreateOrderStep(
+      fakeSupabase,
+      CUSTOMER_ID,
+      CREATE_FLOW_STATES.REVIEWING_ORDER,
+      { items: twoItems },
+      { text: "", callbackData: "create:back_to_review" },
+      PLAN_DATE,
+    );
+
+    expect(result.nextState).toBe(CREATE_FLOW_STATES.REVIEWING_ORDER);
+    expect(result.reply.text).toContain("Tomate chonto");
+    expect(result.reply.text).toContain("Cebolla cabezona");
   });
 
   it("confirmar en modo editar (order_id en el context) llama a updateOrder, no a createOrder, y responde con el pedido actualizado", async () => {

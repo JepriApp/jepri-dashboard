@@ -43,10 +43,15 @@ type StepResult = {
 
 const CALLBACK_SEARCH = "create:search";
 const CALLBACK_ADD_MORE = "create:add_more";
+const CALLBACK_CHANGE_QTY = "create:change_qty";
+const CALLBACK_REMOVE_ITEM = "create:remove_item";
+const CALLBACK_BACK_TO_REVIEW = "create:back_to_review";
 const CALLBACK_CONFIRM = "create:confirm";
 const CALLBACK_ABORT = "create:abort";
 const GROUP_PREFIX = "create:group:";
 const VARIANT_PREFIX = "create:variant:";
+const PICK_QTY_PREFIX = "create:pick_qty:";
+const PICK_REMOVE_PREFIX = "create:pick_remove:";
 
 function formatPrice(price: number | null): string {
   return price === null ? "precio no disponible" : `$${price.toLocaleString("es-CO")}`;
@@ -323,14 +328,37 @@ function formatItemLines(items: PendingItem[]): string {
 function reviewMessage(items: PendingItem[], orderCode: string | null = null): BotMessage {
   const intro = orderCode ? `Tu pedido ${orderCode} hasta ahora:` : "Tu pedido hasta ahora:";
   const question = orderCode
-    ? "¿Agregas otro producto o confirmas los cambios?"
-    : "¿Agregas otro producto o confirmas el pedido?";
+    ? "¿Agregas otro producto, cambias algo, o confirmas los cambios?"
+    : "¿Agregas otro producto, cambias algo, o confirmas el pedido?";
+  const buttons = [
+    { label: "➕ Agregar otro producto", value: CALLBACK_ADD_MORE },
+    { label: "✏️ Cambiar cantidad", value: CALLBACK_CHANGE_QTY },
+  ];
+  // Quitar el único producto dejaría el pedido vacío — no tiene sentido ofrecerlo; para
+  // eso ya está "❌ Cancelar".
+  if (items.length > 1) {
+    buttons.push({ label: "🗑️ Quitar producto", value: CALLBACK_REMOVE_ITEM });
+  }
+  buttons.push({ label: orderCode ? "✅ Confirmar cambios" : "✅ Confirmar pedido", value: CALLBACK_CONFIRM });
+  buttons.push({ label: "❌ Cancelar", value: CALLBACK_ABORT });
+
   return {
     text: `${intro}\n${formatItemLines(items)}\n\n${question}`,
+    buttons,
+  };
+}
+
+/** Pantalla intermedia para elegir a cuál de los items ya elegidos aplica la acción
+ * ("cambiar cantidad" o "quitar") — un botón por item, más "⬅️ Volver" a la revisión. */
+function itemPickerMessage(items: PendingItem[], prefix: string, question: string): BotMessage {
+  return {
+    text: question,
     buttons: [
-      { label: "➕ Agregar otro producto", value: CALLBACK_ADD_MORE },
-      { label: orderCode ? "✅ Confirmar cambios" : "✅ Confirmar pedido", value: CALLBACK_CONFIRM },
-      { label: "❌ Cancelar", value: CALLBACK_ABORT },
+      ...items.map((item) => ({
+        label: `${item.quantity} ${item.unit} de "${item.product_name}"`,
+        value: `${prefix}${item.product_id}`,
+      })),
+      { label: "⬅️ Volver", value: CALLBACK_BACK_TO_REVIEW },
     ],
   };
 }
@@ -409,6 +437,67 @@ async function handleReviewingOrder(
 
   if (inbound.callbackData === CALLBACK_ADD_MORE) {
     return showProductChoices(supabaseClient, customerId, items, "Elige otro producto:", orderMeta);
+  }
+
+  if (inbound.callbackData === CALLBACK_BACK_TO_REVIEW) {
+    return {
+      reply: reviewMessage(items, orderMeta?.order_code ?? null),
+      nextState: CREATE_FLOW_STATES.REVIEWING_ORDER,
+      nextContext: context,
+    };
+  }
+
+  if (inbound.callbackData === CALLBACK_CHANGE_QTY) {
+    return {
+      reply: itemPickerMessage(items, PICK_QTY_PREFIX, "¿A cuál producto le quieres cambiar la cantidad?"),
+      nextState: CREATE_FLOW_STATES.REVIEWING_ORDER,
+      nextContext: context,
+    };
+  }
+
+  if (inbound.callbackData === CALLBACK_REMOVE_ITEM) {
+    return {
+      reply: itemPickerMessage(items, PICK_REMOVE_PREFIX, "¿Cuál producto quieres quitar?"),
+      nextState: CREATE_FLOW_STATES.REVIEWING_ORDER,
+      nextContext: context,
+    };
+  }
+
+  if (inbound.callbackData?.startsWith(PICK_QTY_PREFIX)) {
+    const productId = inbound.callbackData.slice(PICK_QTY_PREFIX.length);
+    const found = items.find((item) => item.product_id === productId);
+    if (found) {
+      return {
+        reply: {
+          text: `¿Cuántos ${found.unit} de "${found.product_name}" quieres? (tenías ${found.quantity}). Escribe solo el número.`,
+        },
+        nextState: CREATE_FLOW_STATES.AWAITING_QUANTITY,
+        nextContext: {
+          product_id: found.product_id,
+          product_name: found.product_name,
+          unit: found.unit,
+          items,
+          ...(orderMeta ?? {}),
+        } as unknown as ConversationContext,
+      };
+    }
+    // product_id que ya no está en la lista (doble tap, botón viejo): vuelve a la revisión.
+    return {
+      reply: reviewMessage(items, orderMeta?.order_code ?? null),
+      nextState: CREATE_FLOW_STATES.REVIEWING_ORDER,
+      nextContext: context,
+    };
+  }
+
+  if (inbound.callbackData?.startsWith(PICK_REMOVE_PREFIX)) {
+    const productId = inbound.callbackData.slice(PICK_REMOVE_PREFIX.length);
+    const remaining = items.filter((item) => item.product_id !== productId);
+    const newItems = remaining.length > 0 ? remaining : items;
+    return {
+      reply: reviewMessage(newItems, orderMeta?.order_code ?? null),
+      nextState: CREATE_FLOW_STATES.REVIEWING_ORDER,
+      nextContext: { items: newItems, ...(orderMeta ?? {}) } as unknown as ConversationContext,
+    };
   }
 
   if (inbound.callbackData === CALLBACK_CONFIRM) {

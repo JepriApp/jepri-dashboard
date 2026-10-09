@@ -769,7 +769,7 @@ existente, reutilizando selección de producto/unidad/cantidad de la Tarea 15, l
 - [x] Nunca permite editar un pedido con `created_by_admin_id` no nulo
 
 **Verification:**
-- [x] Vitest: casos de edición exitosa y de los 2 códigos de error — `npm run test` en verde, 116/116
+- [x] Vitest: casos de edición exitosa, los 4 códigos de error, y "cambiar cantidad"/"quitar producto" — `npm run test` en verde, 121/121
 - [x] pgTAP: `bot_get_current_order` ahora incluye `product_name`/`unit` por item — en verde
 - [x] `npm run build` y `npm run lint` sin errores nuevos
 - [ ] Manual, en staging: editar un pedido real y confirmar en el panel admin; forzar `PLAN_NOT_EDITABLE` moviendo el plan a `preparing` a mano
@@ -788,6 +788,17 @@ hubiera uno con el mismo `product_id` — re-elegir "Tomate" dos veces habría d
 líneas de tomate en vez de actualizar la cantidad. Se agregó `upsertItem` (reemplaza por
 `product_id` en vez de siempre `push`), necesario para que "editar cantidad" tenga
 sentido con este mismo loop.
+
+**Ajuste pedido en vivo tras la primera versión:** probando en staging, el usuario
+señaló que la pantalla de revisión solo dejaba *agregar* productos — no había manera de
+quitar uno ni de cambiar una cantidad sin saber de antemano que re-elegir el mismo
+producto la reemplazaba (no era descubrible). Se agregaron dos botones a la revisión,
+"✏️ Cambiar cantidad" y "🗑️ Quitar producto" (el segundo solo si hay más de un item —
+quitar el único dejaría el pedido vacío), cada uno abre una pantalla intermedia con un
+botón por item ya elegido más "⬅️ Volver". Elegir uno para "cambiar cantidad" entra a
+`AWAITING_QUANTITY` con el product_id de ese item precargado (reusa `upsertItem` para
+reemplazar, mencionando la cantidad actual en la pregunta); para "quitar" simplemente
+filtra ese item de la lista y vuelve a la revisión. Aplica igual en crear y en editar.
 
 **Hallazgo faltante corregido (mismo patrón de siempre):** `bot_get_current_order`
 devolvía cada item como `{product_id, required_quantity}` nada más — sin
