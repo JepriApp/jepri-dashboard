@@ -1170,7 +1170,10 @@ hace varios pedidos el mismo día.
       y 7 tests del selector en `domain.test.ts`, incluido el caso de varios clientes por
       número (Tarea 16) con un cliente eligiendo pedido
 - [x] `npx tsc --noEmit`, `npm run build` y `npm run lint` sin errores nuevos
-- [ ] Manual, en staging, contra @Jepridevbot: crear 2 pedidos, modificar uno, cancelar otro
+- [x] Manual, en staging, contra @Jepridevbot: pedidos `1563` y `1564` creados seguidos
+      (segundo permitido); "Ver / modificar" y "Cancelar" preguntaron cuál; `1564` quedó
+      `cancelled` y `1563` intacto; `1565` modificado sin tocar `1566`; doble toque en
+      "Confirmar" dejó un solo pedido — todo cuadra con `bot_interaction_log`
 - [ ] Aplicar `20261012000000_bot_multiple_orders_per_day.sql` a Neptuno **antes** de
       mergear/desplegar — ver "Orden de despliegue" abajo
 
