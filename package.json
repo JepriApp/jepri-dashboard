@@ -7,7 +7,14 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "update-supabase-types": "npx supabase gen types typescript --project-id acuofxciywrktkckokqo > database.types.ts"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:db": "bash scripts/run_pgtap_tests.sh",
+    "update-supabase-types": "npx supabase gen types typescript --project-id acuofxciywrktkckokqo > database.types.ts",
+    "generate-bot-api-key": "node scripts/generate_bot_api_key.mjs",
+    "export-products-for-grouping": "node scripts/export_products_for_canonical_grouping.mjs",
+    "build-canonical-group-proposal": "node scripts/build_canonical_group_proposal.mjs",
+    "apply-canonical-groups": "node scripts/apply_product_canonical_groups.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "6.x",
@@ -38,16 +45,19 @@
     "@tanstack/eslint-plugin-query": "^5.91.2",
     "@tanstack/react-query-devtools": "^5.91.1",
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "autoprefixer": "^10.4.20",
     "baseline-browser-mapping": "^2.10.27",
     "eslint": "^9",
     "eslint-config-next": "15.3.1",
+    "pg": "^8.23.1",
     "postcss": "^8",
     "supabase": "^2.76.16",
     "tailwindcss": "^3.4.1",
     "tailwindcss-animate": "^1.0.7",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^5.0.3"
   }
 }

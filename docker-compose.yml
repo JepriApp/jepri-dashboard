@@ -1,0 +1,28 @@
+# Staging en el servidor propio, detrás del reverse proxy + HTTPS ya existente (Tarea 3).
+# No se usa en Vercel.
+#
+# Setup en el servidor:
+#   1. cp .env.staging.example .env   (mismo directorio que este archivo)
+#   2. completar los valores en ese .env (ver comentarios ahí)
+#   3. docker compose up -d --build
+#   4. apuntar el reverse proxy existente a http://127.0.0.1:3001 (o el puerto que se
+#      cambie abajo) para el dominio de staging.
+#
+# docker-compose lee automáticamente ./.env para las sustituciones ${VAR} de abajo.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}
+    image: jepri-dashboard:staging
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      # Solo loopback: el reverse proxy del servidor (fuera de este compose) es quien
+      # expone esto al dominio público por HTTPS — nunca 0.0.0.0 directo a internet.
+      - "127.0.0.1:3001:3000"

@@ -1,5 +1,11 @@
 "use client";
 import { createClient } from "@/lib/supabase/client";
+import {
+  CUSTOMER_PHONE_HELP,
+  CUSTOMER_PHONE_REGEX,
+  CUSTOMER_WHATSAPP_ID_HELP,
+  CUSTOMER_WHATSAPP_ID_REGEX,
+} from "@/lib/customerContactValidation";
 import { useMutation } from "@tanstack/react-query";
 import { Button, Form, Input, message, Modal, Select } from "antd";
 import React, { useState } from "react";
@@ -8,6 +14,7 @@ interface CreateCustomerValues {
   name: string;
   contact: string;
   phone: string;
+  whatsapp_id?: string;
   identification_type: "CC" | "NIT" | "PPT" | "PEP";
   identification_number: string;
 
@@ -22,7 +29,7 @@ const CreateCustomerModal = ({
   const supabase = createClient();
 
   const createCustomerMutation = useMutation({
-    mutationFn: async ({ name, contact, phone, identification_type, identification_number }: CreateCustomerValues) => {
+    mutationFn: async ({ name, contact, phone, whatsapp_id, identification_type, identification_number }: CreateCustomerValues) => {
       // 1) Crear el usuario en Auth solo con teléfono
       const { data: createdUser, error: createErr } =
         await supabase.auth.signUp({
@@ -65,6 +72,7 @@ const CreateCustomerModal = ({
           name,
           contact,
           phone,
+          whatsapp_id: whatsapp_id || null,
           identification_type,
           identification_number,
         })
@@ -148,13 +156,25 @@ const CreateCustomerModal = ({
             rules={[
               { required: true, message: "Ingresa el teléfono del cliente" },
               {
-                pattern: new RegExp(/^\+\d{1,3}\d{1,14}$/),
-                message:
-                  "Ingresa un número de teléfono válido. Incluye el código del pais seguido del número de telefono sin espacios.",
+                pattern: CUSTOMER_PHONE_REGEX,
+                message: CUSTOMER_PHONE_HELP,
               },
             ]}
           >
-            <Input placeholder="Teléfono" />
+            <Input placeholder="+573134567890" />
+          </Form.Item>
+          <Form.Item
+            name="whatsapp_id"
+            label="WhatsApp ID"
+            tooltip="Número con código de país que se usa para escribirle al cliente por WhatsApp (ej. +573134567890), o un id alfanumérico si el contacto no es un número de teléfono. Puede ser distinto del teléfono de contacto."
+            rules={[
+              {
+                pattern: CUSTOMER_WHATSAPP_ID_REGEX,
+                message: CUSTOMER_WHATSAPP_ID_HELP,
+              },
+            ]}
+          >
+            <Input placeholder="+573134567890" />
           </Form.Item>
           <Form.Item
             name="identification_type"
