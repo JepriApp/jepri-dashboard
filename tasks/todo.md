@@ -1328,6 +1328,17 @@ las `bot_*` **deja al bot sin funcionar** si antes no cambia la llave con la que
    177/177. Con la publishable key la API responde `42501 permission denied` a las 3 y
    `bot_get_active_plan_status` (control) sigue respondiendo. **Pendiente: Neptuno**, solo
    con confirmación explícita.
+   **Decisión del usuario (2026-10-09): aplicar en Neptuno el domingo 2026-10-11 en la
+   mañana**, no antes — el sábado hay operación y no se quiere arriesgar el panel en medio.
+   Procedimiento del domingo (todo en una transacción, nada de esto se ejecuta antes):
+   - [ ] Consulta de solo lectura del ACL de las 3 funciones (esperado: `=X`, `anon=X`,
+         `authenticated=X`, `service_role=X`, `postgres=X`)
+   - [ ] `psql "$PROD_STRING_CONNECTION" -1 -f` de la migración `20261013000000_*`
+   - [ ] ACL después: solo `postgres`, `authenticated`, `service_role`
+   - [ ] `curl` con la publishable key y un `plan_id` aleatorio → `42501` en las 3
+   - [ ] Manual, en el panel: abrir un plan y usar "simular transición" (el panel corre
+         como `authenticated`) para confirmar que sigue funcionando
+   - [ ] Rollback si falla el panel: `GRANT EXECUTE ON FUNCTION ... TO PUBLIC, anon;`
 2. (1): `DROP POLICY ..._anon_read` tras el inventario de consumidores.
 3. (3): opción A, con la `service_role` ya configurada en staging y probado el bot antes
    de revocar.
