@@ -136,7 +136,7 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
   antes de aplicarla (ver nota en tasks/todo.md)
 
 ### Fase 7: Producción y aceptación
-- [ ] Tarea 23: Promoción a producción en Vercel
+- [x] Tarea 23: Promoción a producción en Vercel
 - [ ] Tarea 24: Prueba de aceptación manual de punta a punta contra `todo/ChatBot.md`
 
 ### Backlog diferido (surgido en vivo durante la Tarea 15/16, fuera de las 24 tareas originales)

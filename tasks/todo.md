@@ -1111,18 +1111,65 @@ primera vez — hasta aquí solo existían en el self-hosted de staging. Configu
 `setWebhook` apuntando a la URL de Vercel — reemplazando el webhook de staging.
 
 **Acceptance criteria:**
-- [ ] Las migraciones del bot aplicadas en Neptuno, con el mismo resultado que en staging
-- [ ] Las 3 variables configuradas en Vercel
-- [ ] `getWebhookInfo` confirma la URL de producción y `pending_update_count: 0`
-- [ ] El webhook de staging queda desregistrado o explícitamente documentado como entorno secundario
-- [ ] Ningún `customer`/`distribution_plan` de prueba de staging existe en Neptuno (datos reales únicamente)
+- [x] Las migraciones del bot aplicadas en Neptuno, con el mismo resultado que en staging
+      (4 tablas `bot_*` con RLS y sin policies, 15 funciones `bot_*`, y
+      `customer_whatsapp_id_unique` ya eliminada por la Tarea 16)
+- [x] Las 3 variables configuradas en Vercel (solo entorno Production)
+- [x] `getWebhookInfo` confirma la URL de producción y `pending_update_count: 0`
+- [x] El webhook de staging queda explícitamente documentado como entorno secundario
+- [x] Ningún `customer`/`distribution_plan` de prueba de staging existe en Neptuno (datos reales únicamente)
 
 **Verification:**
-- [ ] Manual: `curl https://api.telegram.org/bot<token>/getWebhookInfo` muestra la URL de Vercel
+- [x] Manual: `getWebhookInfo` de @JepriPedidosBot muestra `https://app.jepri.co/api/bot/telegram`
+- [x] Manual: POST con el secreto correcto -> 200, con uno incorrecto -> 401 (confirma que el
+      secreto de Vercel coincide con el registrado en Telegram); la fila de idempotencia de
+      esa prueba se borró de Neptuno
+
+**Cómo se hizo (2026-10-10), por si hay que repetirlo:**
+1. **Bot nuevo, no `@Jepridevbot`:** se creó **@JepriPedidosBot** en BotFather con nombre de
+   cara al cliente. `@Jepridevbot` queda como bot de pruebas/staging, con su propio webhook
+   (`staging-tunnel.jepri.co`) — otro bot, no hay conflicto con producción.
+2. **PR #4 -> `main` -> Vercel** (git integration, deploy automático a producción), en vez de
+   desplegar la rama de feature directo. La rama se borró de `origin` al mergear.
+3. **Variables en Vercel (Production):** `TELEGRAM_BOT_TOKEN` (el del bot nuevo),
+   `TELEGRAM_WEBHOOK_SECRET` (generado nuevo con `openssl rand -hex 32`, distinto al de
+   staging) y `TELEGRAM_OPS_CHAT_ID` (mismo grupo "Jepri Bot - Ops" que staging — el bot
+   nuevo tuvo que agregarse como miembro del grupo para poder escribir ahí).
+4. **Migraciones a Neptuno, 11 en total, aplicadas por `psql` en orden** (Neptuno no lleva
+   tabla de historial de migraciones, igual que staging).
+
+**Hallazgo — a Neptuno le faltaban 2 migraciones de `main` anteriores al bot:**
+`20260926000000_customer_whatsapp_id.sql` y `20260926010000_customer_change_request.sql`
+(commit `b684e45`, ya mergeado a `main` pero nunca aplicado a producción ni desplegado). Era
+el riesgo ya anticipado en la tabla de riesgos de `plan.md` ("el esquema de staging diverge
+del de Neptuno") — se materializó. Hubo que aplicarlas **antes** de las del bot, porque
+`bot_resolve_customer` lee `customer.whatsapp_id`.
+
+**Hallazgo — datos de teléfono sucios en producción (175 de 206 clientes):** la migración
+de `whatsapp_id` agrega un `CHECK` sobre `customer.phone` que fallaba por datos importados de
+Siigo en formato `AAA-NUMERO-EXT`. La propia migración documenta que hay que correr antes
+`scripts/fix_customer_phone_format.sql` (se me pasó ese paso y los primeros 3 `ALTER TABLE`
+de esa migración ya habían quedado aplicados cuando falló el cuarto — se completó después a
+mano, sin re-correr los que ya existían). **El `UPDATE` real modificó 175 filas: 108 se
+normalizaron a `+57...` y 67 quedaron en `NULL`** por ser placeholders sin número real
+(ej. `000-0000000-000`). Se corrió el PREVIEW primero, se le entregó el reporte completo al
+usuario y se aplicó solo con su confirmación explícita. Los 67 clientes sin teléfono quedan
+para revisión manual — no es algo que el bot necesite (usa `whatsapp_id`, no `phone`), pero
+es información que el panel admin ya no muestra.
+
+**Estado de producción al cerrar esta tarea (el bot está desplegado pero no atiende a
+nadie todavía, a propósito):**
+- **Whitelist vacía:** 0 de 206 clientes tienen `whatsapp_id`. El bot ignora en silencio a
+  cualquier chat que no esté ahí — registrar el webhook es seguro antes de cargarla.
+- **Sin plan activo:** no hay ningún `distribution_plan` en `planned` con fecha futura, así
+  que aun un cliente whitelisteado recibiría "no hay ventana de pedidos activa".
+- Para la Tarea 24 (aceptación) hace falta cargar `whatsapp_id` (el `chat_id` de Telegram)
+  de al menos un cliente piloto desde la pantalla de clientes, y que operación cree el plan.
 
 **Dependencies:** Todas las de las Fases 1-5 verificadas en staging
 
-**Files likely touched:** Ninguno en el repo (configuración en Vercel/Telegram)
+**Files likely touched:** Ninguno en el repo (configuración en Vercel/Telegram y migraciones
+aplicadas a Neptuno); solo esta documentación
 
 **Estimated scope:** XS
 
