@@ -1268,6 +1268,27 @@ con una consulta de catálogo de solo lectura antes de actuar**.
    (no se invocaron). Con (1) ya abierto, el riesgo marginal de (3) es menor, pero deja
    de serlo en cuanto se cierre (1).
 
+**Consumidores conocidos de Neptuno (`pg_stat_statements`, solo lectura, acumulado desde
+2026-06-27; consultado el 2026-10-09 tras preguntar por un servicio externo en AWS EC2):**
+- **`service_role` — ~55 mil llamadas:** sincronización Siigo (INSERT en `siigo_daily_*` y
+  `siigo_sync_run`, lectura de `customer`, `rpc` `get_in_progress_operations`,
+  `get_latest_unfinished_distribution_plan`, `get_open_plan_siigo_invoice_lines`,
+  `get_siigo_sales_collections_summary`). Casi seguro es el servicio externo (Harness en
+  EC2), pero **no está confirmado**. Un `REVOKE` a `anon`/`authenticated`/`PUBLIC` no lo
+  afecta: `service_role` tiene `EXECUTE` explícito y `BYPASSRLS`.
+- **`authenticated` — el panel:** las 3 funciones no-bot del hallazgo 2 solo las llama el
+  panel (277 llamadas). **Nunca `anon` ni `service_role`.**
+- **`anon` — solo 40 llamadas en 3.5 meses:** `bot_*` (verificación del webhook de
+  producción) y lecturas directas de `distribution_plan`, `purchase_item`, `sale_order` y
+  `product`. **Hay que identificar quién hizo esas lecturas directas antes de quitar las
+  políticas `anon_read`** (sospecha: una sesión del panel vencida cayendo a `anon`).
+- **`postgres` (vía Supavisor):** migraciones y psql. No lo afecta ningún `REVOKE`.
+- No existe ningún rol de login propio (solo los de Supabase), así que ningún servicio
+  depende de `PUBLIC` por un rol personalizado.
+
+**Prerrequisito de cualquier `REVOKE ... FROM PUBLIC`:** comprobar con `proacl` que
+`service_role` y `postgres` quedan con `EXECUTE` explícito en cada función afectada.
+
 **Lo que NO se puede hacer a la ligera:** el bot corre con el cliente `anon`
 (`lib/supabase/server.ts`, sin `service_role`). Un `REVOKE EXECUTE ... FROM anon` sobre
 las `bot_*` **deja al bot sin funcionar** si antes no cambia la llave con la que llama.
@@ -1275,6 +1296,8 @@ las `bot_*` **deja al bot sin funcionar** si antes no cambia la llave con la que
 **Acceptance criteria:**
 - [ ] Antes de decidir nada: consulta de catálogo **solo lectura** a Neptuno que confirme
       (o corrija) los hallazgos 1-3
+- [ ] Confirmar con el usuario con qué llave/rol se conecta el servicio de EC2 (variable de
+      entorno en la instancia) y que sea `service_role` o una conexión directa a Postgres
 - [ ] Inventario de quién usa hoy las lecturas `anon` de (1) (panel con sesión
       `authenticated`, scripts, sincronización Siigo, cron) — para no romper a nadie
       al quitar las políticas
