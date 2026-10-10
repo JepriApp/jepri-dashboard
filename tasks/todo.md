@@ -1273,8 +1273,8 @@ con una consulta de catálogo de solo lectura antes de actuar**.
 - **`service_role` — ~55 mil llamadas:** sincronización Siigo (INSERT en `siigo_daily_*` y
   `siigo_sync_run`, lectura de `customer`, `rpc` `get_in_progress_operations`,
   `get_latest_unfinished_distribution_plan`, `get_open_plan_siigo_invoice_lines`,
-  `get_siigo_sales_collections_summary`). Casi seguro es el servicio externo (Harness en
-  EC2), pero **no está confirmado**. Un `REVOKE` a `anon`/`authenticated`/`PUBLIC` no lo
+  `get_siigo_sales_collections_summary`). Es el servicio externo (Harness en
+  EC2): el usuario confirmó que usa una `sb_secret_...`. Un `REVOKE` a `anon`/`authenticated`/`PUBLIC` no lo
   afecta: `service_role` tiene `EXECUTE` explícito y `BYPASSRLS`.
 - **`authenticated` — el panel:** las 3 funciones no-bot del hallazgo 2 solo las llama el
   panel (277 llamadas). **Nunca `anon` ni `service_role`.**
@@ -1296,8 +1296,8 @@ las `bot_*` **deja al bot sin funcionar** si antes no cambia la llave con la que
 **Acceptance criteria:**
 - [ ] Antes de decidir nada: consulta de catálogo **solo lectura** a Neptuno que confirme
       (o corrija) los hallazgos 1-3
-- [ ] Confirmar con el usuario con qué llave/rol se conecta el servicio de EC2 (variable de
-      entorno en la instancia) y que sea `service_role` o una conexión directa a Postgres
+- [x] Confirmar con el usuario con qué llave/rol se conecta el servicio de EC2 — confirmado
+      2026-10-09: usa una `sb_secret_...` (rol `service_role`), no se afecta por los `REVOKE`
 - [ ] Inventario de quién usa hoy las lecturas `anon` de (1) (panel con sesión
       `authenticated`, scripts, sincronización Siigo, cron) — para no romper a nadie
       al quitar las políticas
