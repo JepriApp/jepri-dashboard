@@ -674,7 +674,6 @@ describe("handleCreateOrderStep — REVIEWING_ORDER", () => {
   it.each([
     ["NO_ACTIVE_PLAN", /ya no hay una ventana/i],
     ["PAST_CUTOFF", /pasó la hora límite/i],
-    ["ORDER_ALREADY_EXISTS", /ya tienes un pedido/i],
   ] as const)("confirmar con error %s responde el mensaje amigable correspondiente, nunca el crudo", async (code, expectedPattern) => {
     mockCreateOrder.mockRejectedValue(new BotServiceError(code, `${code}: detalle técnico interno`));
 

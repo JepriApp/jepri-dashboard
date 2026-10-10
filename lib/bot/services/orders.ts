@@ -27,33 +27,34 @@ export type CreatedOrder = {
 };
 
 /**
- * Pedido activo del cliente en el plan vigente (§3.1) — null si no tiene ninguno,
+ * Pedidos activos (no cancelados) del cliente en el plan vigente (§3.1), el más antiguo
+ * primero — puede haber varios el mismo día (Tarea 25). Lista vacía si no tiene ninguno,
  * nunca lanza por esto (es un estado normal, no un error).
+ *
+ * La función de Postgres conserva el nombre `bot_get_current_order` (en singular) a
+ * propósito: ver la migración 20261012000000.
  */
-export async function getCurrentOrder(
+export async function getCurrentOrders(
   supabaseClient: SupabaseClient<Database>,
   customerId: string,
-): Promise<CurrentOrder | null> {
+): Promise<CurrentOrder[]> {
   const { data, error } = await supabaseClient.rpc("bot_get_current_order", {
     p_customer_id: customerId,
   });
 
   if (error) throw parsePostgresError(error);
 
-  const row = data?.[0];
-  if (!row) return null;
-
-  return {
+  return (data ?? []).map((row) => ({
     order_id: row.order_id,
     order_code: row.order_code,
     status: row.status,
     items: (row.items ?? []) as OrderItem[],
-  };
+  }));
 }
 
 /**
  * Crea un pedido para el plan activo (§3.1-§3.3). Errores posibles (BotServiceError.code):
- * NO_ACTIVE_PLAN, PAST_CUTOFF, ORDER_ALREADY_EXISTS.
+ * NO_ACTIVE_PLAN, PAST_CUTOFF.
  */
 export async function createOrder(
   supabaseClient: SupabaseClient<Database>,

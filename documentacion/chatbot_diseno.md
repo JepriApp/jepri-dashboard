@@ -80,12 +80,23 @@ Esto aprovecha una columna que ya existe en `distribution_plan` pero que hoy es 
 decorativa (solo se muestra en `DistributionPlanDescription.tsx`), sin forzar que el
 operador la llene para que el PoC funcione.
 
-### 3.3 Un pedido activo por cliente por plan
+### 3.3 Varios pedidos activos por cliente por plan
 
-Antes de crear, se verifica que el cliente no tenga ya un `sale_order` con
-`created_by_customer_id = :customer_id` y `distribution_plan_id = :plan_id` en un estado
-distinto de `cancelled`. Si existe, se ofrece editarlo en vez de crear uno nuevo (coherente
-con el menú "Ver / modificar mi pedido de hoy").
+> **Actualizado (Tarea 25):** el diseño original limitaba a un pedido activo por cliente por
+> plan (`ORDER_ALREADY_EXISTS`). En la operación real un mismo punto de entrega puede hacer
+> varios pedidos el mismo día, así que esa restricción se eliminó.
+
+Un cliente puede tener varios `sale_order` en estado distinto de `cancelled` para el mismo
+`distribution_plan_id`. `bot_get_current_order` devuelve todos, el más antiguo primero. Dos
+consecuencias:
+
+- **Modificar / cancelar** piden elegir cuál cuando hay más de uno (con uno solo, entran
+  directo como antes).
+- **Doble toque en "Confirmar":** el tope anterior evitaba, sin querer, duplicados. Ahora
+  `bot_create_order` es idempotente de forma explícita: un reintento con exactamente los
+  mismos items, del mismo cliente y en el mismo plan, dentro de 30 segundos, devuelve el
+  pedido ya creado en vez de crear otro (con un advisory lock por cliente para que dos
+  llamadas concurrentes no se pisen).
 
 ### 3.4 Ventana válida para editar o cancelar un pedido existente
 
@@ -368,7 +379,7 @@ una, se salta ese paso → cantidad por mensaje → resumen → confirmación �
 el {plan_date}."` Si un cliente nuevo no tiene productos frecuentes todavía, se salta directo
 a la búsqueda.
 
-**📋 Ver / modificar** → `getCurrentOrder(customerId)` → si no hay pedido, ofrece crear uno;
+**📋 Ver / modificar** → `getCurrentOrders(customerId)` → si no hay pedido, ofrece crear uno; si hay varios, pregunta cuál;
 si hay, muestra items y permite editar cantidades → `updateOrder(orderId, customerId, items)`.
 
 **❌ Cancelar** → confirmación explícita ("¿Seguro que quieres cancelar el pedido
@@ -376,7 +387,7 @@ si hay, muestra items y permite editar cantidades → `updateOrder(orderId, cust
 `"❌ Pedido {order_code} cancelado."`
 
 **Errores del backend:** cada código (`NO_ACTIVE_PLAN`, `PAST_CUTOFF`,
-`ORDER_ALREADY_EXISTS`, `ORDER_NOT_FOUND`, `ORDER_NOT_EDITABLE`, `ORDER_NOT_CANCELLABLE`,
+`ORDER_NOT_FOUND`, `ORDER_NOT_EDITABLE`, `ORDER_NOT_CANCELLABLE`,
 `PLAN_NOT_EDITABLE`, `PLAN_NOT_CANCELLABLE`) se traduce a un mensaje amigable en el
 adaptador de Telegram — nunca se expone el error crudo.
 

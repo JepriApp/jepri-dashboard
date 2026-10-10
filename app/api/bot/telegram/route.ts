@@ -21,7 +21,7 @@ const GENERIC_ERROR_MESSAGE = {
  *      un mismo whatsapp_id puede resolver a varios customer (Tarea 16) — esa función
  *      decide para cuál antes de delegar en handleInboundMessage.
  *
- * Red de seguridad (Tarea 20, §10): los errores de negocio esperados (los 8 códigos)
+ * Red de seguridad (Tarea 20, §10): los errores de negocio esperados (los 7 códigos)
  * nunca llegan hasta acá — domain.ts/createOrder.ts ya los atrapan y responden con un
  * mensaje amigable. Lo que sí puede escapar hasta acá es un error NO controlado (una
  * RPC caída, un bug) en cualquiera de los pasos 2-5; ese caso sí dispara `notifyOps` y

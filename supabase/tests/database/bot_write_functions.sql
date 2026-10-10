@@ -1,4 +1,4 @@
--- Tarea 6 (documentacion/chatbot_diseno.md §3.1-§3.4, §5): bot_create_order,
+-- Tarea 6 (+ Tarea 25, varios pedidos por día) (documentacion/chatbot_diseno.md §3.1-§3.4, §5): bot_create_order,
 -- bot_update_order, bot_cancel_order. Usa throws_like() de pgTAP para los 8 códigos de
 -- error (evita abortar la transacción completa — pgTAP captura la excepción en su propia
 -- sub-transacción). SAVEPOINT/ROLLBACK TO alrededor de cada escenario que rompe estado a
@@ -6,7 +6,7 @@
 
 begin;
 
-select plan(20);
+select plan(22);
 
 select (select id from product where name ilike '%tomate%' limit 1) as tomato_id \gset
 select (select id from product where name ilike '%cebolla%' limit 1) as onion_id \gset
@@ -64,11 +64,36 @@ select is(
     'bot_create_order setea created_by_customer_id'
 );
 
--- ya hay un pedido activo en ese plan -> ORDER_ALREADY_EXISTS
-select throws_like(
-    format('select bot_create_order(%L::uuid, %L::jsonb)', :'customer_id', '[]'),
-    'ORDER_ALREADY_EXISTS%',
-    'bot_create_order con un pedido ya activo lanza ORDER_ALREADY_EXISTS'
+-- Tarea 25: ya hay un pedido activo en ese plan, y aun así se puede crear otro distinto
+select order_id as second_order_id
+from bot_create_order(
+    :'customer_id'::uuid,
+    jsonb_build_array(jsonb_build_object('product_id', :'onion_id'::text, 'required_quantity', 2))
+) \gset
+
+select isnt(
+    :'second_order_id'::text,
+    :'created_order_id'::text,
+    'bot_create_order permite un segundo pedido distinto en el mismo plan (Tarea 25)'
+);
+select is(
+    (select count(*)::int from bot_get_current_order(:'customer_id'::uuid)),
+    2,
+    'bot_get_current_order devuelve los 2 pedidos activos del cliente (Tarea 25)'
+);
+
+-- un reintento idéntico (doble toque en "Confirmar") devuelve el pedido ya creado en vez
+-- de duplicarlo
+select order_id as retried_order_id
+from bot_create_order(
+    :'customer_id'::uuid,
+    jsonb_build_array(jsonb_build_object('product_id', :'onion_id'::text, 'required_quantity', 2))
+) \gset
+
+select is(
+    :'retried_order_id'::text,
+    :'second_order_id'::text,
+    'bot_create_order con items idénticos dentro de 30 s devuelve el mismo pedido, no un duplicado'
 );
 
 -- fórmula del fallback de horario (§3.2) sin cutoff_at — se recalcula con la misma

@@ -1148,6 +1148,204 @@ clientes de prueba reales.
 
 ---
 
+## Tarea 25: Varios pedidos el mismo día para el mismo punto de entrega
+
+**Descripción:** Surgió en vivo durante las Tareas 15/16 y la revisión de la Fase 4, donde
+el usuario la marcó como **vital**. El diseño original permitía un solo pedido activo por
+cliente por plan (`ORDER_ALREADY_EXISTS`); en la operación real un mismo punto de entrega
+hace varios pedidos el mismo día.
+
+**Acceptance criteria:**
+- [x] Un cliente puede crear un segundo pedido en el mismo plan
+- [x] "📋 Ver / modificar" y "❌ Cancelar" piden elegir cuál cuando hay más de un pedido
+      activo, y entran directo cuando hay uno solo (comportamiento de siempre)
+- [x] Actuar sobre un pedido nunca afecta a los otros del mismo cliente
+- [x] Un doble toque en "Confirmar" no crea dos pedidos idénticos
+
+**Verification:**
+- [x] pgTAP (`bot_write_functions.sql`, 22 asserts): segundo pedido distinto permitido,
+      `bot_get_current_order` devuelve los 2, y un reintento idéntico devuelve el mismo pedido
+- [x] Vitest (177/177): 3 tests de integración contra staging (dos pedidos en orden de
+      creación, reintento concurrente idéntico con `Promise.all`, cancelar uno deja el otro)
+      y 7 tests del selector en `domain.test.ts`, incluido el caso de varios clientes por
+      número (Tarea 16) con un cliente eligiendo pedido
+- [x] `npx tsc --noEmit`, `npm run build` y `npm run lint` sin errores nuevos
+- [x] Manual, en staging, contra @Jepridevbot: pedidos `1563` y `1564` creados seguidos
+      (segundo permitido); "Ver / modificar" y "Cancelar" preguntaron cuál; `1564` quedó
+      `cancelled` y `1563` intacto; `1565` modificado sin tocar `1566`; doble toque en
+      "Confirmar" dejó un solo pedido — todo cuadra con `bot_interaction_log`
+- [x] Aplicar `20261012000000_bot_multiple_orders_per_day.sql` a Neptuno **antes** de
+      mergear/desplegar — ver "Orden de despliegue" abajo. Aplicada (2026-10-09, en una
+      transacción, con confirmación explícita del usuario): `bot_create_order` ya sin
+      `ORDER_ALREADY_EXISTS` y con advisory lock; `bot_get_current_order` sin `LIMIT 1`
+
+**Decisión de diseño — `bot_create_order` reemplaza el tope por un guard idempotente:**
+el `ORDER_ALREADY_EXISTS` impedía, sin que nadie lo hubiera pensado así, el pedido
+duplicado por doble toque en "Confirmar" (Telegram manda dos callbacks con `update_id`
+distintos, así que la idempotencia por `update_id` de la Tarea 12 no lo cubre). Quitarlo a
+secas habría abierto ese hueco, así que ahora, si el mismo cliente creó en los últimos 30 s,
+en el mismo plan, un pedido con exactamente los mismos items, se devuelve ese pedido en vez
+de crear otro. Un advisory lock por cliente (`pg_advisory_xact_lock`) serializa las llamadas
+concurrentes para que la segunda vea la fila de la primera; el test con `Promise.all` lo
+cubre. Contra: dos pedidos genuinamente idénticos en menos de 30 s se colapsan en uno —
+se consideró aceptable frente al riesgo de duplicar entregas y facturas.
+
+**Decisión de diseño — el selector reutiliza el patrón de la Tarea 16:** un estado corto
+`order:picking` (el context solo guarda la acción) en vez de codificar el pedido en el
+callback, para que la detección de "a mitad de flujo" con varios clientes por número siga
+funcionando sin cambios. Al elegir, la lista de pedidos se **vuelve a leer** de la base: un
+id que ya no está activo (se canceló entre tanto, botón viejo) o texto suelto simplemente
+reabre la lista actualizada, nunca actúa sobre algo viejo.
+
+**Decisión de diseño — `bot_get_current_order` conserva nombre y firma:** ahora devuelve un
+conjunto de filas (ya era `RETURNS TABLE`), solo se le quitó el `LIMIT 1` y se agregó
+`ORDER BY created_at`. Renombrarla a `..._orders` habría hecho que el código nuevo fallara
+por completo contra una base sin la migración; así, solo degrada a "un pedido" hasta que se
+aplique. A cambio, el nombre en singular es un poco engañoso — se documenta en el
+`COMMENT` y en `getCurrentOrders`. Se puede renombrar en una limpieza posterior, ya con
+Neptuno migrada.
+
+**Cambios de contrato a tener en cuenta:**
+- `getCurrentOrder` (devolvía `CurrentOrder | null`) pasó a `getCurrentOrders`
+  (`CurrentOrder[]`). La ruta HTTP `GET /api/bot/orders/current` ahora devuelve un arreglo
+  (`[]` si no hay pedidos) en vez de un objeto o `null`. No hay consumidores externos todavía
+  (la Tarea 21 es para un adaptador futuro), así que no rompe a nadie.
+- `ORDER_ALREADY_EXISTS` dejó de existir: se quitó de `BOT_ERROR_CODES` (ahora son 7
+  códigos), del mapeo a mensajes amigables y de los tests. Si el código nuevo corre contra
+  una base **sin** la migración, ese error llega como `UNKNOWN` y dispara una alerta a ops —
+  que en ese caso es una señal útil de que falta aplicar la migración.
+
+**Orden de despliegue (importante, es producción):**
+1. Aplicar `20261012000000_bot_multiple_orders_per_day.sql` a Neptuno con `psql` — son dos
+   `CREATE OR REPLACE`, aditivas y reversibles volviendo a aplicar las versiones de las
+   migraciones `20261008020000` y `20261010000000`.
+2. Recién después mergear a `main` (Vercel despliega solo).
+
+**Dependencies:** Tarea 8, Tarea 15, Tarea 16, Tarea 17, Tarea 18
+
+**Files likely touched:**
+- `supabase/migrations/20261012000000_bot_multiple_orders_per_day.sql` (nuevo)
+- `supabase/tests/database/bot_write_functions.sql`
+- `lib/bot/services/orders.ts`, `lib/bot/services/orders.test.ts`
+- `lib/bot/domain.ts`, `lib/bot/domain.test.ts`
+- `lib/bot/flows/createOrder.ts`, `lib/bot/flows/createOrder.test.ts`
+- `lib/bot/errors.ts`
+- `app/api/bot/orders/current/route.ts`, `app/api/bot/orders/current/route.test.ts`
+- `scripts/deploy_staging.sh` (el default apuntaba a la rama de feature ya borrada)
+- `documentacion/chatbot_diseno.md` (§3.3 y §7)
+
+**Estimated scope:** M
+
+---
+
+## Tarea 26: Endurecer los permisos de `anon` (funciones `bot_*` + políticas `*_anon_read`)
+
+**Descripción:** Surgió el 2026-10-09 al revisar el alcance de un hallazgo menor (las
+funciones `bot_*` son ejecutables por `anon`). La revisión en staging mostró que el
+problema es **más amplio y anterior al bot**. Todo lo de abajo se verificó en **staging**
+(solo lectura); Neptuno no se tocó ni se consultó en vivo — por `supabase/schema.sql`
+(respaldo DDL de Neptuno, 2026-09-09) casi seguro es igual, pero **hay que confirmarlo
+con una consulta de catálogo de solo lectura antes de actuar**.
+
+**Hallazgos (de más a menos grave):**
+1. **13 políticas `*_anon_read ... FOR SELECT TO anon USING (true)`** sobre `customer`,
+   `sale_order`, `sale_item`, `product`, `distribution_plan`, `fulfillment`, `offer`,
+   `operator`, `profiles`, `purchase_item`, `purchase_order`, `shopping_cart` y
+   `supplier`. Con **solo la publishable key** (que viaja en el navegador),
+   `GET /rest/v1/customer` y `GET /rest/v1/sale_order` devolvieron filas. Es decir, el
+   catálogo de clientes, los pedidos y los perfiles son legibles por cualquiera. Origen:
+   `supabase/schema.sql` (anterior al bot, no vienen de ninguna migración de `bot_*`).
+2. **3 funciones `SECURITY DEFINER` no-bot ejecutables por `anon` que no validan quién
+   llama:** `initialize_invoice_review(plan_id)`, `transition_to_completed_state(plan_id)`
+   y `simulate_transition_to_completed_state(plan_id)`. Combinadas con (1) — los
+   `plan_id` son legibles — alguien con la publishable key podría mover un plan a
+   completado. **No se ejecutaron** para no mutar nada.
+3. **14 funciones `bot_*` con `EXECUTE` para `anon`/`authenticated`** (GRANT explícito
+   en las migraciones `20261008*`–`20261011*`, por el diseño §4/§5: "sin `service_role`").
+   Verificado: con la publishable key, `bot_resolve_customer('8703567026')` devolvió
+   `customer_id` + nombre y `bot_get_current_order(<ese id>)` devolvió los pedidos.
+   `bot_create_order`/`bot_update_order`/`bot_cancel_order` son igual de alcanzables
+   (no se invocaron). Con (1) ya abierto, el riesgo marginal de (3) es menor, pero deja
+   de serlo en cuanto se cierre (1).
+
+**Consumidores conocidos de Neptuno (`pg_stat_statements`, solo lectura, acumulado desde
+2026-06-27; consultado el 2026-10-09 tras preguntar por un servicio externo en AWS EC2):**
+- **`service_role` — ~55 mil llamadas:** sincronización Siigo (INSERT en `siigo_daily_*` y
+  `siigo_sync_run`, lectura de `customer`, `rpc` `get_in_progress_operations`,
+  `get_latest_unfinished_distribution_plan`, `get_open_plan_siigo_invoice_lines`,
+  `get_siigo_sales_collections_summary`). Es el servicio externo (Harness en
+  EC2): el usuario confirmó que usa una `sb_secret_...`. Un `REVOKE` a `anon`/`authenticated`/`PUBLIC` no lo
+  afecta: `service_role` tiene `EXECUTE` explícito y `BYPASSRLS`.
+- **`authenticated` — el panel:** las 3 funciones no-bot del hallazgo 2 solo las llama el
+  panel (277 llamadas). **Nunca `anon` ni `service_role`.**
+- **`anon` — solo 40 llamadas en 3.5 meses:** `bot_*` (verificación del webhook de
+  producción) y lecturas directas de `distribution_plan`, `purchase_item`, `sale_order` y
+  `product`. **Hay que identificar quién hizo esas lecturas directas antes de quitar las
+  políticas `anon_read`** (sospecha: una sesión del panel vencida cayendo a `anon`).
+- **`postgres` (vía Supavisor):** migraciones y psql. No lo afecta ningún `REVOKE`.
+- No existe ningún rol de login propio (solo los de Supabase), así que ningún servicio
+  depende de `PUBLIC` por un rol personalizado.
+
+**Prerrequisito de cualquier `REVOKE ... FROM PUBLIC`:** comprobar con `proacl` que
+`service_role` y `postgres` quedan con `EXECUTE` explícito en cada función afectada.
+
+**Lo que NO se puede hacer a la ligera:** el bot corre con el cliente `anon`
+(`lib/supabase/server.ts`, sin `service_role`). Un `REVOKE EXECUTE ... FROM anon` sobre
+las `bot_*` **deja al bot sin funcionar** si antes no cambia la llave con la que llama.
+
+**Acceptance criteria:**
+- [ ] Antes de decidir nada: consulta de catálogo **solo lectura** a Neptuno que confirme
+      (o corrija) los hallazgos 1-3
+- [x] Confirmar con el usuario con qué llave/rol se conecta el servicio de EC2 — confirmado
+      2026-10-09: usa una `sb_secret_...` (rol `service_role`), no se afecta por los `REVOKE`
+- [ ] Inventario de quién usa hoy las lecturas `anon` de (1) (panel con sesión
+      `authenticated`, scripts, sincronización Siigo, cron) — para no romper a nadie
+      al quitar las políticas
+- [ ] Con la publishable key, `GET` a cada tabla de (1) devuelve `[]`/permiso denegado
+- [ ] Con la publishable key, las 3 funciones de (2) y las `bot_*` de (3) responden
+      `permission denied` (42501)
+- [ ] El bot (webhook + rutas HTTP con API key) sigue funcionando en staging
+
+**Opciones para (3) — decisión pendiente del usuario:**
+- **A (recomendada):** variable `SUPABASE_SERVICE_ROLE_KEY` solo-servidor (Vercel +
+  staging) usada únicamente por un cliente dedicado del bot
+  (`lib/bot/supabaseServiceClient.ts`, que solo llama `rpc`), y `REVOKE EXECUTE ... FROM
+  PUBLIC, anon, authenticated` en las `bot_*`. Contra: introduce la primera `service_role`
+  del proyecto (el diseño §4 la había descartado); un bug en código del bot tendría más
+  alcance, mitigado porque ese cliente solo expone `rpc`.
+- **B:** mantener `anon` y agregar un secreto compartido como parámetro de cada
+  función. Contra: invasivo (cambia las 14 firmas) y el secreto vive en el código del
+  cliente igual que la llave.
+- **C:** no hacer nada en (3) y cerrar solo (1) y (2). Deja a las `bot_*` abiertas, pero
+  sin (1) un atacante necesita adivinar un `whatsapp_id` o un `customer_id`.
+
+**Orden sugerido (cada paso independiente y reversible):**
+1. (2): `REVOKE EXECUTE` de las 3 funciones no-bot a `anon` — no toca al bot.
+2. (1): `DROP POLICY ..._anon_read` tras el inventario de consumidores.
+3. (3): opción A, con la `service_role` ya configurada en staging y probado el bot antes
+   de revocar.
+
+**Verification:**
+- [ ] pgTAP: `has_function_privilege('anon', ..., 'execute') = false` para cada función y
+      cero políticas `TO anon` sobre las tablas de (1)
+- [ ] Vitest (tests de integración migran a la llave que use el bot) y `npm run build`
+- [ ] Manual en staging con @Jepridevbot: crear, ver/modificar y cancelar un pedido
+- [ ] Manual: `curl` con la publishable key a cada tabla y función → denegado
+- [ ] Neptuno: aplicar **solo con confirmación explícita**, y verificar el bot en
+      producción justo después
+
+**Dependencies:** Tarea 25 (mismas funciones); decisión del usuario entre A/B/C
+
+**Files likely touched:**
+- `supabase/migrations/2026101*_harden_anon_permissions.sql` (nuevo)
+- `supabase/tests/database/anon_permissions.sql` (nuevo)
+- `lib/supabase/server.ts` o un cliente dedicado del bot, `lib/bot/test-helpers.ts`
+- `documentacion/chatbot_diseno.md` (§4/§5/§11: la decisión "sin `service_role`")
+
+**Estimated scope:** M
+
+---
+
 ## Checkpoint: Completo
 
 - [ ] Todos los criterios de aceptación de las 23 tareas cumplidos

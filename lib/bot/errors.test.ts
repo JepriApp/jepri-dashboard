@@ -8,7 +8,7 @@ describe("parsePostgresError", () => {
     expect(error.message).toBe(`${code}: algún mensaje legible`);
   });
 
-  it("devuelve UNKNOWN para un mensaje sin ninguno de los 8 códigos conocidos", () => {
+  it("devuelve UNKNOWN para un mensaje sin ninguno de los 7 códigos conocidos", () => {
     const error = parsePostgresError({
       message: 'duplicate key value violates unique constraint "foo"',
     });

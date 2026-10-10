@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { withApiKey, withRevokedApiKey } from "@/lib/bot/test-fixtures";
-import { getCurrentOrder } from "@/lib/bot/services/orders";
+import { getCurrentOrders } from "@/lib/bot/services/orders";
 import { GET } from "./route";
 
 vi.mock("@/lib/bot/services/orders", () => ({
-  getCurrentOrder: vi.fn(),
+  getCurrentOrders: vi.fn(),
 }));
 
-const mockGetCurrentOrder = vi.mocked(getCurrentOrder);
+const mockGetCurrentOrders = vi.mocked(getCurrentOrders);
 
 function makeRequest(authHeader: string | undefined, customerId = "cust-1") {
   return new Request(`http://localhost/api/bot/orders/current?customer_id=${customerId}`, {
@@ -20,14 +20,14 @@ describe("GET /api/bot/orders/current (Tarea 21)", () => {
     const response = await GET(makeRequest(undefined));
 
     expect(response.status).toBe(401);
-    expect(mockGetCurrentOrder).not.toHaveBeenCalled();
+    expect(mockGetCurrentOrders).not.toHaveBeenCalled();
   });
 
   it("con una key inexistente devuelve 401 sin llamar al servicio", async () => {
     const response = await GET(makeRequest("Bearer una-key-que-nunca-se-generó"));
 
     expect(response.status).toBe(401);
-    expect(mockGetCurrentOrder).not.toHaveBeenCalled();
+    expect(mockGetCurrentOrders).not.toHaveBeenCalled();
   });
 
   it("con una key revocada devuelve 401 sin llamar al servicio", async () => {
@@ -35,7 +35,7 @@ describe("GET /api/bot/orders/current (Tarea 21)", () => {
       const response = await GET(makeRequest(`Bearer ${rawKey}`));
 
       expect(response.status).toBe(401);
-      expect(mockGetCurrentOrder).not.toHaveBeenCalled();
+      expect(mockGetCurrentOrders).not.toHaveBeenCalled();
     });
   });
 
@@ -51,16 +51,16 @@ describe("GET /api/bot/orders/current (Tarea 21)", () => {
     });
   });
 
-  it("con una key válida ejecuta getCurrentOrder y devuelve el mismo resultado (incluido null)", async () => {
-    mockGetCurrentOrder.mockResolvedValue(null);
+  it("con una key válida ejecuta getCurrentOrders y devuelve el mismo resultado (incluida la lista vacía)", async () => {
+    mockGetCurrentOrders.mockResolvedValue([]);
 
     await withApiKey(async (rawKey) => {
       const response = await GET(makeRequest(`Bearer ${rawKey}`, "cust-42"));
       const body = await response.json();
 
       expect(response.status).toBe(200);
-      expect(body).toBeNull();
-      expect(mockGetCurrentOrder).toHaveBeenCalledWith(expect.anything(), "cust-42");
+      expect(body).toEqual([]);
+      expect(mockGetCurrentOrders).toHaveBeenCalledWith(expect.anything(), "cust-42");
     });
   });
 });

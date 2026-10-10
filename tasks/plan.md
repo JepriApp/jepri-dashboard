@@ -140,7 +140,9 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
 - [ ] Tarea 24: Prueba de aceptación manual de punta a punta contra `todo/ChatBot.md`
 
 ### Backlog diferido (surgido en vivo durante la Tarea 15/16, fuera de las 24 tareas originales)
-- [ ] Tarea 25: Varios pedidos el mismo día para el mismo punto de entrega — confirmado
+- [x] Tarea 25: Varios pedidos el mismo día para el mismo punto de entrega — hecho en
+  la rama `feature/multiple-orders-per-day`, verificada manualmente en staging y migración
+  ya aplicada a Neptuno; solo falta mergear el PR #6 (ver tasks/todo.md). Confirmado
   con el usuario que es **vital**, no opcional (revisión de la Fase 4, 2026-10-10).
   Alcance:
   - Quitar el chequeo `ORDER_ALREADY_EXISTS` de `bot_create_order` (hoy rechaza un
@@ -154,6 +156,14 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
     `order_code` + resumen de items). Con un solo pedido, se entra directo como hoy.
   Explícitamente pospuesto por decisión del usuario — no se encarece por dejarlo para
   el final.
+
+- [ ] Tarea 26: Endurecer los permisos de `anon` — surgida el 2026-10-09 al revisar el
+  alcance de las `bot_*` ejecutables por `anon`. En staging se verificó que además hay 13
+  políticas `*_anon_read USING (true)` (clientes, pedidos, perfiles… legibles con solo la
+  publishable key) y 3 funciones `SECURITY DEFINER` no-bot que `anon` puede ejecutar.
+  Neptuno sin verificar en vivo (el respaldo `supabase/schema.sql` sugiere que es igual).
+  Detalle, opciones y orden en tasks/todo.md. Requiere decisión del usuario; **nada
+  aplicado en ningún entorno**.
 
 ### Checkpoint: Completo
 - [ ] Todos los criterios de aceptación de las 24 tareas (+ Tarea 25 si se decide incluirla) cumplidos

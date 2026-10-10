@@ -6,7 +6,7 @@
 # Primer uso en el servidor (una sola vez):
 #   git clone git@github.com:JepriApp/jepri-dashboard.git
 #   cd jepri-dashboard
-#   git checkout feature/telegram-order-bot
+#   git checkout main
 #   cp .env.staging.example .env   # y completar los valores reales
 #
 # De ahí en adelante, cada deploy:
@@ -17,7 +17,7 @@
 
 set -euo pipefail
 
-BRANCH="${1:-feature/telegram-order-bot}"
+BRANCH="${1:-main}"
 
 git fetch origin "$BRANCH"
 git checkout "$BRANCH"

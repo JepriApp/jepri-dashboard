@@ -19,7 +19,7 @@ import {
   setConversationState,
 } from "@/lib/bot/services/conversation";
 import { getActivePlanStatus } from "@/lib/bot/services/plan";
-import { cancelOrder, getCurrentOrder } from "@/lib/bot/services/orders";
+import { cancelOrder, CurrentOrder, getCurrentOrders } from "@/lib/bot/services/orders";
 import { SupabaseClient } from "@supabase/supabase-js";
 
 type InboundForDomain = { channel: string; text: string; callbackData?: string };
@@ -38,8 +38,14 @@ const CALLBACK_CANCEL_DENY = "cancel:deny";
  * como createOrder.ts, es solo "¿seguro?" -> sí/no. */
 const CANCEL_CONFIRM_STATE = "cancel:confirming";
 
+/** Un cliente puede tener varios pedidos el mismo día (Tarea 25): antes de modificar o
+ * cancelar, si hay más de uno, se pregunta cuál. El context solo guarda la acción — la
+ * lista de pedidos se vuelve a leer al elegir, así nunca se actúa sobre uno viejo. */
+const ORDER_PICK_STATE = "order:picking";
+const CALLBACK_PICK_ORDER_PREFIX = "order:pick:";
+
 const CREATE_FLOW_STATE_VALUES: string[] = Object.values(CREATE_FLOW_STATES);
-const MID_FLOW_STATE_VALUES: string[] = [...CREATE_FLOW_STATE_VALUES, CANCEL_CONFIRM_STATE];
+const MID_FLOW_STATE_VALUES: string[] = [...CREATE_FLOW_STATE_VALUES, CANCEL_CONFIRM_STATE, ORDER_PICK_STATE];
 
 function mainMenu(customerName: string | null): BotMessage {
   const greeting = customerName ? `¡Hola ${customerName}!` : "¡Hola!";
@@ -85,6 +91,71 @@ type Turn = { reply: BotMessage; nextState: string; nextContext: ConversationCon
 
 function idleTurn(reply: BotMessage): Turn {
   return { reply, nextState: IDLE_STATE, nextContext: {} };
+}
+
+type OrderAction = "edit" | "cancel";
+
+function orderLabel(order: CurrentOrder): string {
+  const first = order.items[0]?.product_name;
+  if (!first) return `Pedido ${order.order_code}`;
+  const more = order.items.length - 1;
+  return more > 0
+    ? `Pedido ${order.order_code} — ${first} y ${more} más`
+    : `Pedido ${order.order_code} — ${first}`;
+}
+
+function orderPickerMessage(orders: CurrentOrder[], action: OrderAction): BotMessage {
+  const verb = action === "edit" ? "modificar" : "cancelar";
+  return {
+    text: `Tienes ${orders.length} pedidos para hoy. ¿Cuál quieres ${verb}?`,
+    buttons: orders.map((order) => ({
+      label: orderLabel(order),
+      value: `${CALLBACK_PICK_ORDER_PREFIX}${order.order_id}`,
+    })),
+  };
+}
+
+function turnForChosenOrder(action: OrderAction, order: CurrentOrder): Turn {
+  if (action === "edit") {
+    const step = startEditOrderFlow(order);
+    return { reply: step.reply, nextState: step.nextState, nextContext: step.nextContext };
+  }
+  return {
+    reply: cancelConfirmMessage(order.order_code),
+    nextState: CANCEL_CONFIRM_STATE,
+    nextContext: { order_id: order.order_id, order_code: order.order_code } as unknown as ConversationContext,
+  };
+}
+
+/** 0 pedidos -> avisa; 1 -> directo a la acción (igual que antes de la Tarea 25); varios ->
+ * pregunta cuál. */
+function turnForOrders(action: OrderAction, orders: CurrentOrder[]): Turn {
+  if (orders.length === 0) return idleTurn(NO_ORDER_YET_MESSAGE);
+  if (orders.length === 1) return turnForChosenOrder(action, orders[0]);
+  return {
+    reply: orderPickerMessage(orders, action),
+    nextState: ORDER_PICK_STATE,
+    nextContext: { action } as unknown as ConversationContext,
+  };
+}
+
+async function handleOrderPickStep(
+  supabaseClient: SupabaseClient<Database>,
+  customerId: string,
+  context: ConversationContext,
+  inbound: InboundForDomain,
+): Promise<Turn> {
+  const action = context.action as OrderAction;
+  const orders = await getCurrentOrders(supabaseClient, customerId);
+
+  const pickedId = inbound.callbackData?.startsWith(CALLBACK_PICK_ORDER_PREFIX)
+    ? inbound.callbackData.slice(CALLBACK_PICK_ORDER_PREFIX.length)
+    : null;
+  const chosen = pickedId ? orders.find((order) => order.order_id === pickedId) : undefined;
+
+  // Un id que ya no está entre los pedidos activos (se canceló, botón viejo) o texto suelto:
+  // se vuelve a mostrar la lista actualizada en vez de actuar sobre algo que no existe.
+  return chosen ? turnForChosenOrder(action, chosen) : turnForOrders(action, orders);
 }
 
 async function handleCancelConfirmStep(
@@ -148,23 +219,10 @@ async function computeTurn(
   // flujo en curso, incluso a mitad de camino (§8: "reinicio a idle al abandonar un
   // flujo").
   if (inbound.callbackData === CALLBACK_VIEW_ORDER) {
-    const order = await getCurrentOrder(supabaseClient, customer.customer_id);
-    if (!order) {
-      return idleTurn(NO_ORDER_YET_MESSAGE);
-    }
-    const step = startEditOrderFlow(order);
-    return { reply: step.reply, nextState: step.nextState, nextContext: step.nextContext };
+    return turnForOrders("edit", await getCurrentOrders(supabaseClient, customer.customer_id));
   }
   if (inbound.callbackData === CALLBACK_CANCEL_ORDER) {
-    const order = await getCurrentOrder(supabaseClient, customer.customer_id);
-    if (!order) {
-      return idleTurn(NO_ORDER_YET_MESSAGE);
-    }
-    return {
-      reply: cancelConfirmMessage(order.order_code),
-      nextState: CANCEL_CONFIRM_STATE,
-      nextContext: { order_id: order.order_id, order_code: order.order_code } as unknown as ConversationContext,
-    };
+    return turnForOrders("cancel", await getCurrentOrders(supabaseClient, customer.customer_id));
   }
   if (inbound.callbackData === CALLBACK_CREATE_ORDER) {
     const step = await startCreateOrderFlow(supabaseClient, customer.customer_id);
@@ -188,6 +246,9 @@ async function computeTurn(
   if (conversation.state === CANCEL_CONFIRM_STATE) {
     return handleCancelConfirmStep(supabaseClient, customer.customer_id, conversation.context, inbound);
   }
+  if (conversation.state === ORDER_PICK_STATE) {
+    return handleOrderPickStep(supabaseClient, customer.customer_id, conversation.context, inbound);
+  }
 
   // idle (o expiró), sin callback reconocido -> Menú Principal.
   return idleTurn(mainMenu(customer.name));
@@ -205,7 +266,7 @@ async function computeTurn(
  *
  * Estado de conversación (§8): cada turno persiste el `nextState`/`nextContext` que
  * decide `computeTurn` — `idle` reinicia (vía `resetConversationState`), cualquier otra
- * cosa (los estados `create:*` y `cancel:confirming`) se guarda para el próximo mensaje.
+ * cosa (los estados `create:*`, `order:picking` y `cancel:confirming`) se guarda para el próximo mensaje.
  */
 export async function handleInboundMessage(
   supabaseClient: SupabaseClient<Database>,
@@ -257,7 +318,7 @@ function disambiguationMessage(candidates: ResolvedCustomer[], action: PendingAc
  * es el turno antes de delegar en `handleInboundMessage`.
  *
  * Sin estado nuevo: si alguno de los candidatos está a mitad de un flujo de varios pasos
- * (crear/editar pedido, o confirmando una cancelación), el mensaje es para ese (tiene
+ * (crear/editar pedido, eligiendo cuál de varios pedidos, o confirmando una cancelación), el mensaje es para ese (tiene
  * prioridad, igual que hoy un botón del Menú Principal abandona un flujo en curso). Si
  * nadie está a mitad de flujo y tocan una acción del Menú Principal, primero se pregunta
  * para cuál cliente es — la respuesta llega

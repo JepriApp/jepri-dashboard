@@ -6,7 +6,7 @@ import {
   withSingleActivePlan,
 } from "@/lib/bot/test-fixtures";
 import { searchCatalog } from "@/lib/bot/services/products";
-import { cancelOrder, createOrder, getCurrentOrder, updateOrder } from "@/lib/bot/services/orders";
+import { cancelOrder, createOrder, getCurrentOrders, updateOrder } from "@/lib/bot/services/orders";
 import { BotServiceError } from "@/lib/bot/errors";
 
 // Cliente de prueba de la Tarea 1 (customer.whatsapp_id=8703567026), en staging.
@@ -23,16 +23,16 @@ afterEach(async () => {
   await cleanupCustomerOrders(TEST_CUSTOMER_ID);
 });
 
-describe("getCurrentOrder", () => {
-  it("devuelve null cuando el cliente no tiene pedido activo", async () => {
+describe("getCurrentOrders", () => {
+  it("devuelve una lista vacía cuando el cliente no tiene pedidos activos", async () => {
     const supabase = createTestSupabaseClient();
-    const result = await getCurrentOrder(supabase, TEST_CUSTOMER_ID);
-    expect(result).toBeNull();
+    const result = await getCurrentOrders(supabase, TEST_CUSTOMER_ID);
+    expect(result).toEqual([]);
   });
 });
 
 describe("camino feliz: crear -> ver -> modificar -> cancelar", () => {
-  it("createOrder, getCurrentOrder, updateOrder y cancelOrder funcionan de punta a punta", async () => {
+  it("createOrder, getCurrentOrders, updateOrder y cancelOrder funcionan de punta a punta", async () => {
     await withSingleActivePlan(async () => {
       const supabase = createTestSupabaseClient();
       const tomato = await getTomatoProduct();
@@ -43,7 +43,7 @@ describe("camino feliz: crear -> ver -> modificar -> cancelar", () => {
       expect(created.order_id).toBeTruthy();
       expect(created.order_code).toBeTruthy();
 
-      const afterCreate = await getCurrentOrder(supabase, TEST_CUSTOMER_ID);
+      const afterCreate = (await getCurrentOrders(supabase, TEST_CUSTOMER_ID))[0];
       expect(afterCreate?.order_id).toBe(created.order_id);
       expect(afterCreate?.status).toBe("pending");
       expect(afterCreate?.items).toEqual([
@@ -53,14 +53,70 @@ describe("camino feliz: crear -> ver -> modificar -> cancelar", () => {
       await updateOrder(supabase, created.order_id, TEST_CUSTOMER_ID, [
         { product_id: tomato.product_id, required_quantity: 5 },
       ]);
-      const afterUpdate = await getCurrentOrder(supabase, TEST_CUSTOMER_ID);
+      const afterUpdate = (await getCurrentOrders(supabase, TEST_CUSTOMER_ID))[0];
       expect(afterUpdate?.items).toEqual([
         { product_id: tomato.product_id, product_name: tomato.product_name, unit: tomato.unit, required_quantity: 5 },
       ]);
 
       await cancelOrder(supabase, created.order_id, TEST_CUSTOMER_ID);
-      const afterCancel = await getCurrentOrder(supabase, TEST_CUSTOMER_ID);
-      expect(afterCancel).toBeNull();
+      const afterCancel = await getCurrentOrders(supabase, TEST_CUSTOMER_ID);
+      expect(afterCancel).toEqual([]);
+    });
+  });
+});
+
+describe("varios pedidos el mismo día para el mismo cliente (Tarea 25)", () => {
+  it("createOrder permite un segundo pedido, y getCurrentOrders los devuelve en orden de creación", async () => {
+    await withSingleActivePlan(async () => {
+      const supabase = createTestSupabaseClient();
+      const tomato = await getTomatoProduct();
+
+      const first = await createOrder(supabase, TEST_CUSTOMER_ID, [
+        { product_id: tomato.product_id, required_quantity: 1 },
+      ]);
+      const second = await createOrder(supabase, TEST_CUSTOMER_ID, [
+        { product_id: tomato.product_id, required_quantity: 2 },
+      ]);
+
+      expect(second.order_id).not.toBe(first.order_id);
+
+      const orders = await getCurrentOrders(supabase, TEST_CUSTOMER_ID);
+      expect(orders.map((o) => o.order_id)).toEqual([first.order_id, second.order_id]);
+    });
+  });
+
+  it("un reintento idéntico (doble toque en Confirmar) no duplica el pedido", async () => {
+    await withSingleActivePlan(async () => {
+      const supabase = createTestSupabaseClient();
+      const tomato = await getTomatoProduct();
+      const items = [{ product_id: tomato.product_id, required_quantity: 4 }];
+
+      const [a, b] = await Promise.all([
+        createOrder(supabase, TEST_CUSTOMER_ID, items),
+        createOrder(supabase, TEST_CUSTOMER_ID, items),
+      ]);
+
+      expect(a.order_id).toBe(b.order_id);
+      expect(await getCurrentOrders(supabase, TEST_CUSTOMER_ID)).toHaveLength(1);
+    });
+  });
+
+  it("cancelar uno de varios deja el otro activo", async () => {
+    await withSingleActivePlan(async () => {
+      const supabase = createTestSupabaseClient();
+      const tomato = await getTomatoProduct();
+
+      const first = await createOrder(supabase, TEST_CUSTOMER_ID, [
+        { product_id: tomato.product_id, required_quantity: 1 },
+      ]);
+      const second = await createOrder(supabase, TEST_CUSTOMER_ID, [
+        { product_id: tomato.product_id, required_quantity: 2 },
+      ]);
+
+      await cancelOrder(supabase, first.order_id, TEST_CUSTOMER_ID);
+
+      const orders = await getCurrentOrders(supabase, TEST_CUSTOMER_ID);
+      expect(orders.map((o) => o.order_id)).toEqual([second.order_id]);
     });
   });
 });
@@ -71,19 +127,6 @@ describe("mapeo de errores de negocio a BotServiceError", () => {
       const supabase = createTestSupabaseClient();
       await expect(createOrder(supabase, TEST_CUSTOMER_ID, [])).rejects.toMatchObject({
         code: "NO_ACTIVE_PLAN",
-      });
-    });
-  });
-
-  it("createOrder con un pedido ya activo lanza BotServiceError(ORDER_ALREADY_EXISTS)", async () => {
-    await withSingleActivePlan(async () => {
-      const supabase = createTestSupabaseClient();
-      const tomato = await getTomatoProduct();
-      await createOrder(supabase, TEST_CUSTOMER_ID, [
-        { product_id: tomato.product_id, required_quantity: 1 },
-      ]);
-      await expect(createOrder(supabase, TEST_CUSTOMER_ID, [])).rejects.toMatchObject({
-        code: "ORDER_ALREADY_EXISTS",
       });
     });
   });
