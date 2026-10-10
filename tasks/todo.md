@@ -1174,8 +1174,10 @@ hace varios pedidos el mismo día.
       (segundo permitido); "Ver / modificar" y "Cancelar" preguntaron cuál; `1564` quedó
       `cancelled` y `1563` intacto; `1565` modificado sin tocar `1566`; doble toque en
       "Confirmar" dejó un solo pedido — todo cuadra con `bot_interaction_log`
-- [ ] Aplicar `20261012000000_bot_multiple_orders_per_day.sql` a Neptuno **antes** de
-      mergear/desplegar — ver "Orden de despliegue" abajo
+- [x] Aplicar `20261012000000_bot_multiple_orders_per_day.sql` a Neptuno **antes** de
+      mergear/desplegar — ver "Orden de despliegue" abajo. Aplicada (2026-10-09, en una
+      transacción, con confirmación explícita del usuario): `bot_create_order` ya sin
+      `ORDER_ALREADY_EXISTS` y con advisory lock; `bot_get_current_order` sin `LIMIT 1`
 
 **Decisión de diseño — `bot_create_order` reemplaza el tope por un guard idempotente:**
 el `ORDER_ALREADY_EXISTS` impedía, sin que nadie lo hubiera pensado así, el pedido
