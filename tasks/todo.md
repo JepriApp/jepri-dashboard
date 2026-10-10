@@ -1148,6 +1148,91 @@ clientes de prueba reales.
 
 ---
 
+## Tarea 25: Varios pedidos el mismo día para el mismo punto de entrega
+
+**Descripción:** Surgió en vivo durante las Tareas 15/16 y la revisión de la Fase 4, donde
+el usuario la marcó como **vital**. El diseño original permitía un solo pedido activo por
+cliente por plan (`ORDER_ALREADY_EXISTS`); en la operación real un mismo punto de entrega
+hace varios pedidos el mismo día.
+
+**Acceptance criteria:**
+- [x] Un cliente puede crear un segundo pedido en el mismo plan
+- [x] "📋 Ver / modificar" y "❌ Cancelar" piden elegir cuál cuando hay más de un pedido
+      activo, y entran directo cuando hay uno solo (comportamiento de siempre)
+- [x] Actuar sobre un pedido nunca afecta a los otros del mismo cliente
+- [x] Un doble toque en "Confirmar" no crea dos pedidos idénticos
+
+**Verification:**
+- [x] pgTAP (`bot_write_functions.sql`, 22 asserts): segundo pedido distinto permitido,
+      `bot_get_current_order` devuelve los 2, y un reintento idéntico devuelve el mismo pedido
+- [x] Vitest (177/177): 3 tests de integración contra staging (dos pedidos en orden de
+      creación, reintento concurrente idéntico con `Promise.all`, cancelar uno deja el otro)
+      y 7 tests del selector en `domain.test.ts`, incluido el caso de varios clientes por
+      número (Tarea 16) con un cliente eligiendo pedido
+- [x] `npx tsc --noEmit`, `npm run build` y `npm run lint` sin errores nuevos
+- [ ] Manual, en staging, contra @Jepridevbot: crear 2 pedidos, modificar uno, cancelar otro
+- [ ] Aplicar `20261012000000_bot_multiple_orders_per_day.sql` a Neptuno **antes** de
+      mergear/desplegar — ver "Orden de despliegue" abajo
+
+**Decisión de diseño — `bot_create_order` reemplaza el tope por un guard idempotente:**
+el `ORDER_ALREADY_EXISTS` impedía, sin que nadie lo hubiera pensado así, el pedido
+duplicado por doble toque en "Confirmar" (Telegram manda dos callbacks con `update_id`
+distintos, así que la idempotencia por `update_id` de la Tarea 12 no lo cubre). Quitarlo a
+secas habría abierto ese hueco, así que ahora, si el mismo cliente creó en los últimos 30 s,
+en el mismo plan, un pedido con exactamente los mismos items, se devuelve ese pedido en vez
+de crear otro. Un advisory lock por cliente (`pg_advisory_xact_lock`) serializa las llamadas
+concurrentes para que la segunda vea la fila de la primera; el test con `Promise.all` lo
+cubre. Contra: dos pedidos genuinamente idénticos en menos de 30 s se colapsan en uno —
+se consideró aceptable frente al riesgo de duplicar entregas y facturas.
+
+**Decisión de diseño — el selector reutiliza el patrón de la Tarea 16:** un estado corto
+`order:picking` (el context solo guarda la acción) en vez de codificar el pedido en el
+callback, para que la detección de "a mitad de flujo" con varios clientes por número siga
+funcionando sin cambios. Al elegir, la lista de pedidos se **vuelve a leer** de la base: un
+id que ya no está activo (se canceló entre tanto, botón viejo) o texto suelto simplemente
+reabre la lista actualizada, nunca actúa sobre algo viejo.
+
+**Decisión de diseño — `bot_get_current_order` conserva nombre y firma:** ahora devuelve un
+conjunto de filas (ya era `RETURNS TABLE`), solo se le quitó el `LIMIT 1` y se agregó
+`ORDER BY created_at`. Renombrarla a `..._orders` habría hecho que el código nuevo fallara
+por completo contra una base sin la migración; así, solo degrada a "un pedido" hasta que se
+aplique. A cambio, el nombre en singular es un poco engañoso — se documenta en el
+`COMMENT` y en `getCurrentOrders`. Se puede renombrar en una limpieza posterior, ya con
+Neptuno migrada.
+
+**Cambios de contrato a tener en cuenta:**
+- `getCurrentOrder` (devolvía `CurrentOrder | null`) pasó a `getCurrentOrders`
+  (`CurrentOrder[]`). La ruta HTTP `GET /api/bot/orders/current` ahora devuelve un arreglo
+  (`[]` si no hay pedidos) en vez de un objeto o `null`. No hay consumidores externos todavía
+  (la Tarea 21 es para un adaptador futuro), así que no rompe a nadie.
+- `ORDER_ALREADY_EXISTS` dejó de existir: se quitó de `BOT_ERROR_CODES` (ahora son 7
+  códigos), del mapeo a mensajes amigables y de los tests. Si el código nuevo corre contra
+  una base **sin** la migración, ese error llega como `UNKNOWN` y dispara una alerta a ops —
+  que en ese caso es una señal útil de que falta aplicar la migración.
+
+**Orden de despliegue (importante, es producción):**
+1. Aplicar `20261012000000_bot_multiple_orders_per_day.sql` a Neptuno con `psql` — son dos
+   `CREATE OR REPLACE`, aditivas y reversibles volviendo a aplicar las versiones de las
+   migraciones `20261008020000` y `20261010000000`.
+2. Recién después mergear a `main` (Vercel despliega solo).
+
+**Dependencies:** Tarea 8, Tarea 15, Tarea 16, Tarea 17, Tarea 18
+
+**Files likely touched:**
+- `supabase/migrations/20261012000000_bot_multiple_orders_per_day.sql` (nuevo)
+- `supabase/tests/database/bot_write_functions.sql`
+- `lib/bot/services/orders.ts`, `lib/bot/services/orders.test.ts`
+- `lib/bot/domain.ts`, `lib/bot/domain.test.ts`
+- `lib/bot/flows/createOrder.ts`, `lib/bot/flows/createOrder.test.ts`
+- `lib/bot/errors.ts`
+- `app/api/bot/orders/current/route.ts`, `app/api/bot/orders/current/route.test.ts`
+- `scripts/deploy_staging.sh` (el default apuntaba a la rama de feature ya borrada)
+- `documentacion/chatbot_diseno.md` (§3.3 y §7)
+
+**Estimated scope:** M
+
+---
+
 ## Checkpoint: Completo
 
 - [ ] Todos los criterios de aceptación de las 23 tareas cumplidos

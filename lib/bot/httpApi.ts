@@ -27,7 +27,7 @@ export function unauthorizedResponse(): NextResponse {
 
 /**
  * Traduce un error de las funciones de servicio (Tareas 7-8) a una respuesta HTTP —
- * los 8 códigos de negocio (§5/§7) son 400 (el llamador mandó algo que no se puede
+ * los 7 códigos de negocio (§5/§7) son 400 (el llamador mandó algo que no se puede
  * hacer ahora), cualquier otro error es 500. Nunca se expone el mensaje crudo de
  * Postgres para un 500, igual que el bot nunca lo expone en el chat.
  */

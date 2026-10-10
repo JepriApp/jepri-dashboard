@@ -437,8 +437,6 @@ function orderErrorMessage(error: unknown, isEdit: boolean): string {
         return isEdit
           ? "⏰ Ya pasó la hora límite de hoy para modificar pedidos."
           : "⏰ Ya pasó la hora límite de hoy para hacer pedidos.";
-      case "ORDER_ALREADY_EXISTS":
-        return 'Ya tienes un pedido para el próximo plan de entrega. Usa "📋 Ver / modificar mi pedido de hoy" para editarlo.';
       case "ORDER_NOT_FOUND":
         return "No encontré ese pedido — puede que ya haya sido cancelado. Revisa el menú principal.";
       case "ORDER_NOT_EDITABLE":

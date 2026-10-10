@@ -138,7 +138,7 @@ export async function sendMessage(externalId: string, message: BotMessage): Prom
 /**
  * Alerta de fallos (§10) — reusa sendMessage hacia el chat interno de operaciones,
  * cero infraestructura nueva. Solo para errores no controlados (Tarea 20 decide
- * cuándo llamarla, vía `isUnexpectedError`); nunca para los 8 códigos de error de
+ * cuándo llamarla, vía `isUnexpectedError`); nunca para los 7 códigos de error de
  * negocio esperados.
  */
 export async function notifyOps(message: string): Promise<void> {

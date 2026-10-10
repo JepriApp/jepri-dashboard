@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handleInboundMessage, handleInboundMessageForChannel } from "@/lib/bot/domain";
 import { getActivePlanStatus } from "@/lib/bot/services/plan";
-import { cancelOrder, getCurrentOrder } from "@/lib/bot/services/orders";
+import { cancelOrder, getCurrentOrders } from "@/lib/bot/services/orders";
 import { getConversationState, resetConversationState, setConversationState } from "@/lib/bot/services/conversation";
 import {
   CONVERSATION_ENDED_NOTE,
@@ -17,7 +17,7 @@ vi.mock("@/lib/bot/services/plan", () => ({
   getActivePlanStatus: vi.fn(),
 }));
 vi.mock("@/lib/bot/services/orders", () => ({
-  getCurrentOrder: vi.fn(),
+  getCurrentOrders: vi.fn(),
   cancelOrder: vi.fn(),
 }));
 vi.mock("@/lib/bot/services/audit", async (importOriginal) => ({
@@ -47,7 +47,7 @@ vi.mock("@/lib/bot/flows/createOrder", () => ({
 }));
 
 const mockGetActivePlanStatus = vi.mocked(getActivePlanStatus);
-const mockGetCurrentOrder = vi.mocked(getCurrentOrder);
+const mockGetCurrentOrders = vi.mocked(getCurrentOrders);
 const mockCancelOrder = vi.mocked(cancelOrder);
 const mockLogInteraction = vi.mocked(logInteraction);
 const mockNotifyOps = vi.mocked(notifyOps);
@@ -80,7 +80,7 @@ describe("handleInboundMessage", () => {
 
     expect(result.text).toMatch(/no hay ventana de pedidos activa/i);
     expect(result.buttons).toBeUndefined();
-    expect(mockGetCurrentOrder).not.toHaveBeenCalled();
+    expect(mockGetCurrentOrders).not.toHaveBeenCalled();
   });
 
   it("con plan activo pero fuera de horario, responde que no hay ventana activa", async () => {
@@ -127,7 +127,7 @@ describe("handleInboundMessage", () => {
 
   it('"Ver pedido" sin pedido activo invita a crear uno', async () => {
     mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
-    mockGetCurrentOrder.mockResolvedValue(null);
+    mockGetCurrentOrders.mockResolvedValue([]);
 
     const result = await handleInboundMessage(fakeSupabase, customer, {
       channel: "telegram",
@@ -146,7 +146,7 @@ describe("handleInboundMessage", () => {
       status: "pending",
       items: [{ product_id: "p1", product_name: "Tomate chonto", unit: "kg", required_quantity: 3 }],
     };
-    mockGetCurrentOrder.mockResolvedValue(order);
+    mockGetCurrentOrders.mockResolvedValue([order]);
     mockStartEditOrderFlow.mockReturnValue({
       reply: { text: "Tu pedido 1326 hasta ahora:\n• 3 kg de \"Tomate chonto\"" },
       nextState: "create:reviewing_order",
@@ -175,7 +175,7 @@ describe("handleInboundMessage", () => {
 describe('handleInboundMessage — "Cancelar pedido" (Tarea 18)', () => {
   it('sin pedido activo invita a crear uno, en vez de preguntar confirmación', async () => {
     mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
-    mockGetCurrentOrder.mockResolvedValue(null);
+    mockGetCurrentOrders.mockResolvedValue([]);
 
     const result = await handleInboundMessage(fakeSupabase, customer, {
       channel: "telegram",
@@ -189,12 +189,14 @@ describe('handleInboundMessage — "Cancelar pedido" (Tarea 18)', () => {
 
   it("con un pedido activo pregunta confirmación explícita y guarda el order_id/order_code", async () => {
     mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
-    mockGetCurrentOrder.mockResolvedValue({
-      order_id: "order-1",
-      order_code: "1326",
-      status: "pending",
-      items: [],
-    });
+    mockGetCurrentOrders.mockResolvedValue([
+      {
+        order_id: "order-1",
+        order_code: "1326",
+        status: "pending",
+        items: [],
+      },
+    ]);
 
     const result = await handleInboundMessage(fakeSupabase, customer, {
       channel: "telegram",
@@ -421,7 +423,7 @@ describe('handleInboundMessage — "Crear pedido" (Tarea 15, dispatch hacia lib/
 
   it('tocar "Ver pedido" a mitad del flujo de crear lo abandona (no llama a handleCreateOrderStep)', async () => {
     mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
-    mockGetCurrentOrder.mockResolvedValue(null);
+    mockGetCurrentOrders.mockResolvedValue([]);
 
     await handleInboundMessage(fakeSupabase, customer, {
       channel: "telegram",
@@ -569,5 +571,158 @@ describe("handleInboundMessageForChannel — un número puede resolver a varios 
 
     expect(result.text).toMatch(/^¡Hola! /);
     expect(mockGetActivePlanStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe("varios pedidos el mismo día — elegir cuál modificar o cancelar (Tarea 25)", () => {
+  const orderA = {
+    order_id: "order-a",
+    order_code: "1401",
+    status: "pending",
+    items: [
+      { product_id: "p1", product_name: "Yuca X Kilo", unit: "kg", required_quantity: 3 },
+      { product_id: "p2", product_name: "Limón Tahití", unit: "kg", required_quantity: 5 },
+    ],
+  };
+  const orderB = {
+    order_id: "order-b",
+    order_code: "1402",
+    status: "pending",
+    items: [{ product_id: "p3", product_name: "Cebolla larga", unit: "kg", required_quantity: 2 }],
+  };
+
+  it('"Ver / modificar" con dos pedidos pregunta cuál, con un botón por pedido y un resumen de sus items', async () => {
+    mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockGetCurrentOrders.mockResolvedValue([orderA, orderB]);
+
+    const result = await handleInboundMessage(fakeSupabase, customer, {
+      channel: "telegram",
+      text: "",
+      callbackData: "menu:view_order",
+    });
+
+    expect(result.text).toMatch(/2 pedidos/i);
+    expect(result.text).toMatch(/modificar/i);
+    expect(result.buttons).toEqual([
+      { label: "Pedido 1401 — Yuca X Kilo y 1 más", value: "order:pick:order-a" },
+      { label: "Pedido 1402 — Cebolla larga", value: "order:pick:order-b" },
+    ]);
+    expect(mockStartEditOrderFlow).not.toHaveBeenCalled();
+    expect(mockSetConversationState).toHaveBeenCalledWith(fakeSupabase, "cust-1", "telegram", "order:picking", {
+      action: "edit",
+    });
+  });
+
+  it('"Cancelar pedido" con dos pedidos también pregunta cuál, sin pedir confirmación todavía', async () => {
+    mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockGetCurrentOrders.mockResolvedValue([orderA, orderB]);
+
+    const result = await handleInboundMessage(fakeSupabase, customer, {
+      channel: "telegram",
+      text: "",
+      callbackData: "menu:cancel_order",
+    });
+
+    expect(result.text).toMatch(/cancelar/i);
+    expect(result.buttons).toHaveLength(2);
+    expect(mockSetConversationState).toHaveBeenCalledWith(fakeSupabase, "cust-1", "telegram", "order:picking", {
+      action: "cancel",
+    });
+    expect(mockCancelOrder).not.toHaveBeenCalled();
+  });
+
+  it("elegir un pedido para modificar arranca el flujo de editar con ese pedido", async () => {
+    mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockGetConversationState.mockResolvedValue({ state: "order:picking", context: { action: "edit" } });
+    mockGetCurrentOrders.mockResolvedValue([orderA, orderB]);
+    mockStartEditOrderFlow.mockReturnValue({
+      reply: { text: "Tu pedido 1402 hasta ahora:" },
+      nextState: "create:reviewing_order",
+      nextContext: { items: [], order_id: "order-b", order_code: "1402" },
+    });
+
+    await handleInboundMessage(fakeSupabase, customer, {
+      channel: "telegram",
+      text: "",
+      callbackData: "order:pick:order-b",
+    });
+
+    expect(mockStartEditOrderFlow).toHaveBeenCalledWith(orderB);
+  });
+
+  it("elegir un pedido para cancelar pide la confirmación de ESE pedido", async () => {
+    mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockGetConversationState.mockResolvedValue({ state: "order:picking", context: { action: "cancel" } });
+    mockGetCurrentOrders.mockResolvedValue([orderA, orderB]);
+
+    const result = await handleInboundMessage(fakeSupabase, customer, {
+      channel: "telegram",
+      text: "",
+      callbackData: "order:pick:order-a",
+    });
+
+    expect(result.text).toContain("1401");
+    expect(mockSetConversationState).toHaveBeenCalledWith(fakeSupabase, "cust-1", "telegram", "cancel:confirming", {
+      order_id: "order-a",
+      order_code: "1401",
+    });
+    expect(mockCancelOrder).not.toHaveBeenCalled();
+  });
+
+  it("un id que ya no está entre los pedidos activos vuelve a mostrar la lista actualizada, sin actuar sobre nada", async () => {
+    mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockGetConversationState.mockResolvedValue({ state: "order:picking", context: { action: "cancel" } });
+    mockGetCurrentOrders.mockResolvedValue([orderA, orderB]);
+
+    const result = await handleInboundMessage(fakeSupabase, customer, {
+      channel: "telegram",
+      text: "",
+      callbackData: "order:pick:order-ajeno",
+    });
+
+    expect(result.buttons?.map((b) => b.value)).toEqual(["order:pick:order-a", "order:pick:order-b"]);
+    expect(mockCancelOrder).not.toHaveBeenCalled();
+    expect(mockStartEditOrderFlow).not.toHaveBeenCalled();
+  });
+
+  it("si mientras tanto solo queda un pedido, va directo a la acción en vez de preguntar", async () => {
+    mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockGetConversationState.mockResolvedValue({ state: "order:picking", context: { action: "cancel" } });
+    mockGetCurrentOrders.mockResolvedValue([orderB]);
+
+    const result = await handleInboundMessage(fakeSupabase, customer, {
+      channel: "telegram",
+      text: "hola",
+    });
+
+    expect(result.text).toContain("1402");
+    expect(result.text).toMatch(/seguro/i);
+  });
+
+  it("con varios clientes por número, un cliente eligiendo pedido cuenta como a mitad de flujo (no vuelve a preguntar cuál cliente)", async () => {
+    mockGetActivePlanStatus.mockResolvedValue(ACTIVE_WINDOW);
+    mockGetConversationState.mockImplementation(async (_client, customerId) =>
+      customerId === "cust-b"
+        ? { state: "order:picking", context: { action: "edit" } }
+        : IDLE_CONVERSATION,
+    );
+    mockGetCurrentOrders.mockResolvedValue([orderA, orderB]);
+    mockStartEditOrderFlow.mockReturnValue({
+      reply: { text: "Tu pedido 1401 hasta ahora:" },
+      nextState: "create:reviewing_order",
+      nextContext: { items: [], order_id: "order-a", order_code: "1401" },
+    });
+
+    await handleInboundMessageForChannel(
+      fakeSupabase,
+      [
+        { customer_id: "cust-a", name: "Tienda A" },
+        { customer_id: "cust-b", name: "Tienda B" },
+      ],
+      { channel: "telegram", text: "", callbackData: "order:pick:order-a" },
+    );
+
+    expect(mockGetCurrentOrders).toHaveBeenCalledWith(fakeSupabase, "cust-b");
+    expect(mockStartEditOrderFlow).toHaveBeenCalledWith(orderA);
   });
 });
