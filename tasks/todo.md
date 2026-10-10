@@ -1321,6 +1321,13 @@ las `bot_*` **deja al bot sin funcionar** si antes no cambia la llave con la que
 
 **Orden sugerido (cada paso independiente y reversible):**
 1. (2): `REVOKE EXECUTE` de las 3 funciones no-bot a `anon` — no toca al bot.
+   **Hecho en staging (2026-10-09, rama `feature/harden-anon-permissions`):** migración
+   `20261013000000_revoke_anon_from_plan_transition_functions.sql` (quita `PUBLIC` y `anon`,
+   conserva `authenticated`, `service_role` y `postgres`), pgTAP nuevo
+   `anon_plan_transition_permissions.sql` (12/12) y suite pgTAP completa en verde; Vitest
+   177/177. Con la publishable key la API responde `42501 permission denied` a las 3 y
+   `bot_get_active_plan_status` (control) sigue respondiendo. **Pendiente: Neptuno**, solo
+   con confirmación explícita.
 2. (1): `DROP POLICY ..._anon_read` tras el inventario de consumidores.
 3. (3): opción A, con la `service_role` ya configurada en staging y probado el bot antes
    de revocar.
