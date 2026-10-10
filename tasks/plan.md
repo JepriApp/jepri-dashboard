@@ -157,6 +157,14 @@ Tareas detalladas en `tasks/todo.md`. Índice por fase:
   Explícitamente pospuesto por decisión del usuario — no se encarece por dejarlo para
   el final.
 
+- [ ] Tarea 26: Endurecer los permisos de `anon` — surgida el 2026-10-09 al revisar el
+  alcance de las `bot_*` ejecutables por `anon`. En staging se verificó que además hay 13
+  políticas `*_anon_read USING (true)` (clientes, pedidos, perfiles… legibles con solo la
+  publishable key) y 3 funciones `SECURITY DEFINER` no-bot que `anon` puede ejecutar.
+  Neptuno sin verificar en vivo (el respaldo `supabase/schema.sql` sugiere que es igual).
+  Detalle, opciones y orden en tasks/todo.md. Requiere decisión del usuario; **nada
+  aplicado en ningún entorno**.
+
 ### Checkpoint: Completo
 - [ ] Todos los criterios de aceptación de las 24 tareas (+ Tarea 25 si se decide incluirla) cumplidos
 - [ ] Suite automatizada (`npm run test` + `pgTAP`) corre en verde
